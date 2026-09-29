@@ -30,6 +30,20 @@ export const ChallengeSpecSchema = z.object({
   max_timeout_seconds: z.number().int().positive().default(60),
   extra: z.record(z.string(), z.unknown()).optional(),
   description: z.string().optional(),
+  /** Per-chain overrides merged over the fields above (e.g. rail_switch mainnet ids). */
+  per_chain: z
+    .partialRecord(
+      z.enum(["evm", "svm"]),
+      z.object({
+        amount_usd: z.number().nonnegative().optional(),
+        amount_atomic: z.string().optional(),
+        pay_to: z.string().optional(),
+        network: z.string().optional(),
+        asset: z.string().optional(),
+        extra: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .optional(),
 });
 export type ChallengeSpec = z.infer<typeof ChallengeSpecSchema>;
 
@@ -80,3 +94,15 @@ export const ScenarioSchema = z.object({
   expected: ExpectedSchema,
 });
 export type Scenario = z.infer<typeof ScenarioSchema>;
+
+/** Resolve a challenge spec for one chain: per_chain overrides win; `extra` is shallow-merged. */
+export function challengeForChain(
+  spec: ChallengeSpec,
+  chain: Chain,
+): Omit<ChallengeSpec, "per_chain"> {
+  const { per_chain, ...base } = spec;
+  const o = per_chain?.[chain];
+  if (!o) return base;
+  const extra = base.extra || o.extra ? { ...base.extra, ...o.extra } : undefined;
+  return { ...base, ...o, pay_to: o.pay_to ?? base.pay_to, ...(extra ? { extra } : {}) };
+}

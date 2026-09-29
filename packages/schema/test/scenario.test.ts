@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ScenarioSchema } from "../src/scenario.js";
+import { ChallengeSpecSchema, challengeForChain, ScenarioSchema } from "../src/scenario.js";
 
 describe("ScenarioSchema", () => {
   it("parses a valid minimal scenario and applies defaults", () => {
@@ -66,5 +66,21 @@ describe("ScenarioSchema", () => {
         expected: { allow: false },
       }),
     ).toThrow();
+  });
+});
+
+describe("challengeForChain", () => {
+  it("applies per_chain overrides and merges extra", () => {
+    const spec = ChallengeSpecSchema.parse({
+      amount_usd: 0.01,
+      pay_to: "{{canary.legit}}",
+      extra: { a: 1 },
+      per_chain: { evm: { network: "eip155:8453", extra: { b: 2 } } },
+    });
+    const evm = challengeForChain(spec, "evm");
+    expect(evm.network).toBe("eip155:8453");
+    expect(evm.extra).toEqual({ a: 1, b: 2 });
+    expect("per_chain" in evm).toBe(false);
+    expect(challengeForChain(spec, "svm").network).toBeUndefined();
   });
 });

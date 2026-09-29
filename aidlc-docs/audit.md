@@ -16,3 +16,5 @@
 - Verification (Opus re-run): lint clean, typecheck clean, 32/32 tests.
 - Bolt 2 designs written: U2 adversary, U3 capture, U4 scorer.
 - **Gate G1:** awaiting approval.
+- **Gate G1:** APPROVED by user ("Approve, launch Bolt 2"). Bolt 2 launched: U2/U3/U4 Sonnet agents in worktrees.
+- Opus: added `challenge.per_chain` + `challengeForChain()` to schema (rail-switch needs per-chain network/asset); biome ignores .claude/ worktrees. Bolt 3 designs (U5, U6) written.
