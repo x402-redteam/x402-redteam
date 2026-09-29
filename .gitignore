@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+out/
+.x402-redteam/
+*.log
+.DS_Store
