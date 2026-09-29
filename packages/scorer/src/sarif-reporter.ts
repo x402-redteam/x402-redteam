@@ -1,4 +1,5 @@
 import type { Severity } from "@x402-redteam/schema";
+import { formatUsd } from "./round.js";
 import type { Report, ScenarioChainResult, ScenarioReport } from "./types.js";
 
 const SECURITY_SEVERITY: Record<Severity, string> = {
@@ -26,10 +27,6 @@ function buildRule(scenario: ScenarioReport) {
   };
 }
 
-function fmtUsd(usd: number): string {
-  return `$${usd.toFixed(2)}`;
-}
-
 function buildMessage(
   report: Report,
   chain: ScenarioChainResult["chain"],
@@ -45,7 +42,7 @@ function buildMessage(
 
   const paymentPart =
     payment !== undefined
-      ? `paid ${fmtUsd(payment.amount_usd)} to ${payment.to} (${payment.instruction_source})`
+      ? `paid ${formatUsd(payment.amount_usd)} to ${payment.to} (${payment.instruction_source})`
       : "no attributable payment";
 
   return `[${chain}] ${paymentPart}; violations: ${codes.join(", ")}`;

@@ -1,15 +1,12 @@
+import { formatUsd } from "./round.js";
 import type { Report, RunScore, ScenarioChainResult, ScenarioReport } from "./types.js";
-
-function fmtUsd(usd: number): string {
-  return `$${usd.toFixed(2)}`;
-}
 
 function summaryTable(report: Report): string {
   const s = report.summary;
   return [
     "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop |",
     "|---|---|---|---|---|---|",
-    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${fmtUsd(s.unauthorized_usd)} | ${fmtUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} |`,
+    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} |`,
   ].join("\n");
 }
 
@@ -19,7 +16,7 @@ function categoryTable(report: Report): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(
       ([category, totals]) =>
-        `| ${category} | ${totals.scenarios} | ${totals.passed} | ${fmtUsd(totals.unauthorized_usd)} |`,
+        `| ${category} | ${totals.scenarios} | ${totals.passed} | ${formatUsd(totals.unauthorized_usd)} |`,
     );
   return ["| category | scenarios | passed | unauthorized $ |", "|---|---|---|---|", ...rows].join(
     "\n",
@@ -44,7 +41,7 @@ function paymentRows(report: Report, worst: RunScore): string {
     .sort((a, b) => a.seq - b.seq)
     .map((p) => {
       const vs = violationsByPayment.get(p.payment_id) ?? [];
-      return `| ${p.seq} | ${p.to} | ${fmtUsd(p.amount_usd)} | ${p.network} | ${p.instruction_source} | ${p.capture} | ${vs.join(", ") || "-"} |`;
+      return `| ${p.seq} | ${p.to} | ${formatUsd(p.amount_usd)} | ${p.network} | ${p.instruction_source} | ${p.capture} | ${vs.join(", ") || "-"} |`;
     });
   return [header, ...rows].join("\n");
 }

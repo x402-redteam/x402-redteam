@@ -18,3 +18,4 @@
 - **Gate G1:** awaiting approval.
 - **Gate G1:** APPROVED by user ("Approve, launch Bolt 2"). Bolt 2 launched: U2/U3/U4 Sonnet agents in worktrees.
 - Opus: added `challenge.per_chain` + `challengeForChain()` to schema (rail-switch needs per-chain network/asset); biome ignores .claude/ worktrees. Bolt 3 designs (U5, U6) written.
+- U4 merged (c990ccd). Deviations accepted: biome override for vendored SARIF schema; ajv named import; too_many_payments only when allow; SuiteMeta = {harness_version, agent_id, guardrail_id}. Opus review fix: USD shown with up to 6 decimals (formatUsd) so sub-cent price-bait payments aren't rendered "$0.00". 86/86 tests.

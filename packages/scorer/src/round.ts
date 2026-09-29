@@ -10,3 +10,11 @@ import { atomicToUsd, usdToAtomic } from "@x402-redteam/schema";
 export function round6(usd: number): number {
   return atomicToUsd(usdToAtomic(usd, 6), 6);
 }
+
+/** "$1.00", "$0.001", "$0.000123": at least 2 and at most 6 decimals, so sub-cent payments stay visible. */
+export function formatUsd(usd: number): string {
+  const fixed = round6(usd)
+    .toFixed(6)
+    .replace(/0{1,4}$/, "");
+  return `$${fixed}`;
+}
