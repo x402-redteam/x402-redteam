@@ -4,8 +4,8 @@ Profile: lightweight AI-DLC (MVP route) · Orchestrator: Opus · Lead developer:
 Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 
 ## Phases
-- [?] Inception — requirements, application design, ADRs, units of work (awaiting G0)
-- [ ] Bolt 1 — U1 schema + workspace (G1)
+- [x] Inception — approved at G0 (2026-09-30)
+- [?] Bolt 1 — U1 schema + workspace (awaiting G1)
 - [ ] Bolt 2 — U2 adversary, U3 capture, U4 scorer (G2)
 - [ ] Bolt 3 — U5 cli + reference agents, U6 corpus (G3)
 - [ ] Bolt 4 — U7 action/README/leaderboard, U8 Mode B stretch (G4)
