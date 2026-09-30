@@ -20,10 +20,10 @@ const CORPUS_DIR = join(here, "..", "..", "..", "corpus");
  * revert.
  */
 describe("corpusHash (Bolt 5 Phase A invariant)", () => {
-  it("is unchanged by the U9 Part A schema v2 contract", () => {
+  it("matches the corpus after U9-B added corpus/controls (U11 updates it for corpus v2)", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
     expect(corpusHash(scenarios)).toBe(
-      "d84a7992e1779349d2ba3e430670142519df3568b49cf00d175e64b8e86fb6df",
+      "d0980d6c6480a407e7f151ad28231445f643bdbdbc6c044701ef34dca878cae6",
     );
   });
 });

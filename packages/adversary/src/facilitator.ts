@@ -8,7 +8,7 @@ import type {
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { fakeTransactionHash } from "./fake-hash.js";
-import { recordDecoded } from "./record.js";
+import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
 /** GET /facilitator/supported, POST /facilitator/verify, POST /facilitator/settle - functional-design.md §3. */
@@ -58,7 +58,8 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
       // v2 (orchestrator decision, U9-A review M3): use the same recordDecoded()
       // block as ledger-endpoint.ts, so /verify's payments are asset-aware
       // (amountUsd + asset_known via assetInfo()) rather than a hardcoded 6 decimals.
-      recordDecoded(state, shared.capture, decoded, {
+      // H1 (code review): a header payload can carry more than one leg - record every one.
+      recordDecodedLegs(state, shared.capture, decoded, {
         capture: "header",
         route_key: "facilitator",
       });

@@ -85,7 +85,8 @@ Gate G6 after Phase C.
 > Orchestrator decision (U9-A review, M3): `adversary/src/facilitator.ts` assigned to **U10**. It must iterate `challenge.accepts` in `/supported` and use `amountUsd(..., scenario.assets)` + `asset_known` on `/verify` like `ledger-endpoint.ts`.
 
 ### Bolt 6 (before public launch; not designed yet)
-- ADR-010 guardrail-track driver;
+- ADR-010 guardrail-track driver (hard prerequisite for a *ranked* leaderboard);
+- `reach_class` schema field + per-class pass rates;
 - ADR-011 provenance and a held-out seasonal corpus;
 - ADR-012 realistic hostnames / proxy mode;
 - ADR-014 Rail port (MPP runway);

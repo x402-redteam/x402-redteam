@@ -1,5 +1,5 @@
 import type { DecodedPayment, PaymentPayload } from "@x402-redteam/schema";
-import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
+import { CHAIN_DEFAULTS, NATIVE_ASSET } from "@x402-redteam/schema";
 import {
   decodeFunctionData,
   erc20Abi,
@@ -71,8 +71,46 @@ const TRANSFER_WITH_AUTHORIZATION_ABI = [
   },
 ] as const;
 
-/** `decodeEvmTx`'s calldata ABI: standard ERC-20 (`transfer`/`transferFrom`) plus EIP-3009. */
-const DIRECT_TRANSFER_ABI = [...erc20Abi, ...TRANSFER_WITH_AUTHORIZATION_ABI] as const;
+/**
+ * OpenZeppelin's `increaseAllowance` extension (not part of the ERC-20 standard, so not in
+ * viem's `erc20Abi`), and EIP-2612 `permit` (a gasless, off-chain-signed approval). Both are
+ * authority-granting calls a direct tx can submit, per code review M2.
+ */
+const APPROVAL_EXTENSION_ABI = [
+  {
+    type: "function",
+    name: "increaseAllowance",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "addedValue", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "permit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "v", type: "uint8" },
+      { name: "r", type: "bytes32" },
+      { name: "s", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+/** `decodeEvmTx`'s calldata ABI: standard ERC-20 (transfer/transferFrom/approve), EIP-3009,
+ * increaseAllowance and EIP-2612 permit. */
+const DIRECT_TRANSFER_ABI = [
+  ...erc20Abi,
+  ...TRANSFER_WITH_AUTHORIZATION_ABI,
+  ...APPROVAL_EXTENSION_ABI,
+] as const;
 
 /** v1 network name -> v2 CAIP-2 network id, per functional-design.md §2. */
 export const V1_NETWORK_MAP: Record<string, string> = {
@@ -228,6 +266,12 @@ async function decodeEip3009(
 
 function decodePermit2(accepted: EvmAccepted, inner: Permit2Inner, raw: unknown): DecodedPayment {
   const { permit2Authorization } = inner;
+  const amount_atomic = permit2Authorization.permitted?.amount ?? "0";
+  // M3 (code review): an amount that isn't even a valid non-negative integer is a more
+  // specific, more useful signal than the generic "we don't support Permit2" reason.
+  const invalid_reason = isNonNegativeIntegerString(amount_atomic)
+    ? "unsupported_transfer_method"
+    : "negative_amount";
   return {
     chain: "evm",
     network: accepted.network,
@@ -235,10 +279,10 @@ function decodePermit2(accepted: EvmAccepted, inner: Permit2Inner, raw: unknown)
     asset: accepted.asset,
     from: permit2Authorization.from ?? "",
     to: permit2Authorization.witness?.to ?? "",
-    amount_atomic: permit2Authorization.permitted?.amount ?? "0",
+    amount_atomic,
     dedupe_key: `evm:${permit2Authorization.nonce ?? "unknown"}`,
     valid: false,
-    invalid_reason: "unsupported_transfer_method",
+    invalid_reason,
     raw,
   };
 }
@@ -339,6 +383,11 @@ export async function decodeEvmTypedData(
     raw: payload,
   };
 
+  // M3 (code review): check before attempting signature verification, same as decodeEip3009.
+  if (!isNonNegativeIntegerString(amount_atomic)) {
+    return { ...base, invalid_reason: "negative_amount" };
+  }
+
   try {
     const recovered = await recoverTypedDataAddress({
       // biome-ignore lint/suspicious/noExplicitAny: shim events carry untyped EIP-712 params over the wire.
@@ -361,105 +410,235 @@ interface EvmTxShimPayload {
   serialized: string;
 }
 
+/** One value-moving or authority-granting leg decoded out of a raw EVM transaction, before
+ * the shared validity/negative-amount checks are applied (see `finalizeLeg`). */
+interface RawEvmLeg {
+  scheme: string;
+  asset: string;
+  from: string;
+  to: string;
+  amount_atomic: string;
+  dedupe_key: string;
+  /** Pre-determined invalid reason (e.g. an unsupported authority grant) that overrides the
+   * generic signature-based valid/bad_signature determination. */
+  invalid_reason?: string;
+  authorization_seconds?: number;
+}
+
+function finalizeLeg(
+  leg: RawEvmLeg,
+  network: string,
+  signerValid: boolean,
+  raw: unknown,
+): DecodedPayment {
+  const base: DecodedPayment = {
+    chain: "evm",
+    network,
+    scheme: leg.scheme,
+    asset: leg.asset,
+    from: leg.from,
+    to: leg.to,
+    amount_atomic: leg.amount_atomic,
+    dedupe_key: leg.dedupe_key,
+    valid: false,
+    ...(leg.authorization_seconds !== undefined
+      ? { authorization_seconds: leg.authorization_seconds }
+      : {}),
+    raw,
+  };
+  if (!isNonNegativeIntegerString(leg.amount_atomic)) {
+    return { ...base, invalid_reason: "negative_amount" };
+  }
+  if (leg.invalid_reason) {
+    return { ...base, invalid_reason: leg.invalid_reason };
+  }
+  return signerValid ? { ...base, valid: true } : { ...base, invalid_reason: "bad_signature" };
+}
+
+/** Decodes the calldata leg of a direct tx (transfer/transferFrom/transferWithAuthorization/
+ * approve/increaseAllowance/permit), or returns `undefined` for unrecognised/absent calldata. */
+function decodeCalldataLeg(
+  to: string,
+  data: Hex | undefined,
+  signer: string,
+  hash: string,
+): RawEvmLeg | undefined {
+  if (!to || !data || data === "0x") return undefined;
+  try {
+    const decoded = decodeFunctionData({ abi: DIRECT_TRANSFER_ABI, data });
+    switch (decoded.functionName) {
+      case "transfer": {
+        const [decodedTo, decodedAmount] = decoded.args as readonly [string, bigint];
+        return {
+          scheme: "transfer",
+          asset: to,
+          from: signer,
+          to: decodedTo,
+          amount_atomic: decodedAmount.toString(),
+          dedupe_key: `evmtx:${hash}`,
+        };
+      }
+      case "transferFrom": {
+        const [decodedFrom, decodedTo, decodedAmount] = decoded.args as readonly [
+          string,
+          string,
+          bigint,
+        ];
+        return {
+          scheme: "transfer",
+          asset: to,
+          from: decodedFrom,
+          to: decodedTo,
+          amount_atomic: decodedAmount.toString(),
+          dedupe_key: `evmtx:${hash}`,
+        };
+      }
+      case "transferWithAuthorization": {
+        const [decodedFrom, decodedTo, decodedValue, validAfter, validBefore, nonce] =
+          decoded.args as readonly [string, string, bigint, bigint, bigint, Hex, number, Hex, Hex];
+        return {
+          scheme: "transfer",
+          asset: to,
+          from: decodedFrom,
+          to: decodedTo,
+          amount_atomic: decodedValue.toString(),
+          // M4 (code review): the same nonce a header-path submission of this exact
+          // authorization would use, so a re-issued copy sent directly on-chain merges
+          // with the header capture as "header+rpc" (capture/src/merge.ts).
+          dedupe_key: `evm:${nonce}`,
+          authorization_seconds: authorizationSeconds(validAfter, validBefore),
+        };
+      }
+      case "approve": {
+        const [spender, amount] = decoded.args as readonly [string, bigint];
+        return {
+          scheme: "approve",
+          asset: to,
+          from: signer,
+          to: spender,
+          amount_atomic: amount.toString(),
+          dedupe_key: `evmtx:${hash}#approve`,
+        };
+      }
+      case "increaseAllowance": {
+        const [spender, addedValue] = decoded.args as readonly [string, bigint];
+        return {
+          scheme: "approve",
+          asset: to,
+          from: signer,
+          to: spender,
+          amount_atomic: addedValue.toString(),
+          dedupe_key: `evmtx:${hash}#approve`,
+        };
+      }
+      case "permit": {
+        const [owner, spender] = decoded.args as readonly [
+          string,
+          string,
+          bigint,
+          bigint,
+          number,
+          Hex,
+          Hex,
+        ];
+        return {
+          scheme: "approve",
+          asset: to,
+          from: owner,
+          to: spender,
+          amount_atomic: "0",
+          dedupe_key: `evmtx:${hash}#permit`,
+          invalid_reason: "unsupported_authority_grant",
+        };
+      }
+      default:
+        return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Decodes an `evm_tx` shim event (a direct, non-x402 transfer), per
  * functional-design.md §2. Also submitted verbatim to the mock EVM RPC's
  * `eth_sendRawTransaction` (ADR-013), so this is the one decoder for both the shim
  * and RPC chain-boundary capture layers - see U10 functional-design.md §2/§3.
  *
- * Recognises, in the calldata after the tx's own `to` (the contract address):
- * - ERC-20 `transfer(to, amount)`: `asset` = the contract, `from` = the tx signer.
- * - ERC-20 `transferFrom(from, to, amount)`: `asset` = the contract, `from` = the
- *   named owner (not necessarily the tx signer/spender) - it's the owner's funds
- *   that move.
- * - EIP-3009 `transferWithAuthorization(from, to, value, validAfter, validBefore, ...)`:
- *   a direct on-chain submission of a signed authorization (as opposed to routing it
- *   through the facilitator's header path); `authorization_seconds` is set here too.
- * Anything else (or a plain native-value transfer) falls back to a native transfer.
+ * Code review H1/M2: a single transaction can carry more than one value-moving or
+ * authority-granting leg, and every one is recorded (`DecodedPayment.legs`):
+ * - Calldata decodes to ERC-20 `transfer`/`transferFrom`, EIP-3009
+ *   `transferWithAuthorization`, `approve`/`increaseAllowance` (scheme "approve", `to` =
+ *   spender), or EIP-2612 `permit` (`invalid_reason: "unsupported_authority_grant"`).
+ * - When calldata decodes into one of the above *and* the tx also carries non-zero native
+ *   `value`, a second, independent native-value leg is recorded alongside it.
+ * - A tx with no recognised calldata (or none at all) is a single native-value leg -
+ *   `asset: NATIVE_ASSET` (plain value transfers, including value 0).
+ * - An EIP-7702 `authorizationList` entry is its own leg (`invalid_reason:
+ *   "unsupported_authority_grant"`, `to` = the delegated-to contract), independent of any
+ *   calldata/value leg in the same tx.
+ * The top-level `DecodedPayment` fields mirror the first leg, for callers that only look at
+ * one payment.
  */
 export async function decodeEvmTx(payload: EvmTxShimPayload): Promise<DecodedPayment> {
   const serialized = payload.serialized as TransactionSerialized;
   const tx = parseTransaction(serialized);
-  let from = "";
+  let signer = "";
   try {
-    from = await recoverTransactionAddress({ serializedTransaction: serialized });
+    signer = await recoverTransactionAddress({ serializedTransaction: serialized });
   } catch {
-    from = "";
+    signer = "";
   }
-  const dedupe_key = `evmtx:${keccak256(serialized)}`;
+  const signerValid = signer !== "";
+  const hash = keccak256(serialized);
   const network = tx.chainId != null ? `eip155:${tx.chainId}` : "";
 
-  let asset = "native";
-  let to = tx.to ?? "";
-  let amount_atomic = (tx.value ?? 0n).toString();
-  let authorization_seconds: number | undefined;
+  const rawLegs: RawEvmLeg[] = [];
 
-  if (tx.to && tx.data && tx.data !== "0x") {
-    try {
-      const decoded = decodeFunctionData({ abi: DIRECT_TRANSFER_ABI, data: tx.data });
-      if (decoded.functionName === "transfer") {
-        const [decodedTo, decodedAmount] = decoded.args as readonly [string, bigint];
-        asset = tx.to;
-        to = decodedTo;
-        amount_atomic = decodedAmount.toString();
-      } else if (decoded.functionName === "transferFrom") {
-        const [decodedFrom, decodedTo, decodedAmount] = decoded.args as readonly [
-          string,
-          string,
-          bigint,
-        ];
-        asset = tx.to;
-        from = decodedFrom;
-        to = decodedTo;
-        amount_atomic = decodedAmount.toString();
-      } else if (decoded.functionName === "transferWithAuthorization") {
-        const [decodedFrom, decodedTo, decodedValue, validAfter, validBefore] =
-          decoded.args as readonly [string, string, bigint, bigint, bigint, Hex, number, Hex, Hex];
-        asset = tx.to;
-        from = decodedFrom;
-        to = decodedTo;
-        amount_atomic = decodedValue.toString();
-        authorization_seconds = authorizationSeconds(validAfter, validBefore);
-      }
-    } catch {
-      // Not a recognised ERC-20/EIP-3009 call; fall through to native-value handling.
+  // EIP-7702: hands control of the signer's EOA to another address - independent of, and
+  // in addition to, any calldata/value leg below.
+  const authorizationList = (tx as { authorizationList?: readonly { address?: string }[] })
+    .authorizationList;
+  if (authorizationList && authorizationList.length > 0) {
+    rawLegs.push({
+      scheme: "approve",
+      asset: "",
+      from: signer,
+      to: authorizationList[0]?.address ?? "",
+      amount_atomic: "0",
+      dedupe_key: `evmtx:${hash}#7702`,
+      invalid_reason: "unsupported_authority_grant",
+    });
+  }
+
+  const nativeValue = tx.value ?? 0n;
+  const calldataLeg = decodeCalldataLeg(tx.to ?? "", tx.data, signer, hash);
+  if (calldataLeg) {
+    rawLegs.push(calldataLeg);
+    if (nativeValue > 0n) {
+      // H1 (code review): calldata AND non-zero native value in the same tx is two
+      // distinct legs, not one.
+      rawLegs.push({
+        scheme: "transfer",
+        asset: NATIVE_ASSET,
+        from: signer,
+        to: tx.to ?? "",
+        amount_atomic: nativeValue.toString(),
+        dedupe_key: `evmtx:${hash}#value`,
+      });
     }
-  }
-
-  // Defensive check (orchestrator addition, U9-B review): an on-chain-decoded amount
-  // (a `uint256` ABI arg, or a tx's own `value`) can't actually be negative or
-  // malformed - the EVM has no negative integers - but the check is applied here too,
-  // uniformly with the header path, rather than relying on that invariant forever.
-  if (!isNonNegativeIntegerString(amount_atomic)) {
-    return {
-      chain: "evm",
-      network,
+  } else {
+    rawLegs.push({
       scheme: "transfer",
-      asset,
-      from,
-      to,
-      amount_atomic,
-      dedupe_key,
-      valid: false,
-      invalid_reason: "negative_amount",
-      ...(authorization_seconds !== undefined ? { authorization_seconds } : {}),
-      raw: payload,
-    };
+      asset: NATIVE_ASSET,
+      from: signer,
+      to: tx.to ?? "",
+      amount_atomic: nativeValue.toString(),
+      dedupe_key: `evmtx:${hash}`,
+    });
   }
 
-  const valid = from !== "";
-  return {
-    chain: "evm",
-    network,
-    scheme: "transfer",
-    asset,
-    from,
-    to,
-    amount_atomic,
-    dedupe_key,
-    valid,
-    invalid_reason: valid ? undefined : "bad_signature",
-    ...(authorization_seconds !== undefined ? { authorization_seconds } : {}),
-    raw: payload,
-  };
+  const legs = rawLegs.map((leg) => finalizeLeg(leg, network, signerValid, payload));
+  const [first, ...rest] = legs;
+  return { ...(first as DecodedPayment), legs: [first as DecodedPayment, ...rest] };
 }

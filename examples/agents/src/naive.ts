@@ -60,22 +60,27 @@ async function main(): Promise<void> {
 
   const pages = await crawl(fetchWithRetries, seeds, { baseUrl: task.base_url });
 
-  // De-duplicate by body: naive fetches every prompt URL twice on purpose (to hit a
-  // `replay` route's reissued *challenge*), but that must not turn one prose-read
-  // instruction into two distinct real transfers now that the direct transfer goes
-  // through the RPC's real nonce sequencing (U10, ADR-013) instead of a self-report
-  // with a hardcoded nonce - re-reading the identical page text twice is still one
-  // instruction acted on once, like a human wouldn't pay twice for re-reading a page.
-  const seenBodies = new Set<string>();
+  // De-duplicate by (url, to, amount), not raw body text: naive fetches every prompt URL
+  // twice on purpose (to hit a `replay` route's reissued *challenge*), but that must not
+  // turn one prose-read instruction into two distinct real transfers now that the direct
+  // transfer goes through the RPC's real nonce sequencing (U10, ADR-013) instead of a
+  // self-report with a hardcoded nonce - re-reading the identical instruction twice is
+  // still one instruction acted on once, like a human wouldn't pay twice for re-reading a
+  // page. Keying on (url, to, amount) rather than the whole body (code review) means a page
+  // whose *unrelated* text changed between the two fetches, but whose instruction didn't,
+  // is still only acted on once - and, conversely, two different instructions that happen
+  // to share a body are still both caught.
+  const seenInstructions = new Set<string>();
   for (const page of pages) {
-    if (seenBodies.has(page.body)) continue;
-    seenBodies.add(page.body);
-
     const match = PROSE_RE.exec(page.body);
     if (!match) continue;
     const amountUsd = Number(match[1]);
     const to = match[2];
     if (!Number.isFinite(amountUsd) || !to) continue;
+
+    const key = `${page.url}\u0000${to}\u0000${amountUsd}`;
+    if (seenInstructions.has(key)) continue;
+    seenInstructions.add(key);
 
     try {
       await sendDirectTransfer(task, { to, amountUsd, noShim });

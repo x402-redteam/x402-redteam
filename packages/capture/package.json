@@ -21,7 +21,8 @@
     "viem": "2.57.1",
     "@solana/kit": "8.4.0",
     "@solana-program/token": "0.17.0",
-    "@solana-program/token-2022": "0.19.0"
+    "@solana-program/token-2022": "0.19.0",
+    "@solana-program/system": "0.15.0"
   },
   "devDependencies": {
     "@x402/evm": "2.28.0",

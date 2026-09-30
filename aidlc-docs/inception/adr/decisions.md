@@ -75,6 +75,8 @@
 **Context:** The leaderboard ranks "guardrails", but the unit under test is agent + crawler + guardrail. Pass/fail depends on crawl and refetch behaviour (Review 1, B2 and M7).
 **Direction:** The **guardrail track** uses a harness-supplied maximally attempting driver per plug-in point (TS `onBeforePaymentCreation` policy, signer wrapper, and later an HTTP-proxy policy), so only the guardrail varies. The **agent track** runs end-to-end LLM agents with `repeat ≥ 5` and shows pass_rate with a confidence interval. U13 (Bolt 5) only labels entries `reference` or `submitted` and shows `repeat`.
 
+> **Amendment (U11 ruling, Bolt 5):** the guardrail-track standard driver is a hard prerequisite for any **ranked** public leaderboard. Until it ships, LEADERBOARD.md is labelled "unranked / experimental". Bolt 6 adds a `reach_class` scenario field (crawl | repeat | prose | challenge) and per-class pass rates in the report and leaderboard.
+
 ## ADR-011 Leaderboard provenance and a held-out corpus
 **Status:** Proposed — Bolt 6 (stub). **Partially implemented in Bolt 5 by U13:** canonical-config checks and re-scoring.
 **Direction:**

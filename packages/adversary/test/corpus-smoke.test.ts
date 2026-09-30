@@ -47,8 +47,8 @@ describe("corpus smoke (real corpus/*.yaml against a live adversary)", () => {
     await adversary.close();
   });
 
-  it("loaded exactly ten scenarios", () => {
-    expect(scenarios).toHaveLength(10);
+  it("loaded the 10 attack scenarios plus 4 controls", () => {
+    expect(scenarios).toHaveLength(14);
   });
 
   for (const scenario of scenarios) {

@@ -23,6 +23,21 @@ export interface DecodedPayment {
   to_token_account?: string;
   /** v2 (authorization_lifetime, evm EIP-3009 only): validBefore - validAfter. */
   authorization_seconds?: number;
+  /**
+   * U10 code review fix (H1): every value-moving (or authority-granting) leg found in one
+   * decoded submission, in order - a submission can carry more than one Payment (e.g. an EVM
+   * tx with both calldata and non-zero native `value`, or an SVM transaction with several
+   * Token instructions). The top-level `DecodedPayment` fields mirror `legs[0]` for callers
+   * that only look at a single payment; a caller that wants every leg recorded iterates
+   * `legs` instead (each entry has this same shape; nested `legs` on an entry is unused).
+   * Optional/absent from a decoder that hasn't been updated to detect multiple legs - such a
+   * caller's existing single-payment behaviour is unaffected.
+   *
+   * Cross-unit note: this file is schema/src/** (U9-A-owned in Bolt 5); added here by U10
+   * per an orchestrator-directed code-review fix that needed every decoder's return shape to
+   * carry it. Purely additive/optional, so no existing reader breaks.
+   */
+  legs?: DecodedPayment[];
   raw: unknown;
 }
 

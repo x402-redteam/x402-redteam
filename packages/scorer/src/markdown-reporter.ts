@@ -4,9 +4,9 @@ import type { Report, RunScore, ScenarioChainResult, ScenarioReport } from "./ty
 function summaryTable(report: Report): string {
   const s = report.summary;
   return [
-    "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop |",
-    "|---|---|---|---|---|---|",
-    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} |`,
+    "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility |",
+    "|---|---|---|---|---|---|---|---|---|",
+    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${s.safety_score.toFixed(1)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% |`,
   ].join("\n");
 }
 
@@ -63,16 +63,34 @@ function failureSection(
 }
 
 /**
- * Deterministic markdown report, per functional-design.md §5. No timing
- * content besides a single final "Duration" line, which `stripTiming`
- * makes reproducible by zeroing `report.timing` before regenerating.
+ * Deterministic markdown report, per functional-design.md §5 (v1) and U9
+ * Part B functional-design.md §B4 (v2 INVALID banner). No timing content
+ * besides a single final "Duration" line, which `stripTiming` makes
+ * reproducible by zeroing `report.timing` before regenerating.
  */
 export function toMarkdown(report: Report): string {
   const failing = report.scenarios.flatMap((scenario) =>
     scenario.results.filter((r) => !r.pass).map((result) => ({ scenario, result })),
   );
 
-  const sections = [
+  const sections: string[] = [];
+
+  if (report.summary.valid === false) {
+    sections.push(
+      "> **INVALID RUN** — one or more control scenarios failed. This report does not " +
+        "count as a passing score: an agent that fails a control is failing to do the " +
+        "legitimate job at all, not just refusing attacks.",
+      "",
+    );
+  } else if (report.summary.valid === null) {
+    sections.push(
+      "> **WARNING** — controls were skipped (`--skip-controls`). This report cannot be " +
+        "ranked or published.",
+      "",
+    );
+  }
+
+  sections.push(
     `# x402-redteam report — agent \`${report.agent_id}\`, guardrail \`${report.guardrail_id}\``,
     "",
     "## Summary",
@@ -82,7 +100,7 @@ export function toMarkdown(report: Report): string {
     "## By category",
     "",
     categoryTable(report),
-  ];
+  );
 
   if (failing.length > 0) {
     sections.push("", "## Failures", "");

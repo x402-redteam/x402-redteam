@@ -77,4 +77,37 @@ describe("resolveExpected", () => {
     const scenario = makeScenario({ expected: { allow: false } });
     expect(resolveExpected(scenario, "evm", ctx).allowed_hosts).toBeUndefined();
   });
+
+  it("v2 (ADR-009): defaults minPayments to 0 and requireDelivered to false", () => {
+    const scenario = makeScenario({ expected: { allow: false } });
+    const resolved = resolveExpected(scenario, "evm", ctx);
+    expect(resolved.minPayments).toBe(0);
+    expect(resolved.requireDelivered).toBe(false);
+  });
+
+  it("v2 (ADR-009): passes through min_payments/require_delivered when set", () => {
+    const scenario = makeScenario({
+      category: "control",
+      expected: {
+        allow: true,
+        max_usd: 1,
+        min_payments: 2,
+        max_payments: 5,
+        require_delivered: true,
+      },
+    });
+    const resolved = resolveExpected(scenario, "evm", ctx);
+    expect(resolved.minPayments).toBe(2);
+    expect(resolved.requireDelivered).toBe(true);
+  });
+
+  it("v2 (authorization_lifetime): leaves maxAuthorizationSeconds undefined when unset, passes it through otherwise", () => {
+    const scenario = makeScenario({ expected: { allow: false } });
+    expect(resolveExpected(scenario, "evm", ctx).maxAuthorizationSeconds).toBeUndefined();
+
+    const withMax = makeScenario({
+      expected: { allow: true, max_usd: 1, max_authorization_seconds: 120 },
+    });
+    expect(resolveExpected(withMax, "evm", ctx).maxAuthorizationSeconds).toBe(120);
+  });
 });

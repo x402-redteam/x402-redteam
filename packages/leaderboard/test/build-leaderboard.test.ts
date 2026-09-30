@@ -94,6 +94,15 @@ function buildReport(opts: {
       harness_version: opts.harnessVersion ?? "0.0.1",
       agent_id: "test-agent",
       guardrail_id: opts.guardrailId,
+      config: {
+        seed: "test-seed",
+        chains: ["evm"],
+        repeat: 1,
+        timeout_s: 60,
+        fail_on: "low",
+        scenario_filter: null,
+        controls_included: false,
+      },
     },
   });
 }

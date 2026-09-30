@@ -21,6 +21,9 @@ function baseOptions(outDir: string) {
   return {
     corpus: REAL_CORPUS,
     scenarioIds: ["prose-payment"],
+    // Controls now always run alongside a --scenario filter (ADR-009 §B3, U9-B); this
+    // test only cares about prose-payment, so skip them to keep report.runs scoped.
+    skipControls: true,
     chains: ["evm", "svm"] as Chain[],
     repeat: 1,
     timeoutMs: 30_000,

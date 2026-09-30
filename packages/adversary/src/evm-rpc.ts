@@ -1,14 +1,29 @@
-import { assetInfo, CHAIN_DEFAULTS, usdToAtomic, walletBalanceUsd } from "@x402-redteam/schema";
+import {
+  assetInfo,
+  CHAIN_DEFAULTS,
+  NATIVE_ASSET,
+  usdToAtomic,
+  walletBalanceUsd,
+} from "@x402-redteam/schema";
 import type { Hono } from "hono";
-import { recordDecoded } from "./record.js";
+import {
+  decodeFunctionData,
+  erc20Abi,
+  keccak256,
+  parseTransaction,
+  recoverTransactionAddress,
+  type TransactionSerialized,
+} from "viem";
+import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
+import type { SeenEvmTx } from "./state.js";
 
 /**
  * Mock EVM JSON-RPC (ADR-013, application-design.md §5 "v2"): `POST /evm-rpc`. Every
  * response is a fixed, deterministic value - no wall clock, nothing ever broadcasts.
  * `eth_sendRawTransaction` is the one call that observes state: it decodes the raw
  * transaction through the same `capture.decodeShimEvent({kind:"evm_tx"})` path the
- * `evm_tx` shim event uses, and records a Payment via `recordDecoded` with
+ * `evm_tx` shim event uses, and records a Payment per leg via `recordDecodedLegs` with
  * `capture:"rpc"` - so a resubmission of the exact same serialized tx (same
  * `dedupe_key`) merges into one payment, and a wrapped signer's shim report of the
  * same tx merges into `"rpc+shim"` (see capture/src/merge.ts).
@@ -23,6 +38,8 @@ const EVM_ESTIMATED_GAS = "0x186a0"; // 100_000
 const EVM_FIXED_BALANCE_WEI = `0x${(10n ** 18n).toString(16)}`; // 1 ETH
 const EVM_BLOCK_HASH = `0x${"11".repeat(32)}`;
 const EVM_EMPTY_LOGS_BLOOM = `0x${"0".repeat(512)}`;
+/** keccak256("Transfer(address,address,uint256)") - the standard ERC-20 Transfer event topic. */
+const ERC20_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 // Well-known 4-byte ERC-20 function selectors (standard, not computed - no need for a
 // keccak256 dependency just to re-derive constants every implementer already knows).
@@ -71,6 +88,13 @@ interface EthCallParams {
   data?: string;
 }
 
+interface UnsignedTxParams {
+  from?: string;
+  to?: string;
+  value?: string;
+  data?: string;
+}
+
 function fixedBlock(): Record<string, unknown> {
   return {
     number: EVM_BLOCK_NUMBER,
@@ -96,11 +120,39 @@ function fixedBlock(): Record<string, unknown> {
   };
 }
 
-/** Synthesizes a deterministic, successful receipt for a tx hash seen this run. */
-function fixedReceipt(
-  hash: string,
-  seen: { from: string; to: string | null },
+function padHexAddress(a: string): string {
+  return `0x${a.replace(/^0x/, "").toLowerCase().padStart(64, "0")}`;
+}
+
+/** L3 (code review): a synthetic ERC-20 Transfer log for a "transfer"-scheme leg against a
+ * real token contract (not a native-value or unknown-asset leg). */
+function erc20TransferLog(
+  contract: string,
+  from: string,
+  to: string,
+  amountAtomic: string,
+  logIndex: number,
+  txHash: string,
 ): Record<string, unknown> {
+  return {
+    address: contract,
+    topics: [ERC20_TRANSFER_TOPIC, padHexAddress(from), padHexAddress(to)],
+    data: encodeUint256(BigInt(amountAtomic)),
+    blockNumber: EVM_BLOCK_NUMBER,
+    blockHash: EVM_BLOCK_HASH,
+    transactionHash: txHash,
+    transactionIndex: "0x0",
+    logIndex: hexQuantity(logIndex),
+    removed: false,
+  };
+}
+
+/** Synthesizes a deterministic, successful receipt for a tx hash seen this run - L3
+ * (code review): echoes the tx's real legs as ERC-20 Transfer logs instead of `logs: []`. */
+function fixedReceipt(hash: string, seen: SeenEvmTx): Record<string, unknown> {
+  const logs = seen.legs
+    .filter((leg) => leg.scheme === "transfer" && leg.asset !== NATIVE_ASSET && leg.asset !== "")
+    .map((leg, i) => erc20TransferLog(leg.asset, leg.from, leg.to, leg.amount_atomic, i, hash));
   return {
     transactionHash: hash,
     transactionIndex: "0x0",
@@ -111,7 +163,7 @@ function fixedReceipt(
     cumulativeGasUsed: EVM_ESTIMATED_GAS,
     gasUsed: EVM_ESTIMATED_GAS,
     contractAddress: null,
-    logs: [],
+    logs,
     logsBloom: EVM_EMPTY_LOGS_BLOOM,
     status: "0x1",
     effectiveGasPrice: EVM_GAS_PRICE,
@@ -119,28 +171,58 @@ function fixedReceipt(
   };
 }
 
-function fixedTransactionByHash(
-  hash: string,
-  seen: { from: string; to: string | null },
-): Record<string, unknown> {
+/** L3 (code review): echoes the tx's real from/to/value/input/nonce/gas instead of an
+ * all-zeroed placeholder. */
+function fixedTransactionByHash(hash: string, seen: SeenEvmTx): Record<string, unknown> {
   return {
     hash,
-    nonce: "0x0",
+    nonce: seen.nonce,
     blockHash: EVM_BLOCK_HASH,
     blockNumber: EVM_BLOCK_NUMBER,
     transactionIndex: "0x0",
     from: seen.from,
     to: seen.to,
-    value: "0x0",
-    gas: EVM_ESTIMATED_GAS,
+    value: seen.value,
+    gas: seen.gas,
     gasPrice: EVM_GAS_PRICE,
-    input: "0x",
+    input: seen.input,
     type: "0x2",
     chainId: hexQuantity(evmChainId()),
     v: "0x0",
     r: `0x${"0".repeat(64)}`,
     s: `0x${"0".repeat(64)}`,
   };
+}
+
+/** L2 (code review): best-effort, unverified interpretation of an *unsigned* transaction
+ * request object (eth_sendTransaction/eth_signTransaction's params[0]) - there is no
+ * signature to check, so this only ever reports what the caller itself claimed. */
+function decodeUnsignedTxParams(params: UnsignedTxParams): {
+  asset: string;
+  to: string;
+  amount_atomic: string;
+} {
+  const value = params.value ? BigInt(params.value) : 0n;
+  if (params.to && params.data && params.data !== "0x") {
+    try {
+      const decoded = decodeFunctionData({ abi: erc20Abi, data: params.data as `0x${string}` });
+      if (decoded.functionName === "transfer") {
+        const [to, amount] = decoded.args as readonly [string, bigint];
+        return { asset: params.to, to, amount_atomic: amount.toString() };
+      }
+      if (decoded.functionName === "transferFrom") {
+        const [, to, amount] = decoded.args as readonly [string, string, bigint];
+        return { asset: params.to, to, amount_atomic: amount.toString() };
+      }
+      if (decoded.functionName === "approve") {
+        const [to, amount] = decoded.args as readonly [string, bigint];
+        return { asset: params.to, to, amount_atomic: amount.toString() };
+      }
+    } catch {
+      // Unrecognised calldata; fall through to native-value handling.
+    }
+  }
+  return { asset: NATIVE_ASSET, to: params.to ?? "", amount_atomic: value.toString() };
 }
 
 export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
@@ -252,26 +334,84 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
               break;
             }
             try {
+              // L1 (code review): nonce/seen-tx bookkeeping is keyed on the tx's actual
+              // signer (who owns the nonce and pays gas), not `decoded.from` - which, for
+              // a transferFrom/transferWithAuthorization leg, is the *token owner* being
+              // moved from, a different account entirely.
+              const serializedTx = serialized as TransactionSerialized;
+              const signer = await recoverTransactionAddress({
+                serializedTransaction: serializedTx,
+              });
+              const txHash = keccak256(serializedTx);
+              const parsedTx = parseTransaction(serializedTx);
+
               const decoded = await shared.capture.decodeShimEvent(
                 { kind: "evm_tx", payload: { serialized } },
                 { knownOwners: rendered.knownOwners },
               );
-              const match = /^evmtx:(0x[0-9a-fA-F]+)$/.exec(decoded.dedupe_key);
-              const txHash: string = match?.[1] ?? decoded.dedupe_key;
-              recordDecoded(state, shared.capture, decoded, { capture: "rpc" });
-              const fromKey = decoded.from.toLowerCase();
+              const payments = recordDecodedLegs(state, shared.capture, decoded, {
+                capture: "rpc",
+              });
+
+              const fromKey = signer.toLowerCase();
               state.evmTxCountByAddress.set(
                 fromKey,
                 (state.evmTxCountByAddress.get(fromKey) ?? 0) + 1,
               );
               state.seenEvmTx.set(txHash, {
-                from: decoded.from,
-                to: decoded.asset === "native" ? decoded.to || null : decoded.asset,
+                from: signer,
+                to: parsedTx.to ?? null,
+                value: hexQuantity(parsedTx.value ?? 0n),
+                input: parsedTx.data ?? "0x",
+                nonce: hexQuantity(parsedTx.nonce ?? 0),
+                gas: hexQuantity(parsedTx.gas ?? 0n),
+                legs: payments.map((p) => ({
+                  asset: p.asset,
+                  from: p.from,
+                  to: p.to,
+                  amount_atomic: p.amount_atomic,
+                  scheme: p.scheme,
+                })),
               });
               body = ok(txHash);
             } catch {
               body = err(-32602, "invalid transaction");
             }
+            break;
+          }
+          case "eth_sendTransaction":
+          case "eth_signTransaction": {
+            // L2 (code review): the mock never holds private keys, so these are always
+            // rejected - but if the request claims a value/calldata transfer, that
+            // *attempt* is itself worth recording (an agent trying to get a "node" it
+            // doesn't control to sign a payment on its behalf).
+            const txParams = req.params?.[0] as UnsignedTxParams | undefined;
+            if (txParams) {
+              const hasValue = !!txParams.value && BigInt(txParams.value) > 0n;
+              const hasCalldata = !!txParams.data && txParams.data !== "0x";
+              if (hasValue || hasCalldata) {
+                const { asset, to, amount_atomic } = decodeUnsignedTxParams(txParams);
+                recordDecodedLegs(
+                  state,
+                  shared.capture,
+                  {
+                    chain: "evm",
+                    network: CHAIN_DEFAULTS.evm.network,
+                    scheme: "transfer",
+                    asset,
+                    from: txParams.from ?? "",
+                    to,
+                    amount_atomic,
+                    dedupe_key: `evmreq:${method}:${state.nextSeq()}`,
+                    valid: false,
+                    invalid_reason: "unsigned_request",
+                    raw: txParams,
+                  },
+                  { capture: "rpc" },
+                );
+              }
+            }
+            body = err(-32601, `method not found: ${method}`);
             break;
           }
           case "eth_getTransactionReceipt": {

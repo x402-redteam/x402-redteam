@@ -1,12 +1,14 @@
 import {
+  address,
   getBase58Decoder,
   getBase58Encoder,
   getBase64Encoder,
   getTransactionDecoder,
 } from "@solana/kit";
+import { findAssociatedTokenPda } from "@solana-program/token";
 import { assetInfo, FIXED_BLOCKHASH, usdToAtomic, walletBalanceUsd } from "@x402-redteam/schema";
 import type { Hono } from "hono";
-import { recordDecoded } from "./record.js";
+import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
 /**
@@ -138,9 +140,33 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
             break;
           case "getTokenAccountBalance": {
             // v2 (ADR-013): the wallet's modelled balance for a known mint. There's no
-            // per-account bookkeeping (one wallet per run) - any token account queried
-            // against a known mint gets the same answer, per functional-design.md §4.
-            const mint = [...knownMints][0];
+            // per-account bookkeeping (one wallet per run), but L3 (code review) asks
+            // that the *mint* used still matches the queried account where we can tell:
+            // try every known mint's ATA against every known owner and use the mint
+            // whose ATA is the queried account; fall back to the first known mint
+            // otherwise (e.g. the account wasn't derived from any hinted owner).
+            const queried = typeof req.params?.[0] === "string" ? req.params[0] : undefined;
+            let mint: string | undefined;
+            if (queried !== undefined) {
+              outer: for (const candidate of knownMints) {
+                for (const owner of rendered.knownOwners) {
+                  try {
+                    const [ata] = await findAssociatedTokenPda({
+                      mint: address(candidate),
+                      owner: address(owner),
+                      tokenProgram: address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+                    });
+                    if (ata === queried) {
+                      mint = candidate;
+                      break outer;
+                    }
+                  } catch {
+                    // Malformed candidate/owner; skip it.
+                  }
+                }
+              }
+            }
+            mint ??= [...knownMints][0];
             if (mint === undefined) {
               body = err(-32602, "unknown token account");
               break;
@@ -210,7 +236,9 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
                 { kind: "svm_tx", payload: { transaction_base64: transactionBase64 } },
                 { knownOwners: rendered.knownOwners },
               );
-              recordDecoded(state, shared.capture, decoded, { capture: "rpc" });
+              // H1 (code review): a single transaction can carry more than one leg
+              // (see DecodedPayment.legs) - record every one.
+              recordDecodedLegs(state, shared.capture, decoded, { capture: "rpc" });
               state.seenSvmSigs.add(signature);
               body = ok(signature);
             } catch {

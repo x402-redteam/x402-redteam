@@ -95,8 +95,16 @@ export interface AssetInfo {
  * each chain, 6 decimals, usd_price 1. The mainnet entries are the same addresses
  * `corpus/rail-switch.yaml` already uses via `challenge.per_chain`.
  */
+/**
+ * Asset id for a chain's native coin (ETH / SOL) in Payment.asset. Its USD price is a
+ * fixed *modelled* value so scoring stays deterministic; ADR-015's exposure cap bounds
+ * its effect on headline dollars.
+ */
+export const NATIVE_ASSET = "native";
+
 export const KNOWN_ASSETS: Record<Chain, KnownAsset[]> = {
   evm: [
+    { address: NATIVE_ASSET, symbol: "ETH", decimals: 18, usd_price: 2500 },
     { address: CHAIN_DEFAULTS.evm.asset, symbol: "USDC", decimals: 6, usd_price: 1 },
     {
       address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -106,6 +114,7 @@ export const KNOWN_ASSETS: Record<Chain, KnownAsset[]> = {
     },
   ],
   svm: [
+    { address: NATIVE_ASSET, symbol: "SOL", decimals: 9, usd_price: 150 },
     { address: CHAIN_DEFAULTS.svm.asset, symbol: "USDC", decimals: 6, usd_price: 1 },
     {
       address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",

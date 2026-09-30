@@ -269,4 +269,87 @@ describe("mock EVM JSON-RPC (ADR-013)", () => {
     expect(payment?.capture).toBe("rpc");
     expect(payment?.amount_atomic).toBe("4242");
   });
+
+  it("L3 (code review): the receipt synthesizes an ERC-20 Transfer log for a transfer leg", async () => {
+    load("receipt-log");
+    const account = privateKeyToAccount(AGENT_SECRET);
+    const to = "0x0000000000000000000000000000000000000005";
+    const { encodeFunctionData, erc20Abi: abi } = await import("viem");
+    const data = encodeFunctionData({ abi, functionName: "transfer", args: [to, 999n] });
+    const serialized = await account.signTransaction({
+      chainId: 84532,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const sent = await jsonRpc(adversary.baseUrl, "eth_sendRawTransaction", [serialized]);
+    const hash = sent.result as string;
+    const receipt = await jsonRpc(adversary.baseUrl, "eth_getTransactionReceipt", [hash]);
+
+    expect(receipt.result.logs).toHaveLength(1);
+    expect(receipt.result.logs[0].address.toLowerCase()).toBe(
+      CHAIN_DEFAULTS.evm.asset.toLowerCase(),
+    );
+    expect(receipt.result.logs[0].topics[0]).toBe(
+      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+    );
+  });
+
+  it("L2 (code review): eth_sendTransaction with a value/calldata transfer records an unsigned_request Payment", async () => {
+    load("unsigned-request");
+    const account = privateKeyToAccount(AGENT_SECRET);
+    const to = "0x0000000000000000000000000000000000000006";
+
+    const res = await jsonRpc(adversary.baseUrl, "eth_sendTransaction", [
+      { from: account.address, to, value: "0x64" },
+    ]);
+    expect(res.error).toBeDefined(); // the mock never holds keys, so the call itself fails
+
+    const drain = adversary.drain();
+    const payment = drain.payments.find((p) => p.to?.toLowerCase() === to.toLowerCase());
+    expect(payment).toBeDefined();
+    expect(payment?.valid).toBe(false);
+    expect(payment?.invalid_reason).toBe("unsigned_request");
+    expect(payment?.amount_atomic).toBe("100");
+  });
+
+  it("L1 (code review): a transferFrom's nonce/seen-tx bookkeeping is keyed on the tx signer, not the token owner", async () => {
+    load("l1-signer-key");
+    const account = privateKeyToAccount(AGENT_SECRET);
+    const owner = "0x0000000000000000000000000000000000000007";
+    const to = "0x0000000000000000000000000000000000000008";
+    const { encodeFunctionData, erc20Abi: abi } = await import("viem");
+    const data = encodeFunctionData({ abi, functionName: "transferFrom", args: [owner, to, 1n] });
+    const serialized = await account.signTransaction({
+      chainId: 84532,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+    await jsonRpc(adversary.baseUrl, "eth_sendRawTransaction", [serialized]);
+
+    // The nonce for the *signer* (account) advanced, even though the leg's own `from` is
+    // the unrelated token owner.
+    const nonce = await jsonRpc(adversary.baseUrl, "eth_getTransactionCount", [
+      account.address,
+      "pending",
+    ]);
+    expect(nonce.result).toBe("0x1");
+    const ownerNonce = await jsonRpc(adversary.baseUrl, "eth_getTransactionCount", [
+      owner,
+      "pending",
+    ]);
+    expect(ownerNonce.result).toBe("0x0");
+  });
 });

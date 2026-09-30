@@ -6,6 +6,7 @@ import {
   type Scenario,
   ScenarioSchema,
 } from "@x402-redteam/schema";
+import type { RunConfig } from "../src/types.js";
 
 /**
  * Hand-built fixtures validated through the schema package's own zod
@@ -53,6 +54,28 @@ export function makePayment(overrides: Record<string, unknown> = {}): Payment {
     valid: true,
     ...overrides,
   });
+}
+
+/**
+ * A `SuiteMeta.config` default for tests that don't care about provenance/validity
+ * details: both chains, repeat 1, fail-on low, no scenario filter. `controls_included`
+ * defaults to `false` (code review fix 1 follow-up): most tests here build no
+ * "control"-category run at all, and zero control runs with `controls_included: true`
+ * is itself invalid (fix 1), which would otherwise leak an unrelated INVALID
+ * banner/SARIF entry into tests that aren't about control validity. Tests that
+ * specifically exercise `summary.valid`/utility/controls override this explicitly.
+ */
+export function baseConfig(overrides: Partial<RunConfig> = {}): RunConfig {
+  return {
+    seed: "test-seed",
+    chains: ["evm", "svm"],
+    repeat: 1,
+    timeout_s: 60,
+    fail_on: "low",
+    scenario_filter: null,
+    controls_included: false,
+    ...overrides,
+  };
 }
 
 let runCounter = 0;

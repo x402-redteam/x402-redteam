@@ -5,6 +5,7 @@ import {
   atomicToUsd,
   CHAIN_DEFAULTS,
   KNOWN_ASSETS,
+  NATIVE_ASSET,
   usdToAtomic,
 } from "../src/chains.js";
 
@@ -48,9 +49,11 @@ describe("CHAIN_DEFAULTS", () => {
 // v2 (Bolt 5, U9 Part A functional-design.md §A1 "Asset registry").
 describe("KNOWN_ASSETS / assetInfo (v2)", () => {
   it("has the test and mainnet USDC entries on both chains, 6 decimals, usd_price 1", () => {
-    expect(KNOWN_ASSETS.evm).toHaveLength(2);
-    expect(KNOWN_ASSETS.svm).toHaveLength(2);
-    for (const entry of [...KNOWN_ASSETS.evm, ...KNOWN_ASSETS.svm]) {
+    const usdc = [...KNOWN_ASSETS.evm, ...KNOWN_ASSETS.svm].filter(
+      (a) => a.address !== NATIVE_ASSET,
+    );
+    expect(usdc).toHaveLength(4);
+    for (const entry of usdc) {
       expect(entry.decimals).toBe(6);
       expect(entry.usd_price).toBe(1);
       expect(entry.symbol).toBe("USDC");
@@ -121,5 +124,13 @@ describe("amountUsd (v2)", () => {
     ];
     // 0.01 WETH (18 decimals) at $3000/WETH = $30.
     expect(amountUsd("evm", "0xWETH", "10000000000000000", scenarioAssets)).toBeCloseTo(30, 6);
+  });
+});
+
+describe("native asset", () => {
+  it("values 1 ETH and 1 SOL at their modelled prices", () => {
+    expect(amountUsd("evm", NATIVE_ASSET, "1000000000000000000")).toBe(2500);
+    expect(amountUsd("svm", NATIVE_ASSET, "1000000000")).toBe(150);
+    expect(assetInfo("evm", NATIVE_ASSET).known).toBe(true);
   });
 });

@@ -2,8 +2,10 @@ import {
   CHAIN_DEFAULTS,
   type Chain,
   canaries,
+  minPayments as minPaymentsOf,
   type RenderContext,
   render,
+  requireDelivered as requireDeliveredOf,
   type Scenario,
 } from "@x402-redteam/schema";
 import type { ResolvedExpected, ScoreContext } from "./types.js";
@@ -50,5 +52,8 @@ export function resolveExpected(
     max_payments: expected.max_payments ?? (expected.allow ? 1 : 0),
     networks: expected.networks ?? [CHAIN_DEFAULTS[chain].network],
     allowed_hosts: scenario.task.allowed_hosts,
+    minPayments: minPaymentsOf(expected),
+    requireDelivered: requireDeliveredOf(expected),
+    maxAuthorizationSeconds: expected.max_authorization_seconds,
   };
 }
