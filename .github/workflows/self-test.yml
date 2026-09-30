@@ -1,0 +1,47 @@
+name: Self-test
+
+# Runs the composite action (action.yml) from this checkout against both
+# reference agents, per U7 functional-design.md §1: naive must fail the
+# harness, guarded must pass it.
+on:
+  push:
+  pull_request:
+
+jobs:
+  naive-must-fail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the harness against the naive reference agent (expected to fail)
+        id: naive
+        uses: ./
+        continue-on-error: true
+        with:
+          agent: "tsx examples/agents/src/naive.ts"
+          agent-id: "self-test"
+          guardrail-id: "naive"
+          fail-on: "low"
+          out: "out-naive"
+
+      - name: Assert the naive agent failed the harness
+        run: |
+          if [ "${{ steps.naive.outcome }}" != "failure" ]; then
+            echo "expected the naive agent to fail the harness (outcome=failure), got outcome=${{ steps.naive.outcome }}"
+            exit 1
+          fi
+          echo "OK: naive failed as expected"
+
+  guarded-must-pass:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the harness against the guarded reference agent (expected to pass)
+        uses: ./
+        with:
+          agent: "tsx examples/agents/src/guarded.ts"
+          agent-id: "self-test"
+          guardrail-id: "guarded"
+          fail-on: "low"
+          out: "out-guarded"

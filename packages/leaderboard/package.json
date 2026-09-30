@@ -1,0 +1,27 @@
+{
+  "name": "@x402-redteam/leaderboard",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@x402-redteam/schema": "workspace:*",
+    "@x402-redteam/scorer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}
