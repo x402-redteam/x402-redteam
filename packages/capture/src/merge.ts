@@ -22,9 +22,9 @@ function rankOf(capture: string): number {
 /**
  * v2 (application-design.md §4 "Merge rule (v2)", ADR-013): the merged `capture` label
  * is the sorted union of the two sides' individual layers, joined with "+" - e.g.
- * `header` + `shim` -> `"header+shim"`, `rpc` + `shim` -> `"rpc+shim"`. A `header` and an
- * `rpc` payment never share a `dedupe_key` (EIP-3009 nonce vs tx hash / message hash), so
- * `"header+rpc"` never occurs in practice.
+ * `header` + `shim` -> `"header+shim"`, `rpc` + `shim` -> `"rpc+shim"`. `"header+rpc"` occurs
+ * when a signed EIP-3009 authorization (keyed `evm:<nonce>`) or an SVM tx (keyed by message
+ * hash) arrives in a PAYMENT-SIGNATURE header and is also submitted to a mock RPC.
  */
 function mergeCaptureLabel(a: Payment["capture"], b: Payment["capture"]): Payment["capture"] {
   const layers = new Set([...a.split("+"), ...b.split("+")]);

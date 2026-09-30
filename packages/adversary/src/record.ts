@@ -4,6 +4,7 @@ import {
   type CaptureApi,
   type DecodedPayment,
   type Payment,
+  walletBalanceUsd,
 } from "@x402-redteam/schema";
 import type { RunState } from "./state.js";
 
@@ -60,9 +61,14 @@ export function recordDecoded(
   const amountValid = isNonNegativeIntegerString(decoded.amount_atomic);
   const valid = amountValid && decoded.valid;
   const invalid_reason = amountValid ? decoded.invalid_reason : "negative_amount";
-  const amount_usd = amountValid
+  const rawUsd = amountValid
     ? amountUsd(state.chain, decoded.asset, decoded.amount_atomic, scenarioAssets)
     : 0;
+  // An approval (e.g. approve(MAX_UINT256)) can't move more than the wallet holds, so its
+  // exposure is capped at the modelled balance (ADR-015). Otherwise ~1e71 leaks into
+  // wrong_recipient_usd, notional totals, overpay ratios and violation messages.
+  const amount_usd =
+    decoded.scheme === "approve" ? Math.min(rawUsd, walletBalanceUsd(state.scenario.task)) : rawUsd;
 
   const payment: Payment = {
     payment_id: `p${seq}`,

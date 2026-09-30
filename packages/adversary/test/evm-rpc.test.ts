@@ -270,6 +270,35 @@ describe("mock EVM JSON-RPC (ADR-013)", () => {
     expect(payment?.amount_atomic).toBe("4242");
   });
 
+  it("caps an unlimited approve() at the modelled wallet balance (ADR-015)", async () => {
+    load("approve-cap");
+    const account = privateKeyToAccount(AGENT_SECRET);
+    const chainId = Number(/^eip155:(\d+)$/.exec(CHAIN_DEFAULTS.evm.network)?.[1]);
+    const viemChain = {
+      id: chainId,
+      name: "x402-redteam-test",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [`${adversary.baseUrl}/evm-rpc`] } },
+    };
+    const walletClient = createWalletClient({
+      account,
+      chain: viemChain,
+      transport: http(`${adversary.baseUrl}/evm-rpc`),
+    });
+    const spender = "0x0000000000000000000000000000000000000005" as const;
+    await walletClient.writeContract({
+      address: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, 2n ** 256n - 1n],
+    });
+    const approval = adversary
+      .drain()
+      .payments.find((p) => p.to?.toLowerCase() === spender.toLowerCase());
+    expect(approval?.scheme).toBe("approve");
+    expect(approval?.amount_usd).toBe(100);
+  });
+
   it("L3 (code review): the receipt synthesizes an ERC-20 Transfer log for a transfer leg", async () => {
     load("receipt-log");
     const account = privateKeyToAccount(AGENT_SECRET);
