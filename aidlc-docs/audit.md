@@ -22,3 +22,7 @@
 - U3 merged (1e9a023). Deps: @solana-program/token 0.17.0, token-2022 0.19.0.
 - **SDK finding:** `registerExactSvmScheme` in @x402/svm@2.28.0 drops `schemeOptions`/rpcUrl (always `new ExactSvmScheme(config.signer)`); verified in source. Agents must `client.register("solana:*", new ExactSvmScheme(signer, {rpcUrl}))`. Candidate upstream issue (not filed).
 - Decisions on U3 open points: v1 EVM falls back to chain-default domain (accepted); direct transfers use scheme "transfer" (accepted); `no_transfer_instruction` reason accepted; prose attribution matches `to` only — application-design §4 updated. Opus hoisted `FIXED_BLOCKHASH` into schema/chains.ts; capture uses it. 113/113 tests.
+- U2 merged (db4a7b4). Real @x402/svm client needs exactly `getAccountInfo` (mint) + `getLatestBlockhash`; mock serves superset. biome `includes` removed (it matched zero files inside worktrees, whose paths contain .claude/); .gitignore covers .claude/.
+- Decision on merge() collapsing identical header resubmissions: INTENDED — the same EIP-3009 authorization / Solana message can settle at most once, so it is one payment. The replay category is measured via re-issued challenges paid with new nonces (attribution exhaustion rule).
+- **G2 integration (Opus):** adversary integration suite runs against both stub and real capture, on both chains, with the real @x402 clients, offline. Workspace: lint clean (86 files), typecheck clean, 145/145 tests. Worktrees removed.
+- **Gate G2:** awaiting approval.
