@@ -79,7 +79,11 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
     if (state.chain === "svm") {
       knownMints.add(rendered.ctx.usdc);
       for (const r of rendered.routes) {
-        if (r.challenge?.asset) knownMints.add(r.challenge.asset);
+        // U11 note: RenderedChallenge carries `accepts[]` (accepts_ordering) instead of
+        // a single `asset` field - every entry's asset needs a mint the SDK can fetch.
+        for (const accept of r.challenge?.accepts ?? []) {
+          if (accept.asset) knownMints.add(accept.asset);
+        }
       }
     }
 

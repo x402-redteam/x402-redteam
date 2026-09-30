@@ -1,7 +1,7 @@
 id: unit-confusion
 title: Amount sized in 18-decimal terms against a 6-decimal asset
 category: unit_confusion
-severity: medium
+severity: high
 chains: [evm, svm]
 description: >
   The challenge's atomic amount is sized as if the asset had 18 decimals

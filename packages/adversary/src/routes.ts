@@ -4,15 +4,15 @@ import {
   encodePaymentResponseHeader,
 } from "@x402/core/http";
 import type { Network, PaymentPayload, SettleResponse } from "@x402/core/types";
-import { atomicToUsd, type Payment, type RequestLog } from "@x402-redteam/schema";
+import type { RequestLog } from "@x402-redteam/schema";
 import type { Context, Hono } from "hono";
-import { buildPaymentRequired, buildRequirements } from "./challenge.js";
+import { buildPaymentRequired, buildRequirementsList } from "./challenge.js";
 import { fakeTransactionHash } from "./fake-hash.js";
+import { recordDecodedLegs } from "./record.js";
 import { findRoute, type RenderedRoute, type RenderedScenario } from "./render.js";
 import type { Shared } from "./shared.js";
 import type { RunState } from "./state.js";
 
-const AMOUNT_DECIMALS = 6;
 const HOST_PREFIX = "/_host/";
 const DEFAULT_HOST = "provider.test";
 
@@ -89,23 +89,37 @@ async function serveChallenge(
   const runtime = state.runtimeFor(route.route_key);
 
   const issueChallenge = (paid: boolean): Response => {
-    const requirements = buildRequirements(route, state.chain, shared.seed);
-    const paymentRequired = buildPaymentRequired(absoluteUrl, route, requirements);
+    const requirementsList = buildRequirementsList(
+      route,
+      state.chain,
+      shared.seed,
+      state.scenario.assets,
+    );
+    const paymentRequired = buildPaymentRequired(absoluteUrl, route, requirementsList);
     runtime.challengeCounter += 1;
     const challenge_id = `${route.route_key}#${runtime.challengeCounter}`;
     state.challenges.push({
       challenge_id,
       route_key: route.route_key,
-      requirements,
+      // Kept for v1 readers; the first entry, per application-design.md §4 "v2".
+      requirements: requirementsList[0] as (typeof requirementsList)[number],
       // v2 (accepts_ordering, application-design.md §4 "v2"): every entry that went on
-      // the wire, in order. Part A only threads the type through; a route still ever
-      // issues a single-option challenge until U11 wires up ChallengeSpec.accepts here.
-      accepts: [requirements],
+      // the wire, in order.
+      accepts: requirementsList,
       seq: state.nextSeq(),
     });
     c.header("PAYMENT-REQUIRED", encodePaymentRequiredHeader(paymentRequired));
     logRequest(state, { method, host, path, status: 402, paid });
-    return c.json({ x402Version: 2, error: "payment_required", accepts: [requirements] }, 402);
+    // v2 (challenge_injection): a scenario-supplied body_json replaces the default 402
+    // body wholesale and, like any other page-visible text, is searched by prose
+    // attribution (application-design.md §4 "v2" - the adversary pushes it into pageBodies).
+    const bodyJson =
+      route.challenge?.body_json ??
+      ({ x402Version: 2, error: "payment_required", accepts: requirementsList } as const);
+    if (route.challenge?.body_json !== undefined) {
+      state.pageBodies.push(JSON.stringify(bodyJson));
+    }
+    return c.json(bodyJson, 402);
   };
 
   const headerValue = c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT");
@@ -129,46 +143,57 @@ async function serveChallenge(
     return c.json({ error: "invalid_payment" }, 400);
   }
 
-  const attribution = shared.capture.attribute(decoded, {
-    challenges: state.challenges,
-    pageBodies: state.pageBodies,
-    prior: state.payments,
-  });
-  const seq = state.nextSeq();
-  const payment: Payment = {
-    payment_id: `p${seq}`,
-    seq,
+  // Coordinator addition (H1 parity with the rpc path in solana-rpc.ts): a single
+  // header submission can carry more than one value-moving leg (e.g. an SVM
+  // transaction with two TransferChecked instructions - one matching this route's
+  // challenge, one paying an attacker) - record every leg as its own Payment, not just
+  // the primary one, so a hidden second leg is still scored.
+  const payments = recordDecodedLegs(state, shared.capture, decoded, {
     capture: "header",
-    chain: state.chain,
-    network: decoded.network,
-    scheme: decoded.scheme,
-    asset: decoded.asset,
-    from: decoded.from,
-    to: decoded.to,
-    amount_atomic: decoded.amount_atomic,
-    amount_usd: atomicToUsd(decoded.amount_atomic, AMOUNT_DECIMALS),
-    route_key: route.route_key,
     host,
-    dedupe_key: decoded.dedupe_key,
-    instruction_source: attribution.instruction_source,
-    challenge_id: attribution.challenge_id,
-    replay: attribution.replay,
-    valid: decoded.valid,
-    raw: decoded.raw,
-  };
-  state.payments = shared.capture.merge(state.payments, payment);
+    route_key: route.route_key,
+  });
+
+  // The challenge this route most recently issued (the one this request is presumably
+  // paying for) - `runtime.challengeCounter` already reflects the last `issueChallenge`
+  // call for this route_key, since it isn't bumped again until the next one.
+  const currentChallengeId = `${route.route_key}#${runtime.challengeCounter}`;
+  // Delivery depends specifically on the leg that satisfies *this* challenge, not
+  // merely on whether the submission decoded validly - a submission can be a validly
+  // signed, on-chain-valid transaction that also happens to bundle in an unrelated
+  // (e.g. attacker-directed) leg alongside the legitimate one.
+  const matchingLeg = payments.find((p) => p.challenge_id === currentChallengeId);
+
+  // No leg satisfies this specific challenge (none matched it at all, or the one that
+  // did fails validation - e.g. a bad signature) - the resource is never delivered,
+  // and nothing behaves as though the route were paid, regardless of `route.behaviour`.
+  // Every leg (including a valid-but-non-matching one, e.g. an attacker's) is still
+  // recorded above and scored on its own merits.
+  if (!matchingLeg?.valid) {
+    const fallback = payments[0];
+    const settleResponse: SettleResponse = {
+      success: false,
+      errorReason: "invalid_payment",
+      transaction: "",
+      network: (fallback?.network ?? decoded.network) as Network,
+      payer: fallback?.from ?? decoded.from,
+    };
+    c.header("PAYMENT-RESPONSE", encodePaymentResponseHeader(settleResponse));
+    logRequest(state, { method, host, path, status: 402, paid: false });
+    return c.json({ error: "invalid_payment" }, 402);
+  }
 
   const deliver = (): Response => {
     runtime.deliveredOnce = true;
     state.delivered = true;
     const body = route.delivered_body ?? route.page ?? "ok";
     state.pageBodies.push(body);
-    const txHash = fakeTransactionHash(state.chain, state.run_id, payment.seq);
+    const txHash = fakeTransactionHash(state.chain, state.run_id, matchingLeg.seq);
     const settleResponse: SettleResponse = {
       success: true,
       transaction: txHash,
-      network: decoded.network as Network,
-      payer: decoded.from,
+      network: matchingLeg.network as Network,
+      payer: matchingLeg.from,
     };
     c.header("PAYMENT-RESPONSE", encodePaymentResponseHeader(settleResponse));
     logRequest(state, { method, host, path, status: 200, paid: true });
@@ -178,9 +203,9 @@ async function serveChallenge(
   const noDelivery = (): Response => {
     const settleResponse: SettleResponse = {
       success: true,
-      transaction: fakeTransactionHash(state.chain, state.run_id, payment.seq),
-      network: decoded.network as Network,
-      payer: decoded.from,
+      transaction: fakeTransactionHash(state.chain, state.run_id, matchingLeg.seq),
+      network: matchingLeg.network as Network,
+      payer: matchingLeg.from,
     };
     c.header("PAYMENT-RESPONSE", encodePaymentResponseHeader(settleResponse));
     logRequest(state, { method, host, path, status: 200, paid: true });

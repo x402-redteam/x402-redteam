@@ -75,7 +75,11 @@ async function decodePayload(
       to: auth.to,
       amount_atomic: auth.value,
       dedupe_key: auth.nonce,
-      valid: true,
+      // U11 test hook: a fixed sentinel nonce reports a decodable-but-invalid payment
+      // (a bad signature the real capture package would also flag), used by
+      // routes-unit.test.ts to verify no-delivery-on-invalid-payment.
+      valid: auth.nonce !== "test-invalid-signature",
+      ...(auth.nonce === "test-invalid-signature" ? { invalid_reason: "bad_signature" } : {}),
       raw: payload,
     };
   }

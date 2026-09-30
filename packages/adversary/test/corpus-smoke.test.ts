@@ -4,21 +4,23 @@ import { decodePaymentRequiredHeader } from "@x402/core/http";
 import type { PaymentRequired } from "@x402/core/types";
 import { type Chain, loadCorpus } from "@x402-redteam/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildRequirements } from "../src/challenge.js";
+import { buildRequirementsList } from "../src/challenge.js";
 import { type Adversary, createAdversary } from "../src/index.js";
 import { renderScenario } from "../src/render.js";
 import { makeCapture } from "./stub-capture.js";
 
 /**
- * U6 note: loads the *real* corpus (not a fixture) into a live adversary
- * server, for both chains, and checks that every declared route serves
- * exactly what its YAML says before any payment is made:
+ * U6 note (U11 v2: accepts[]/resource_url/body_json-aware): loads the *real* corpus
+ * (not a fixture) into a live adversary server, for both chains, and checks that every
+ * declared route serves exactly what its YAML says before any payment is made:
  *  - a free page -> 200 with the rendered page body
  *  - a redirect -> 302 with the rendered target as Location
- *  - a paywalled route -> 402 with a decodable PAYMENT-REQUIRED whose
- *    accepts[0] (network/asset/amount/payTo/extra) matches what
- *    `challengeForChain` + the chain defaults resolve to, per
- *    application-design.md §5.
+ *  - a paywalled route -> 402 with a decodable PAYMENT-REQUIRED whose full `accepts[]`
+ *    list (network/asset/amount/payTo/extra, in order) matches what
+ *    `buildRequirementsList` + the chain defaults resolve to, `resource.url` matches
+ *    the route's `resource_url` override (else the real request URL), and the JSON body
+ *    matches the route's `body_json` override (else the v1 default shape) - per
+ *    application-design.md §5 "v2".
  *
  * This does not simulate an agent (no payments are made here) - U5's own
  * reference-agent suite covers pay/deliver/replay behavior. This test's job
@@ -47,8 +49,8 @@ describe("corpus smoke (real corpus/*.yaml against a live adversary)", () => {
     await adversary.close();
   });
 
-  it("loaded the 10 attack scenarios plus 4 controls", () => {
-    expect(scenarios).toHaveLength(14);
+  it("loaded every corpus v2 scenario (2+ variants x 10 v1 categories + 6 new classes + 4 controls)", () => {
+    expect(scenarios.length).toBeGreaterThanOrEqual(30);
   });
 
   for (const scenario of scenarios) {
@@ -74,15 +76,18 @@ describe("corpus smoke (real corpus/*.yaml against a live adversary)", () => {
             const header = res.headers.get("PAYMENT-REQUIRED");
             expect(header).toBeTruthy();
             const decoded: PaymentRequired = decodePaymentRequiredHeader(header as string);
-            const accepted = decoded.accepts[0];
-            const expectedRequirements = buildRequirements(route, chain, SEED);
+            const expectedList = buildRequirementsList(route, chain, SEED, scenario.assets);
 
-            expect(accepted).toBeDefined();
-            expect(accepted?.network).toBe(expectedRequirements.network);
-            expect(accepted?.asset).toBe(expectedRequirements.asset);
-            expect(accepted?.amount).toBe(expectedRequirements.amount);
-            expect(accepted?.payTo).toBe(expectedRequirements.payTo);
-            expect(accepted).toEqual(expectedRequirements);
+            expect(decoded.accepts).toEqual(expectedList);
+            expect(decoded.resource.url).toBe(route.challenge.resource_url ?? url);
+
+            const bodyJson = (await res.clone().json()) as unknown;
+            const expectedBody = route.challenge.body_json ?? {
+              x402Version: 2,
+              error: "payment_required",
+              accepts: expectedList,
+            };
+            expect(bodyJson).toEqual(expectedBody);
             continue;
           }
 

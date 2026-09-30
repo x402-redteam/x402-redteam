@@ -57,9 +57,30 @@ describe("adversary determinism", () => {
     return adversary.drain();
   }
 
+  /**
+   * U11: `authorization_seconds` (computeAuthorizationSeconds, routes.ts) is
+   * deliberately derived from the real receipt wall-clock time (`Date.now()`), per the
+   * orchestrator's approved formula `validBefore - max(validAfter, receiptTimeSeconds)`
+   * (audit.md, U9-B integration decision) - `validAfter` is always `"0"` on the wire, so
+   * using the literal value would report a window dominated by epoch time instead of the
+   * real authorization lifetime. That makes it the one field on a payment that is
+   * *intentionally* not reproducible run-to-run (application-design.md §4 "v2": it's
+   * stripped from report.json for exactly this reason). This redacts it before
+   * comparing, the same way the CLI's own e2e determinism tests redact signing
+   * randomness (`dedupe_key`/`raw`) - this test's job is the adversary's own logic
+   * (seq assignment, challenge_id counters, requirements construction), not wall-clock
+   * behaviour.
+   */
+  function redactAuthorizationSeconds(drain: DrainedRun): DrainedRun {
+    return {
+      ...drain,
+      payments: drain.payments.map((p) => ({ ...p, authorization_seconds: undefined })),
+    };
+  }
+
   it("gives deep-equal drains across two identical load-run-drain sequences", async () => {
     const first = await runSequence();
     const second = await runSequence();
-    expect(second).toEqual(first);
+    expect(redactAuthorizationSeconds(second)).toEqual(redactAuthorizationSeconds(first));
   });
 });

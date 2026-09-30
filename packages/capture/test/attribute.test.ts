@@ -6,12 +6,17 @@ import type {
 } from "@x402-redteam/schema";
 import { describe, expect, it } from "vitest";
 import { attribute } from "../src/attribute.js";
+import { merge } from "../src/merge.js";
 
 interface ChallengeOverrides {
   challenge_id?: string;
   route_key?: string;
   seq?: number;
   requirements?: Partial<IssuedChallenge["requirements"]>;
+  /** v2 (accepts_ordering): overrides the full accepts[] list directly, e.g. to place
+   * the matching entry somewhere other than index 0. When unset, defaults to a
+   * 1-element list containing `requirements` (the v1-equivalent shape). */
+  accepts?: IssuedChallenge["requirements"][];
 }
 
 function challenge(overrides: ChallengeOverrides = {}): IssuedChallenge {
@@ -31,9 +36,9 @@ function challenge(overrides: ChallengeOverrides = {}): IssuedChallenge {
     seq: overrides.seq ?? 0,
     requirements,
     // v2 (application-design.md §4 "v2"): IssuedChallenge.accepts is now required.
-    // attribute() (U11, unmodified in this Part A ripple fix) still only reads
-    // `requirements`, so a 1-element list matching it is the correct v1-equivalent shape.
-    accepts: [requirements],
+    // A 1-element list matching `requirements` is the correct v1-equivalent shape
+    // unless the test overrides it directly (accepts_ordering).
+    accepts: overrides.accepts ?? [requirements],
   };
 }
 
@@ -163,6 +168,63 @@ describe("attribute", () => {
     expect(result).toEqual({ instruction_source: "none", challenge_id: undefined, replay: true });
   });
 
+  // U10 re-review: the replay flag was order-dependent - an rpc-layer twin (not just a
+  // shim-layer one) must also be excluded from `prior`, whichever order the two layers
+  // arrive in, or the merged "header+rpc" payment wrongly reports replay: true.
+  it("does not flag replay against its own prior rpc-only capture, rpc arriving before header", () => {
+    const c = challenge();
+    const p = payment({ dedupe_key: "evm:0xrpcfirst" });
+    const rpcTwin = priorPayment({
+      capture: "rpc",
+      dedupe_key: "evm:0xrpcfirst",
+      challenge_id: c.challenge_id,
+    });
+    const result = attribute(p, ctx({ challenges: [c], prior: [rpcTwin] }));
+    expect(result).toEqual({
+      instruction_source: "header",
+      challenge_id: c.challenge_id,
+      replay: false,
+    });
+  });
+
+  /**
+   * Mirrors the rpc-first case above with the layers reversed, but at the *merged*
+   * result rather than a single attribute() call: for header-then-rpc, `attribute()`'s
+   * own raw result for the second (rpc) call can still say `replay: true` in isolation
+   * (it doesn't know its own capture layer, so it can't tell "my own twin, different
+   * layer" apart from "a genuine same-layer duplicate" purely from `prior`) - what
+   * matters is that `merge()` (capture/src/merge.ts) always lets the `header`-layer
+   * side win ("header" outranks "rpc"/"shim", `LAYER_RANK`), and the header side's own
+   * `replay` was correctly computed as `false` back when *it* was attributed (prior was
+   * empty). So the final, merged payment - the one that actually reaches report.json -
+   * is `replay: false` either way. This simulates the real record-then-merge pipeline
+   * (attribute -> build a Payment -> merge) for both single steps, the same shape
+   * `record.ts`'s `recordDecoded` uses.
+   */
+  it("the final merged payment is replay:false for header-then-rpc, even though rpc's own attribute() call can't tell twin from duplicate", () => {
+    const c = challenge();
+    const dedupe_key = "evm:0xheaderfirst";
+
+    function recordAndMerge(existing: Payment[], capture: Payment["capture"]): Payment[] {
+      const decoded = payment({ dedupe_key });
+      const attribution = attribute(decoded, ctx({ challenges: [c], prior: existing }));
+      const incoming: Payment = {
+        ...priorPayment({ dedupe_key, capture }),
+        ...attribution,
+      };
+      return merge(existing, incoming);
+    }
+
+    let payments: Payment[] = [];
+    payments = recordAndMerge(payments, "header"); // arrives first
+    payments = recordAndMerge(payments, "rpc"); // arrives second, same dedupe_key
+
+    expect(payments).toHaveLength(1);
+    expect(payments[0]?.capture).toBe("header+rpc");
+    expect(payments[0]?.replay).toBe(false);
+    expect(payments[0]?.challenge_id).toBe(c.challenge_id);
+  });
+
   it("matches EVM asset and payTo case-insensitively", () => {
     const c = challenge({
       requirements: {
@@ -173,5 +235,56 @@ describe("attribute", () => {
     const result = attribute(payment(), ctx({ challenges: [c] }));
     expect(result.instruction_source).toBe("header");
     expect(result.challenge_id).toBe(c.challenge_id);
+  });
+
+  // U11 (accepts_ordering, application-design.md §4 "v2"): a payment matches a
+  // challenge via *any* accepts[] entry, not just accepts[0] (`requirements`).
+  it("attributes a header match against accepts[1] when accepts[0] doesn't match", () => {
+    const mainnetOption: IssuedChallenge["requirements"] = {
+      scheme: "exact",
+      network: "eip155:8453",
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      amount: "1000",
+      payTo: "0xAbCdEf0000000000000000000000000000001234",
+      maxTimeoutSeconds: 60,
+      extra: {},
+    };
+    const testnetOption: IssuedChallenge["requirements"] = {
+      scheme: "exact",
+      network: "eip155:84532",
+      asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      amount: "1000",
+      payTo: "0xAbCdEf0000000000000000000000000000001234",
+      maxTimeoutSeconds: 60,
+      extra: {},
+    };
+    const c = challenge({ accepts: [mainnetOption, testnetOption] });
+    // `payment()`'s default network/asset match `testnetOption` (accepts[1]), not
+    // `mainnetOption` (accepts[0]).
+    const result = attribute(payment(), ctx({ challenges: [c] }));
+    expect(result).toEqual({
+      instruction_source: "header",
+      challenge_id: c.challenge_id,
+      replay: false,
+    });
+  });
+
+  // Review 1, m2: base58 svm addresses are case-sensitive, so the prose match must be
+  // exact on svm, unlike evm's case-insensitive checksum/lowercase match.
+  it("matches svm prose exactly (case-sensitive), unlike evm's case-insensitive match", () => {
+    const svmPayment = payment({
+      chain: "svm",
+      to: "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+    });
+    const lowerCasedInBody = "9xqewvg816bux9epjhmat23yvvm2zwbrrpzb9pusvfin";
+
+    const noMatch = attribute(svmPayment, ctx({ pageBodies: [`pay $1 to ${lowerCasedInBody}`] }));
+    expect(noMatch.instruction_source).toBe("none");
+
+    const exactMatch = attribute(
+      svmPayment,
+      ctx({ pageBodies: ["pay $1 to 9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"] }),
+    );
+    expect(exactMatch.instruction_source).toBe("prose");
   });
 });

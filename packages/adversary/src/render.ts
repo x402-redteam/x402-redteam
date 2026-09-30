@@ -1,13 +1,37 @@
 import {
+  acceptsForChain,
   CHAIN_DEFAULTS,
   type Chain,
   canaries,
-  challengeForChain,
   type RenderContext,
   type Route,
   render,
+  renderJsonStrings,
   type Scenario,
 } from "@x402-redteam/schema";
+
+/** One resolved, rendered `accepts[]` entry (v1's single-option challenge resolves to a
+ * 1-element list - see `acceptsForChain()` in schema). */
+export interface RenderedAccept {
+  amount_usd?: number;
+  amount_atomic?: string;
+  pay_to: string;
+  network?: string;
+  asset?: string;
+  scheme: string;
+  max_timeout_seconds: number;
+  extra?: Record<string, unknown>;
+}
+
+/** A route's challenge with every templated field resolved, per application-design.md
+ * §3 "v2": an ordered `accepts[]` (accepts_ordering), an optional `resource_url`
+ * override (resource_spoof) and an optional deep-rendered `body_json` (challenge_injection). */
+export interface RenderedChallenge {
+  accepts: RenderedAccept[];
+  resource_url?: string;
+  body_json?: unknown;
+  description?: string;
+}
 
 /** A route with every templated field resolved for one (scenario, chain, baseUrl) load. */
 export interface RenderedRoute {
@@ -17,17 +41,7 @@ export interface RenderedRoute {
   page?: string;
   content_type: string;
   redirect?: string;
-  challenge?: {
-    amount_usd?: number;
-    amount_atomic?: string;
-    pay_to: string;
-    network?: string;
-    asset?: string;
-    scheme: string;
-    max_timeout_seconds: number;
-    extra?: Record<string, unknown>;
-    description?: string;
-  };
+  challenge?: RenderedChallenge;
   behaviour: "normal" | "402_forever" | "no_delivery" | "replay";
   delivered_body?: string;
   route_key: string;
@@ -50,6 +64,22 @@ function collectCanaryNames(text: string, out: Set<string>): void {
   }
 }
 
+/** Walks an arbitrary JSON-like value (an unrendered `body_json`) collecting every
+ * `{{canary.NAME}}` reference in its string leaves, mirroring schema/load.ts's own
+ * body_json handling (a separate, parallel implementation - this package doesn't
+ * depend on schema's internal lint helpers). */
+function collectCanaryNamesInJson(value: unknown, out: Set<string>): void {
+  if (typeof value === "string") {
+    collectCanaryNames(value, out);
+  } else if (Array.isArray(value)) {
+    for (const v of value) collectCanaryNamesInJson(v, out);
+  } else if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectCanaryNamesInJson(v, out);
+    }
+  }
+}
+
 function collectScenarioCanaryNames(scenario: Scenario): string[] {
   const names = new Set<string>();
   collectCanaryNames(scenario.task.prompt, names);
@@ -60,8 +90,21 @@ function collectScenarioCanaryNames(scenario: Scenario): string[] {
     if (route.challenge?.pay_to !== undefined) collectCanaryNames(route.challenge.pay_to, names);
     if (route.challenge?.description !== undefined)
       collectCanaryNames(route.challenge.description, names);
+    // v2 (resource_spoof): templated, may itself embed a canary reference.
+    if (route.challenge?.resource_url !== undefined)
+      collectCanaryNames(route.challenge.resource_url, names);
+    // v2 (challenge_injection): every string leaf, deep.
+    if (route.challenge?.body_json !== undefined)
+      collectCanaryNamesInJson(route.challenge.body_json, names);
     for (const override of Object.values(route.challenge?.per_chain ?? {})) {
       if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
+    }
+    // v2 (accepts_ordering): each accepts[] entry's own pay_to and per_chain overrides.
+    for (const accept of route.challenge?.accepts ?? []) {
+      collectCanaryNames(accept.pay_to, names);
+      for (const override of Object.values(accept.per_chain ?? {})) {
+        if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
+      }
     }
   }
   if (scenario.expected.recipient !== undefined)
@@ -109,26 +152,29 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
   if (route.delivered_body !== undefined)
     rendered.delivered_body = render(route.delivered_body, ctx);
   if (route.challenge !== undefined) {
-    const resolved = challengeForChain(route.challenge, chain);
-    // v2 (application-design.md §3 "v2"): ChallengeSpec.pay_to is now optional (a
-    // challenge may set `accepts` instead) - this render path is v1-only until U11
-    // wires up accepts-aware rendering, and every v1 scenario always sets pay_to.
-    if (resolved.pay_to === undefined) {
-      throw new Error(
-        `renderRoute: route "${rendered.route_key}" challenge has no pay_to (accepts-based challenges are not yet rendered here)`,
-      );
-    }
+    const challenge = route.challenge;
+    // v2 (accepts_ordering): resolves both the v1 single-option shape and v2's ordered
+    // `accepts[]` to the same list - a v1 spec always resolves to one element.
+    const accepts: RenderedAccept[] = acceptsForChain(challenge, chain).map((accept) => ({
+      amount_usd: accept.amount_usd,
+      amount_atomic: accept.amount_atomic,
+      pay_to: render(accept.pay_to, ctx),
+      network: accept.network,
+      asset: accept.asset,
+      scheme: accept.scheme,
+      max_timeout_seconds: accept.max_timeout_seconds,
+      extra: accept.extra,
+    }));
     rendered.challenge = {
-      amount_usd: resolved.amount_usd,
-      amount_atomic: resolved.amount_atomic,
-      pay_to: render(resolved.pay_to, ctx),
-      network: resolved.network,
-      asset: resolved.asset,
-      scheme: resolved.scheme,
-      max_timeout_seconds: resolved.max_timeout_seconds,
-      extra: resolved.extra,
+      accepts,
+      // v2 (resource_spoof): overrides PaymentRequired.resource.url.
+      resource_url:
+        challenge.resource_url !== undefined ? render(challenge.resource_url, ctx) : undefined,
+      // v2 (challenge_injection): deep-rendered; every string leaf is templated.
+      body_json:
+        challenge.body_json !== undefined ? renderJsonStrings(challenge.body_json, ctx) : undefined,
       description:
-        resolved.description !== undefined ? render(resolved.description, ctx) : undefined,
+        challenge.description !== undefined ? render(challenge.description, ctx) : undefined,
     };
   }
   return rendered;
@@ -152,7 +198,8 @@ export function renderScenario(
     owners.add(ctx.canary(name));
   }
   for (const route of routes) {
-    if (route.challenge) owners.add(route.challenge.pay_to);
+    // v2 (accepts_ordering): every entry's payTo, not just a single one.
+    for (const accept of route.challenge?.accepts ?? []) owners.add(accept.pay_to);
   }
   return { routes, byKey, ctx, knownOwners: [...owners] };
 }
