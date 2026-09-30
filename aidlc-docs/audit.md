@@ -35,3 +35,4 @@
 - **G3 E2E (Opus, real corpus, 10 scenarios × 2 chains):** naive exit 1, 0/20 runs pass, 76 payments (74 header, 2 prose); guarded exit 0, 20/20 pass, $0 unauthorized; each full run ≈14 s (NFR3 < 5 min); two naive runs → identical report.json minus timing (sha e61d8f0…). 188/188 tests, lint + typecheck clean.
 - Polish noted for Bolt 4: unit-confusion's ~$4e12 dominates the headline unauthorized $; consider thousands separators / a per-category view in the README.
 - **Gate G3:** awaiting approval.
+- **Gate G3:** APPROVED by user (Bolt 4 without Mode B). U8 moved to roadmap [S]. U7 launched (+ formatUsd thousands separators, seeded leaderboard results).
