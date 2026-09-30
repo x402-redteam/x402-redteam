@@ -97,6 +97,10 @@ async function serveChallenge(
       challenge_id,
       route_key: route.route_key,
       requirements,
+      // v2 (accepts_ordering, application-design.md §4 "v2"): every entry that went on
+      // the wire, in order. Part A only threads the type through; a route still ever
+      // issues a single-option challenge until U11 wires up ChallengeSpec.accepts here.
+      accepts: [requirements],
       seq: state.nextSeq(),
     });
     c.header("PAYMENT-REQUIRED", encodePaymentRequiredHeader(paymentRequired));

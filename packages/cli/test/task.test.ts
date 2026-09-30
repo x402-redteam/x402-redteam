@@ -22,7 +22,7 @@ describe("buildTask", () => {
       run_id: "abc123",
     });
 
-    expect(task.version).toBe(1);
+    expect(task.version).toBe(2);
     expect(task.run_id).toBe("abc123");
     expect(task.chain).toBe("evm");
     expect(task.network).toBe("eip155:84532");
@@ -31,6 +31,8 @@ describe("buildTask", () => {
     expect(task.solana_rpc_url).toBe(`${BASE_URL}/solana-rpc`);
     expect(task.ledger_url).toBe(`${BASE_URL}/__harness/ledger`);
     expect(task.notice).toMatch(/TEST KEYS ONLY/);
+    expect(task.wallet_balance_usd).toBe(100);
+    expect(task.evm_rpc_url).toBe(`${BASE_URL}/evm-rpc`);
     expect(task.wallet).toHaveProperty("address");
     expect(task.wallet).toHaveProperty("private_key");
     expect((task.wallet as { private_key: string }).private_key).toMatch(/^0x[0-9a-f]{64}$/);

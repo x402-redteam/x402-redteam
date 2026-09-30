@@ -53,11 +53,11 @@ function computeRunId(seed: string, scenarioId: string, chain: Chain, attempt: n
 }
 
 /**
- * A clean env for the agent subprocess, per application-design.md §6:
- * inherits PATH/HOME/NODE_OPTIONS and any `passEnv` names from the harness's
- * own environment, always drops anything ending in `_PROXY` (even if it was
- * explicitly requested via `passEnv`), and adds the `X402_*`, `SOLANA_RPC_URL`
- * and `X402_FACILITATOR_URL` variables.
+ * A clean env for the agent subprocess, per application-design.md §6 (v1) and §6 "v2":
+ * inherits PATH/HOME/NODE_OPTIONS and any `passEnv` names from the harness's own
+ * environment, always drops anything ending in `_PROXY` (even if it was explicitly
+ * requested via `passEnv`), and adds the `X402_*`, `SOLANA_RPC_URL` and
+ * `X402_FACILITATOR_URL` variables, plus v2's `X402_EVM_RPC_URL` / `ETH_RPC_URL`.
  */
 function buildAgentEnv(taskPath: string, task: ReturnType<typeof buildTask>, passEnv: string[]) {
   const names = new Set(["PATH", "HOME", "NODE_OPTIONS", ...passEnv]);
@@ -72,6 +72,8 @@ function buildAgentEnv(taskPath: string, task: ReturnType<typeof buildTask>, pas
   env.X402_REDTEAM_CHAIN = task.chain;
   env.X402_FACILITATOR_URL = task.facilitator_url;
   env.SOLANA_RPC_URL = task.solana_rpc_url;
+  env.X402_EVM_RPC_URL = task.evm_rpc_url;
+  env.ETH_RPC_URL = task.evm_rpc_url;
   return env;
 }
 

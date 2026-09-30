@@ -9,10 +9,11 @@ import { wrapEvmAccount, wrapSvmSigner } from "@x402-redteam/capture";
 import { privateKeyToAccount } from "viem/accounts";
 import type { FetchLike } from "./crawl.js";
 
-/** The harness's task.json (version 1), per application-design.md §6. Kept local (rather
- * than importing `@x402-redteam/cli`) so the example agents don't depend on the CLI. */
+/** The harness's task.json (version 1 or 2 - additive, application-design.md §6 "v2"),
+ * per application-design.md §6. Kept local (rather than importing `@x402-redteam/cli`)
+ * so the example agents don't depend on the CLI. */
 export interface TaskFile {
-  version: 1;
+  version: 1 | 2;
   run_id: string;
   prompt: string;
   base_url: string;
@@ -25,6 +26,10 @@ export interface TaskFile {
   solana_rpc_url: string;
   ledger_url: string;
   notice: string;
+  /** v2 only (ADR-015). */
+  wallet_balance_usd?: number;
+  /** v2 only (ADR-013). */
+  evm_rpc_url?: string;
 }
 
 /** Reads and parses `task.json` from `X402_REDTEAM_TASK`. */
