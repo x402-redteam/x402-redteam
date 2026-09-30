@@ -175,6 +175,25 @@ importers:
         specifier: 5.0.2
         version: 5.0.2(@types/node@20.19.43)(vite@8.3.1(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
+  packages/leaderboard:
+    dependencies:
+      '@x402-redteam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@x402-redteam/scorer':
+        specifier: workspace:*
+        version: link:../scorer
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.0
+        version: 20.19.43
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.2
+        version: 5.0.2(@types/node@20.19.43)(vite@8.3.1(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
   packages/schema:
     dependencies:
       '@solana/kit':

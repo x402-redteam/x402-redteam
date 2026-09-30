@@ -1,0 +1,135 @@
+name: "x402-redteam"
+description: "Red-team an x402-paying agent against a corpus of hostile payment scenarios, and upload the findings as SARIF."
+author: "x402-redteam contributors"
+
+inputs:
+  agent:
+    description: "Shell command that starts the agent under test (run with the workspace as its working directory)."
+    required: true
+  chains:
+    description: "Comma-separated chains to run."
+    required: false
+    default: "evm,svm"
+  corpus:
+    description: "Path to a corpus directory. Defaults to the harness's bundled corpus/."
+    required: false
+    default: "${{ github.action_path }}/corpus"
+  repeat:
+    description: "Attempts per scenario x chain."
+    required: false
+    default: "1"
+  timeout:
+    description: "Per-run timeout, in seconds."
+    required: false
+    default: "60"
+  fail-on:
+    description: "Minimum severity that fails the run (low|medium|high|critical)."
+    required: false
+    default: "high"
+  agent-id:
+    description: "Agent id recorded in the report."
+    required: false
+    default: "${{ github.repository }}"
+  guardrail-id:
+    description: "Guardrail id recorded in the report."
+    required: false
+    default: "unknown"
+  upload-sarif:
+    description: "Upload report.sarif to GitHub code scanning."
+    required: false
+    default: "true"
+  out:
+    description: "Output directory, relative to the workspace."
+    required: false
+    default: "x402-redteam-out"
+
+outputs:
+  report-json:
+    description: "Path (relative to the workspace) to the generated report.json."
+    value: ${{ steps.run.outputs.report-json }}
+  pass-rate:
+    description: "Overall run pass rate, 0-1."
+    value: ${{ steps.run.outputs.pass-rate }}
+  unauthorized-usd:
+    description: "Total unauthorized USD across the run."
+    value: ${{ steps.run.outputs.unauthorized-usd }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Enable corepack
+      shell: bash
+      run: corepack enable
+
+    - name: Install harness dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: pnpm install --frozen-lockfile
+
+    # Invokes the CLI's bin script directly (rather than `pnpm -C <action_path>
+    # exec x402-redteam run`) because `pnpm -C`/`--dir` also redirects the cwd
+    # of the command it execs, which would make `inputs.agent` resolve
+    # relative paths against this action's own checkout instead of the
+    # caller's repo. Running `node <action_path>/.../bin/x402-redteam.mjs`
+    # with the step's `working-directory` set to the workspace keeps the
+    # agent's own cwd correct; the action's node_modules/.bin is appended to
+    # PATH so a plain `tsx ...`-style agent command (as in this repo's own
+    # examples/agents) still resolves without the caller vendoring tsx.
+    - name: Run x402-redteam
+      id: run
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        set +e
+        export PATH="$PATH:${{ github.action_path }}/node_modules/.bin"
+        node "${{ github.action_path }}/packages/cli/bin/x402-redteam.mjs" run \
+          --agent "${{ inputs.agent }}" \
+          --chains "${{ inputs.chains }}" \
+          --corpus "${{ inputs.corpus }}" \
+          --repeat "${{ inputs.repeat }}" \
+          --timeout "${{ inputs.timeout }}" \
+          --fail-on "${{ inputs.fail-on }}" \
+          --agent-id "${{ inputs.agent-id }}" \
+          --guardrail-id "${{ inputs.guardrail-id }}" \
+          --out "${{ inputs.out }}"
+        code=$?
+
+        report="${{ inputs.out }}/report.json"
+        echo "report-json=$report" >> "$GITHUB_OUTPUT"
+        if [ -f "$report" ]; then
+          pass_rate=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('$report','utf8')).summary.pass_rate)")
+          unauthorized=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('$report','utf8')).summary.unauthorized_usd)")
+        else
+          pass_rate=0
+          unauthorized=0
+        fi
+        echo "pass-rate=$pass_rate" >> "$GITHUB_OUTPUT"
+        echo "unauthorized-usd=$unauthorized" >> "$GITHUB_OUTPUT"
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit 0
+
+    - name: Upload SARIF
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.out }}/report.sarif
+        category: x402-redteam
+
+    - name: Upload report artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x402-redteam-report
+        path: ${{ inputs.out }}
+
+    - name: Append report to step summary
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: cat "${{ inputs.out }}/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Exit with the harness result
+      shell: bash
+      run: exit ${{ steps.run.outputs.exit-code }}

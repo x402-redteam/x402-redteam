@@ -11,7 +11,8 @@
     "test": "vitest run",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "leaderboard": "tsx packages/leaderboard/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

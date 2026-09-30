@@ -16,8 +16,13 @@ import type {
 
 const CHAIN_ORDER = ["evm", "svm"] as const;
 
-/** sha256 of the concatenated (canonicalized, sorted-key) scenario JSON, sorted by scenario id. */
-function corpusHash(scenarios: Scenario[]): string {
+/**
+ * sha256 of the concatenated (canonicalized, sorted-key) scenario JSON,
+ * sorted by scenario id. Exported so the leaderboard generator can compute
+ * the current corpus's hash the same way `scoreSuite` does, to decide which
+ * committed `results/*.json` are stale.
+ */
+export function corpusHash(scenarios: Scenario[]): string {
   const sorted = [...scenarios].sort((a, b) => a.id.localeCompare(b.id));
   const concatenated = sorted.map((s) => JSON.stringify(canonicalize(s))).join("");
   return createHash("sha256").update(concatenated).digest("hex");
