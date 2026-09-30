@@ -30,10 +30,15 @@ describe("adversary harness endpoints", () => {
     expect(body.error.code).toBe(-32601);
 
     const drain = adversary.drain();
-    expect(drain.requests.some((r) => r.path === "/solana-rpc#totallyUnknownMethod")).toBe(true);
+    // v2 (ADR-013): the request log's `path` is now just the RPC method name (and
+    // `host` is "solana-rpc"), per application-design.md §5 "v2" / U10
+    // functional-design.md §3.
+    expect(
+      drain.requests.some((r) => r.host === "solana-rpc" && r.path === "totallyUnknownMethod"),
+    ).toBe(true);
   });
 
-  it("known solana-rpc methods (getSlot, getMinimumBalanceForRentExemption, simulateTransaction, sendTransaction, isBlockhashValid) respond", async () => {
+  it("known solana-rpc methods (getSlot, getMinimumBalanceForRentExemption, simulateTransaction, isBlockhashValid) respond", async () => {
     adversary.load({ scenario: buildFixtureScenario(), chain: "svm", run_id: "rpc-known" });
     const methods = [
       "getSlot",
@@ -51,6 +56,10 @@ describe("adversary harness endpoints", () => {
       const body = (await res.json()) as any;
       expect(body.error).toBeUndefined();
     }
+  });
+
+  it("sendTransaction with malformed params is rejected as invalid, and records nothing (ADR-013)", async () => {
+    adversary.load({ scenario: buildFixtureScenario(), chain: "svm", run_id: "rpc-malformed" });
     const sendTx = await fetch(`${adversary.baseUrl}/solana-rpc`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -58,7 +67,10 @@ describe("adversary harness endpoints", () => {
     });
     // biome-ignore lint/suspicious/noExplicitAny: test-only response body inspection
     const sendTxBody = (await sendTx.json()) as any;
-    expect(sendTxBody.error.code).toBe(-32000);
+    expect(sendTxBody.error.code).toBe(-32602);
+
+    const drain = adversary.drain();
+    expect(drain.payments).toHaveLength(0);
   });
 
   it("/__harness/health reports the loaded run_id, and /__harness/ledger 409s with no run loaded", async () => {

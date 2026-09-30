@@ -4,13 +4,17 @@
  * prompt, pays every 402 it meets via `wrapFetchWithPayment` (retrying up to
  * 5 times when a route keeps 402ing, or "delivers" an empty body, after being
  * paid), and additionally scans page prose for a direct-transfer instruction
- * and sends it via the capture shim. No LLM is involved - this models a
- * maximally gullible payment client.
+ * and sends it as a real signed transaction to the harness's mock chain RPC
+ * (U10, ADR-013) - not a self-report via the capture shim. No LLM is
+ * involved - this models a maximally gullible payment client.
+ *
+ * `NAIVE_NO_SHIM=1` disables signer wrapping entirely (see `lib/wallet.ts`'s
+ * `walletSigner`), so the direct transfer produces no shim event at all - proving
+ * that the mock chain RPC alone observes it (functional-design.md §6).
  */
-import { recordTransfer } from "@x402-redteam/capture";
-import { CHAIN_DEFAULTS, usdToAtomic } from "@x402-redteam/schema";
 import { type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
-import { buildClient, readTask, walletSecret } from "./lib/wallet.js";
+import { sendDirectTransfer } from "./lib/transfer.js";
+import { buildClient, readTask } from "./lib/wallet.js";
 
 const MAX_RETRIES = 5;
 
@@ -38,9 +42,11 @@ function withRetries(payFetch: FetchLike): FetchLike {
   };
 }
 
+const noShim = process.env.NAIVE_NO_SHIM === "1";
+
 async function main(): Promise<void> {
   const task = readTask();
-  const { payFetch } = await buildClient(task, { unlimitedSpend: true });
+  const { payFetch } = await buildClient(task, { unlimitedSpend: true, noShim });
   const fetchWithRetries = withRetries(payFetch);
 
   // Fetch every prompt URL twice (fresh top-level attempts): a naive agent that "double
@@ -54,10 +60,17 @@ async function main(): Promise<void> {
 
   const pages = await crawl(fetchWithRetries, seeds, { baseUrl: task.base_url });
 
-  const defaults = CHAIN_DEFAULTS[task.chain];
-  const secret = walletSecret(task);
-
+  // De-duplicate by body: naive fetches every prompt URL twice on purpose (to hit a
+  // `replay` route's reissued *challenge*), but that must not turn one prose-read
+  // instruction into two distinct real transfers now that the direct transfer goes
+  // through the RPC's real nonce sequencing (U10, ADR-013) instead of a self-report
+  // with a hardcoded nonce - re-reading the identical page text twice is still one
+  // instruction acted on once, like a human wouldn't pay twice for re-reading a page.
+  const seenBodies = new Set<string>();
   for (const page of pages) {
+    if (seenBodies.has(page.body)) continue;
+    seenBodies.add(page.body);
+
     const match = PROSE_RE.exec(page.body);
     if (!match) continue;
     const amountUsd = Number(match[1]);
@@ -65,17 +78,9 @@ async function main(): Promise<void> {
     if (!Number.isFinite(amountUsd) || !to) continue;
 
     try {
-      await recordTransfer({
-        chain: task.chain,
-        ledgerUrl: task.ledger_url,
-        secret,
-        to,
-        amount_atomic: usdToAtomic(amountUsd, defaults.decimals),
-        asset: defaults.asset,
-        network: defaults.network,
-      });
+      await sendDirectTransfer(task, { to, amountUsd, noShim });
     } catch (err) {
-      console.error(`naive: recordTransfer failed for ${page.url}:`, err);
+      console.error(`naive: sendDirectTransfer failed for ${page.url}:`, err);
     }
   }
 }

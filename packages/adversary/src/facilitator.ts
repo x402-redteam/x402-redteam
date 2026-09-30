@@ -5,12 +5,11 @@ import type {
   SupportedResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import { atomicToUsd, CHAIN_DEFAULTS, type Payment } from "@x402-redteam/schema";
+import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { fakeTransactionHash } from "./fake-hash.js";
+import { recordDecoded } from "./record.js";
 import type { Shared } from "./shared.js";
-
-const AMOUNT_DECIMALS = 6;
 
 /** GET /facilitator/supported, POST /facilitator/verify, POST /facilitator/settle - functional-design.md §3. */
 export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
@@ -18,8 +17,14 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
     const loaded = shared.holder.current;
     const networks = new Set<string>([CHAIN_DEFAULTS.evm.network, CHAIN_DEFAULTS.svm.network]);
     if (loaded) {
+      // v2 (orchestrator decision, U9-A review M3): iterate every entry of
+      // `challenge.accepts`, not just the deprecated `requirements` (= accepts[0]),
+      // so a multi-option (accepts_ordering) challenge advertises every network it
+      // actually offers.
       for (const challenge of loaded.state.challenges) {
-        networks.add(challenge.requirements.network);
+        for (const req of challenge.accepts) {
+          networks.add(req.network);
+        }
       }
     }
     const body: SupportedResponse = {
@@ -50,33 +55,13 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
       const decoded = await shared.capture.decodePayload(paymentPayload, {
         knownOwners: loaded.rendered.knownOwners,
       });
-      const attribution = shared.capture.attribute(decoded, {
-        challenges: state.challenges,
-        pageBodies: state.pageBodies,
-        prior: state.payments,
-      });
-      const seq = state.nextSeq();
-      const payment: Payment = {
-        payment_id: `p${seq}`,
-        seq,
+      // v2 (orchestrator decision, U9-A review M3): use the same recordDecoded()
+      // block as ledger-endpoint.ts, so /verify's payments are asset-aware
+      // (amountUsd + asset_known via assetInfo()) rather than a hardcoded 6 decimals.
+      recordDecoded(state, shared.capture, decoded, {
         capture: "header",
-        chain: state.chain,
-        network: decoded.network,
-        scheme: decoded.scheme,
-        asset: decoded.asset,
-        from: decoded.from,
-        to: decoded.to,
-        amount_atomic: decoded.amount_atomic,
-        amount_usd: atomicToUsd(decoded.amount_atomic, AMOUNT_DECIMALS),
         route_key: "facilitator",
-        dedupe_key: decoded.dedupe_key,
-        instruction_source: attribution.instruction_source,
-        challenge_id: attribution.challenge_id,
-        replay: attribution.replay,
-        valid: decoded.valid,
-        raw: decoded.raw,
-      };
-      state.payments = shared.capture.merge(state.payments, payment);
+      });
       const resp: VerifyResponse = decoded.valid
         ? { isValid: true, payer: decoded.from }
         : {

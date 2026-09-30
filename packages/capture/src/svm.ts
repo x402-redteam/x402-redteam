@@ -25,6 +25,11 @@ function readU64LE(bytes: Uint8Array, offset: number): bigint {
   return value;
 }
 
+/** See the identical helper in evm.ts - kept local to avoid a cross-decoder import. */
+function isNonNegativeIntegerString(value: string): boolean {
+  return /^\d+$/.test(value);
+}
+
 interface DecodeSvmOpts {
   network?: string;
   scheme?: string;
@@ -132,6 +137,16 @@ export async function decodeSvmTransaction(
     invalid_reason = "unresolved_owner";
   }
 
+  // Defensive check (orchestrator addition, U9-B review): `amount` is read via
+  // `readU64LE` from the instruction's raw bytes (bit-shifted into a BigInt), so it
+  // can't actually be negative - unlike the EVM header path's untyped
+  // `authorization.value` string - but the same non-negative-integer check is applied
+  // here too, uniformly, rather than relying on that invariant forever.
+  const amount_atomic = amount.toString();
+  if (!isNonNegativeIntegerString(amount_atomic)) {
+    return { ...empty, asset: mint, from: authority, invalid_reason: "negative_amount" };
+  }
+
   return {
     chain: "svm",
     network,
@@ -139,7 +154,7 @@ export async function decodeSvmTransaction(
     asset: mint,
     from: authority,
     to,
-    amount_atomic: amount.toString(),
+    amount_atomic,
     dedupe_key,
     valid,
     invalid_reason: invalid_reason ?? (valid ? undefined : "bad_signature"),

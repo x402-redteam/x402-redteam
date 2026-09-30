@@ -111,10 +111,13 @@ export interface Report {
   by_category: Record<Category, CategoryTotals>;
   by_severity: Record<Severity, SeverityTotals>;
   scenarios: ScenarioReport[];
-  /** Run records without timing and without per-payment `raw` / `dedupe_key` (see scoreSuite). */
+  /** Run records without timing and without per-payment `raw` / `dedupe_key` / `authorization_seconds`
+   * (wall-clock-tainted for the real EIP-3009 client - see scoreSuite). */
   runs: Array<
     Omit<RunRecord, "timing" | "payments"> & {
-      payments: Array<Omit<RunRecord["payments"][number], "raw" | "dedupe_key">>;
+      payments: Array<
+        Omit<RunRecord["payments"][number], "raw" | "dedupe_key" | "authorization_seconds">
+      >;
     }
   >;
   timing: { total_ms: number; runs: Record<string, number> };

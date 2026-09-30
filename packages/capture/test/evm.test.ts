@@ -72,6 +72,35 @@ describe("decodeEvmPayload (real @x402/evm exact client)", () => {
     expect(decoded.amount_atomic).toBe(tampered.payload.authorization.value);
   });
 
+  it("flags a negative authorization.value as negative_amount, without attempting signature verification", async () => {
+    const reqs = requirements();
+    const payload = await buildRealPayment(reqs);
+
+    const tampered = structuredClone(payload) as PaymentPayload & {
+      payload: { authorization: { value: string } };
+    };
+    tampered.payload.authorization.value = "-100";
+
+    const decoded = await decodeEvmPayload(tampered);
+    expect(decoded.valid).toBe(false);
+    expect(decoded.invalid_reason).toBe("negative_amount");
+    expect(decoded.amount_atomic).toBe("-100");
+  });
+
+  it("flags a non-integer authorization.value (e.g. a decimal) as negative_amount", async () => {
+    const reqs = requirements();
+    const payload = await buildRealPayment(reqs);
+
+    const tampered = structuredClone(payload) as PaymentPayload & {
+      payload: { authorization: { value: string } };
+    };
+    tampered.payload.authorization.value = "12.5";
+
+    const decoded = await decodeEvmPayload(tampered);
+    expect(decoded.valid).toBe(false);
+    expect(decoded.invalid_reason).toBe("negative_amount");
+  });
+
   it("flags a Permit2-shaped payload as unsupported_transfer_method", async () => {
     const reqs = requirements();
     const from = canaries(SEED, "evm-test", "evm").get("attacker").address;
@@ -292,5 +321,112 @@ describe("decodeEvmTx (shim, direct transfer)", () => {
     expect(decoded.asset).toBe("native");
     expect(decoded.to.toLowerCase()).toBe(to.toLowerCase());
     expect(decoded.amount_atomic).toBe("777");
+  });
+
+  it("decodes a signed ERC-20 transferFrom transaction, using the named owner (not the tx signer) as `from`", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const owner = canaries(SEED, "evm-test", "evm").get("legit").address as `0x${string}`;
+    const to = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData, erc20Abi } = await import("viem");
+    const data = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "transferFrom",
+      args: [owner, to, 999n],
+    });
+    const serialized = await account.signTransaction({
+      chainId,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const decoded = await decodeEvmTx({ serialized });
+    expect(decoded.valid).toBe(true);
+    expect(decoded.from.toLowerCase()).toBe(owner.toLowerCase());
+    expect(decoded.to.toLowerCase()).toBe(to.toLowerCase());
+    expect(decoded.amount_atomic).toBe("999");
+    expect(decoded.asset.toLowerCase()).toBe(CHAIN_DEFAULTS.evm.asset.toLowerCase());
+  });
+
+  it("decodes a signed EIP-3009 transferWithAuthorization transaction and sets authorization_seconds", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const owner = canaries(SEED, "evm-test", "evm").get("legit").address as `0x${string}`;
+    const to = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData } = await import("viem");
+    const transferWithAuthorizationAbi = [
+      {
+        type: "function",
+        name: "transferWithAuthorization",
+        stateMutability: "nonpayable",
+        inputs: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+          { name: "v", type: "uint8" },
+          { name: "r", type: "bytes32" },
+          { name: "s", type: "bytes32" },
+        ],
+        outputs: [],
+      },
+    ] as const;
+    const nonce = `0x${"03".padStart(64, "0")}` as `0x${string}`;
+    const r = `0x${"11".repeat(32)}` as `0x${string}`;
+    const s = `0x${"22".repeat(32)}` as `0x${string}`;
+    // Realistic epoch-relative values (not arbitrary small numbers): validAfter is
+    // already in the past, validBefore is 590s in the future, so the remaining window
+    // at receipt (validBefore - max(validAfter, now)) is ~590s - see authorizationSeconds().
+    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+    const validAfter = nowSeconds - 10n;
+    const validBefore = nowSeconds + 590n;
+    const data = encodeFunctionData({
+      abi: transferWithAuthorizationAbi,
+      functionName: "transferWithAuthorization",
+      args: [owner, to, 555n, validAfter, validBefore, nonce, 27, r, s],
+    });
+    const serialized = await account.signTransaction({
+      chainId,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const decoded = await decodeEvmTx({ serialized });
+    expect(decoded.valid).toBe(true);
+    expect(decoded.from.toLowerCase()).toBe(owner.toLowerCase());
+    expect(decoded.to.toLowerCase()).toBe(to.toLowerCase());
+    expect(decoded.amount_atomic).toBe("555");
+    // validAfter is already in the past, so the effective floor is "now": the remaining
+    // window is validBefore - now, which is ~590s (allow a couple of seconds of test slop).
+    expect(decoded.authorization_seconds).toBeGreaterThan(585);
+    expect(decoded.authorization_seconds).toBeLessThanOrEqual(590);
+  });
+
+  it("authorization_seconds is the remaining window at receipt, not validBefore - validAfter, when validAfter is already in the past", async () => {
+    // Regression for the orchestrator's U11-finding fix: the real @x402/evm client sets
+    // validAfter to a constant "0" (far in the past) and validBefore to a wall-clock-relative
+    // future timestamp, so a naive `validBefore - validAfter` would report a huge, ever-
+    // growing number instead of a stable "seconds remaining" value.
+    const reqs = requirements();
+    const payload = await buildRealPayment(reqs);
+    const decoded = await decodeEvmPayload(payload);
+    expect(decoded.authorization_seconds).toBeDefined();
+    // requirements()'s maxTimeoutSeconds defaults to 60 (see PaymentRequirements above);
+    // validAfter is "0" for the real client, so effectiveAfter = now, and the remaining
+    // window is ~maxTimeoutSeconds.
+    expect(decoded.authorization_seconds as number).toBeGreaterThan(0);
+    expect(decoded.authorization_seconds as number).toBeLessThanOrEqual(60);
   });
 });

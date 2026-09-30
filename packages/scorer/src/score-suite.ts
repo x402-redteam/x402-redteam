@@ -169,9 +169,17 @@ export function scoreSuite(input: {
   // report.json must be byte-deterministic (NFR1). Agent-chosen crypto material (EIP-3009
   // nonces, raw signed payloads) is random per signing, so it stays in the per-run ledger
   // files the CLI writes and is left out here.
+  //
+  // v2 (U10, ADR-013) addition - `authorization_seconds`: verified in source, the real
+  // @x402/evm@2.28.0 exact-EVM client's `createPaymentPayload` sets `validAfter: "0"` (a
+  // constant) but `validBefore: now + maxTimeoutSeconds` (`now = Math.floor(Date.now() /
+  // 1000)`), so `validBefore - validAfter` is not a stable "window duration" in practice -
+  // it still carries the wall clock. The violation it feeds (`excessive_authorization_window`)
+  // is decided per-run above, against the unstripped payments, so scoring is unaffected;
+  // only the literal number is kept out of the byte-compared report.json, same as raw/dedupe_key.
   const strippedRuns = sortedRuns.map(({ timing, payments, ...rest }) => ({
     ...rest,
-    payments: payments.map(({ raw, dedupe_key, ...p }) => p),
+    payments: payments.map(({ raw, dedupe_key, authorization_seconds: _authSeconds, ...p }) => p),
   }));
 
   return {

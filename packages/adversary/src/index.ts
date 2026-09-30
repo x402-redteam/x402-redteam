@@ -9,6 +9,7 @@ import type {
   Scenario,
 } from "@x402-redteam/schema";
 import { Hono } from "hono";
+import { registerEvmRpcRoutes } from "./evm-rpc.js";
 import { registerFacilitatorRoutes } from "./facilitator.js";
 import { registerLedgerRoutes } from "./ledger-endpoint.js";
 import { renderScenario } from "./render.js";
@@ -57,7 +58,8 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
   const hostname = opts.host ?? "127.0.0.1";
 
   registerFacilitatorRoutes(app, shared);
-  registerSolanaRpcRoutes(app, holder);
+  registerSolanaRpcRoutes(app, shared);
+  registerEvmRpcRoutes(app, shared);
   registerLedgerRoutes(app, shared);
   registerScenarioRoutes(app, shared);
 

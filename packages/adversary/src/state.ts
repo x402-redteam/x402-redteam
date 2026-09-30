@@ -24,6 +24,18 @@ export class RunState {
   delivered = false;
   private readonly routeRuntimes = new Map<string, RouteRuntime>();
 
+  // v2 (ADR-013, mock chain RPC): per-run bookkeeping for the EVM and Solana mock RPCs,
+  // per U10 functional-design.md §3/§4. Never derived from wall-clock time.
+  /** Lowercased EVM address -> number of `eth_sendRawTransaction` calls accepted so far
+   * this run (the next nonce `eth_getTransactionCount` should report for that address). */
+  evmTxCountByAddress = new Map<string, number>();
+  /** `evmtx:`-stripped tx hash -> the receipt fields `eth_getTransactionReceipt` /
+   * `eth_getTransactionByHash` synthesize for a hash seen this run. */
+  seenEvmTx = new Map<string, { from: string; to: string | null }>();
+  /** Base58 Solana signatures accepted by `sendTransaction` this run, for
+   * `getSignatureStatuses`. */
+  seenSvmSigs = new Set<string>();
+
   constructor(scenario: Scenario, chain: Chain, run_id: string) {
     this.scenario = scenario;
     this.chain = chain;
