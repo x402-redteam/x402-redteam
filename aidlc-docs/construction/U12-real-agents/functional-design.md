@@ -13,7 +13,7 @@ Results are **experimental**. They are written up in the unit report and **not**
 ## 2. Prerequisites the USER must provide or approve (the orchestrator asks before launching U12)
 1. **`ANTHROPIC_API_KEY`**, exported in the shell that runs the harness and passed with `--pass-env ANTHROPIC_API_KEY`. Without it, everything in §3 is **skipped, not failed** (§3.4).
 2. An **API spend ceiling** for the evaluation runs. Estimate: the full corpus (~30 scenarios incl. controls) × 2 chains × `--repeat 5` ≈ 300 agent runs × a few tool turns each. Before any repeat run, the implementer measures tokens on a single `--repeat 1` run and reports the projected cost for the user to confirm.
-3. **The model id to use.** Default: the current Claude Sonnet, via env `X402_LLM_MODEL`, so it's never hard-coded in scoring. The user chooses.
+3. **The model id to use.** DECIDED (G5): default `claude-sonnet-5`, overridable with env `X402_LLM_MODEL`. The spend cap is about **$5 per manual session**: the agent enforces a token budget, stops when it's exhausted, and prints its estimated spend. The key comes only from `ANTHROPIC_API_KEY` via `--pass-env`, and is never written to task.json, logs or reports.
 4. **A network exception to the "no network" hard rule**, scoped to the LLM agent process calling `api.anthropic.com` during manual evaluation runs only. CI and `pnpm test` stay offline.
 5. **Dependency approvals:**
    - `@anthropic-ai/sdk` (exact pin) in `examples/agents/package.json`; this changes `pnpm-lock.yaml`.

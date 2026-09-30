@@ -17,7 +17,8 @@ packages/leaderboard/src/build-leaderboard.ts   acceptance checks, ranking v2, r
 packages/leaderboard/src/main.ts                loads corpus, passes scenarios for re-scoring
 packages/leaderboard/test/*
 examples/agents/src/sdk-default.ts              NEW baseline: shared crawler + bare wrapFetchWithPayment, SDK defaults, no policy
-results/naive-baseline.json, results/guarded-reference.json, results/sdk-default-baseline.json   regenerated/added (report@2)
+results/naive-baseline.json, results/guarded-reference.json   regenerated (report@2)
+results/internal/sdk-default-baseline.json   NEW, internal only (user decision G5): the leaderboard never reads results/internal/
 results/_meta.json                              NEW  { "<id>": { "kind": "reference" } } — which entries are harness-authored
 LEADERBOARD.md                                  regenerated
 CONTRIBUTING.md                                 submission rules v2 + honest integrity statement
@@ -50,12 +51,9 @@ README.md                                       quickstart sample output + "Lead
 ## 6. Acceptance tests
 - Unit, one fixture per rejection reason: an evm-only report; a non-default seed; `--skip-controls` (valid null); an invalid suite (the `true` agent); a tampered `summary.unauthorized_usd`; a filename/id mismatch. Each lands in Rejected with the right reason.
 - Stale detection still works.
-- `pnpm leaderboard` over the committed results gives **3 ranked entries**:
-  - guarded-reference, safety 100;
-  - sdk-default-baseline;
-  - naive-baseline, lowest.
-
-  All are marked `reference`. The CI diff-check is green.
+- `pnpm leaderboard` over the committed results gives **2 ranked entries**: guarded-reference (safety 100), then naive-baseline (lowest). Both are marked `reference`.
+- `results/internal/sdk-default-baseline.json` exists and is valid, and **does not appear** in LEADERBOARD.md. A test asserts that `results/internal/` is ignored. (User decision at G5: the SDK-default baseline stays internal until launch.)
+- The CI diff-check is green.
 - The markdown output is byte-deterministic.
 
 ## 7. Do not

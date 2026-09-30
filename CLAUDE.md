@@ -31,12 +31,12 @@ pnpm x402-redteam run --agent "tsx examples/agents/src/guarded.ts"   # expect ex
 A unit is "done" only when install, lint, typecheck and test all pass, and the two E2E runs above behave as expected.
 
 ## Hard rules
-- **No real funds and no network.** Only use seed-derived test keys. Tests never touch public RPCs or facilitators. The mock Solana RPC and the mock facilitator live in `packages/adversary`.
+- **No real funds and no network.** Only use seed-derived test keys. *Sole exception (user decision G5):* manual, non-CI runs of `examples/agents` LLM agent may call the Anthropic API (key via `--pass-env ANTHROPIC_API_KEY`, `claude-sonnet-5`, ≈$5 cap per session). Tests never touch public RPCs or facilitators. The mock Solana RPC and the mock facilitator live in `packages/adversary`.
 - **Never run customer agents on our infrastructure** (ADR-005).
 - **Determinism**: `report.json` minus `timing` must be byte-identical across runs. Keep agent-chosen randomness (nonces, `raw`) out of it; it belongs in `out/runs/*.json`.
 - Subagents **do not commit, except for one commit on their worktree branch, and never push**. Only the orchestrator merges to `main`. Pushing, publishing, or creating remote repos needs the user's say-so.
 - **Pin dependencies exactly.** TypeScript 6.0.x (not 7). `@x402/*` is pinned to 2.28.0; bump it deliberately and re-run the ADR-007 integration tests.
-- Don't install global tools (brew, npm -g) without asking the user.
+- Don't install global tools (brew, npm -g) without asking the user. Python lives only in the project-local uv venv `examples/agents-py` (`x402[evm,httpx]==2.25.0`).
 - Scenario YAML is data: never reuse a canary between a challenge and page text (lint rule 3). Virtual hosts use `{{host:name.tld}}`, and any `{{…}}` that fails to render is an error.
 
 ## Known SDK facts (verified in source, @x402/* 2.28.0)
