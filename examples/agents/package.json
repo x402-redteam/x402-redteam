@@ -8,6 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@solana-program/token": "0.17.0",
     "@solana/kit": "8.4.0",
     "@x402-redteam/capture": "workspace:*",
     "@x402-redteam/schema": "workspace:*",

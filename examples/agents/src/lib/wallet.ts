@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
-import { createKeyPairSignerFromBytes, getBase58Encoder } from "@solana/kit";
+import {
+  createKeyPairSignerFromBytes,
+  getBase58Encoder,
+  type TransactionPartialSigner,
+} from "@solana/kit";
 import { x402Client } from "@x402/core/client";
 import type { Network } from "@x402/core/types";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { wrapEvmAccount, wrapSvmSigner } from "@x402-redteam/capture";
+import type { LocalAccount } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { FetchLike } from "./crawl.js";
 
@@ -62,15 +67,52 @@ export interface BuildClientOptions {
    * `onBeforePaymentCreation` budget check is always stricter and runs first).
    */
   unlimitedSpend?: boolean;
+  /** v2 (ADR-013, NAIVE_NO_SHIM): see `walletSigner`. */
+  noShim?: boolean;
+}
+
+/** Either chain's wallet signer, wrapped or not - see `walletSigner`. */
+export type WalletSigner =
+  | { chain: "evm"; account: LocalAccount }
+  | { chain: "svm"; signer: TransactionPartialSigner };
+
+/**
+ * Builds the chain-appropriate wallet signer for `task`, per U10
+ * functional-design.md §5/§2: wrapped with `wrapEvmAccount`/`wrapSvmSigner` (so every
+ * signature also reports a shim event) unless `opts.noShim` is set, in which case the
+ * bare account/signer is returned - `NAIVE_NO_SHIM=1` uses this to prove that the mock
+ * chain RPC alone (no shim) observes a direct transfer (ADR-013). Shared by
+ * `buildClient` (the x402 header-path client) and `lib/transfer.ts`'s
+ * `sendDirectTransfer`, so the same flag disables shim reporting for both.
+ */
+export async function walletSigner(
+  task: TaskFile,
+  opts: { noShim?: boolean } = {},
+): Promise<WalletSigner> {
+  if (task.chain === "evm") {
+    const wallet = task.wallet as { address: string; private_key: string };
+    const account = privateKeyToAccount(wallet.private_key as `0x${string}`);
+    return {
+      chain: "evm",
+      account: opts.noShim ? account : wrapEvmAccount(account, { ledgerUrl: task.ledger_url }),
+    };
+  }
+  const wallet = task.wallet as { address: string; secret_key_base58: string };
+  const signer = await createKeyPairSignerFromBytes(
+    getBase58Encoder().encode(wallet.secret_key_base58),
+  );
+  return {
+    chain: "svm",
+    signer: opts.noShim ? signer : wrapSvmSigner(signer, { ledgerUrl: task.ledger_url }),
+  };
 }
 
 /**
- * Builds the real x402 client for `task.chain`, per functional-design.md §5:
- * the wallet/signer is wrapped (`wrapEvmAccount`/`wrapSvmSigner`) so every
- * header-path payment also reports a shim event - `capture` then merges the
- * two into a single "header+shim" payment. SVM registers `ExactSvmScheme`
- * directly (not `registerExactSvmScheme`, which drops `rpcUrl` in
- * @x402/svm@2.28.0 and would fall back to the public devnet - see
+ * Builds the real x402 client for `task.chain`, per functional-design.md §5, using
+ * `walletSigner` (wrapped by default, so every header-path payment also reports a shim
+ * event - `capture` then merges the two into a single "header+shim" payment). SVM
+ * registers `ExactSvmScheme` directly (not `registerExactSvmScheme`, which drops
+ * `rpcUrl` in @x402/svm@2.28.0 and would fall back to the public devnet - see
  * functional-design.md §5 and the U3 audit note).
  */
 export async function buildClient(
@@ -82,17 +124,10 @@ export async function buildClient(
     client.setSpendControls({ maxAmountPerPayment: false });
   }
 
-  if (task.chain === "evm") {
-    const wallet = task.wallet as { address: string; private_key: string };
-    const account = privateKeyToAccount(wallet.private_key as `0x${string}`);
-    const wrapped = wrapEvmAccount(account, { ledgerUrl: task.ledger_url });
-    registerExactEvmScheme(client, { signer: wrapped });
+  const signer = await walletSigner(task, { noShim: opts.noShim });
+  if (signer.chain === "evm") {
+    registerExactEvmScheme(client, { signer: signer.account });
   } else {
-    const wallet = task.wallet as { address: string; secret_key_base58: string };
-    const signer = await createKeyPairSignerFromBytes(
-      getBase58Encoder().encode(wallet.secret_key_base58),
-    );
-    const wrapped = wrapSvmSigner(signer, { ledgerUrl: task.ledger_url });
     // Registered against the "solana:*" wildcard (per functional-design.md §5), not just
     // `task.network`: a rail-switch challenge legitimately names a different solana:* network
     // (e.g. mainnet) than the task's test network, and the agent still needs a scheme able to
@@ -100,7 +135,7 @@ export async function buildClient(
     // rather than the client silently having no scheme registered for that network at all.
     client.register(
       "solana:*" as Network,
-      new ExactSvmScheme(wrapped, { rpcUrl: task.solana_rpc_url }),
+      new ExactSvmScheme(signer.signer, { rpcUrl: task.solana_rpc_url }),
     );
   }
 

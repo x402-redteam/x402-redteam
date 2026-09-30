@@ -72,6 +72,35 @@ describe("decodeEvmPayload (real @x402/evm exact client)", () => {
     expect(decoded.amount_atomic).toBe(tampered.payload.authorization.value);
   });
 
+  it("flags a negative authorization.value as negative_amount, without attempting signature verification", async () => {
+    const reqs = requirements();
+    const payload = await buildRealPayment(reqs);
+
+    const tampered = structuredClone(payload) as PaymentPayload & {
+      payload: { authorization: { value: string } };
+    };
+    tampered.payload.authorization.value = "-100";
+
+    const decoded = await decodeEvmPayload(tampered);
+    expect(decoded.valid).toBe(false);
+    expect(decoded.invalid_reason).toBe("negative_amount");
+    expect(decoded.amount_atomic).toBe("-100");
+  });
+
+  it("flags a non-integer authorization.value (e.g. a decimal) as negative_amount", async () => {
+    const reqs = requirements();
+    const payload = await buildRealPayment(reqs);
+
+    const tampered = structuredClone(payload) as PaymentPayload & {
+      payload: { authorization: { value: string } };
+    };
+    tampered.payload.authorization.value = "12.5";
+
+    const decoded = await decodeEvmPayload(tampered);
+    expect(decoded.valid).toBe(false);
+    expect(decoded.invalid_reason).toBe("negative_amount");
+  });
+
   it("flags a Permit2-shaped payload as unsupported_transfer_method", async () => {
     const reqs = requirements();
     const from = canaries(SEED, "evm-test", "evm").get("attacker").address;
@@ -240,6 +269,26 @@ describe("decodeEvmTypedData (shim)", () => {
     expect(decoded.valid).toBe(false);
     expect(decoded.invalid_reason).toBe("bad_signature");
   });
+
+  it("M3 (code review): flags a negative/hex message.value as negative_amount, without attempting signature verification", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const to = canaries(SEED, "evm-test", "evm").get("attacker").address;
+
+    const decoded = await decodeEvmTypedData({
+      domain: { name: "USDC", version: "2", chainId, verifyingContract: CHAIN_DEFAULTS.evm.asset },
+      types: {},
+      primaryType: "TransferWithAuthorization",
+      // message.value arrives as an untyped shim-event field (JSON over HTTP) - a
+      // negative or non-decimal string here must be caught before any signature work.
+      message: { from: account.address, to, value: "-500", nonce: "0xabc" },
+      signature: "0xdead",
+      address: account.address,
+    });
+
+    expect(decoded.valid).toBe(false);
+    expect(decoded.invalid_reason).toBe("negative_amount");
+    expect(decoded.amount_atomic).toBe("-500");
+  });
 });
 
 describe("decodeEvmTx (shim, direct transfer)", () => {
@@ -292,5 +341,247 @@ describe("decodeEvmTx (shim, direct transfer)", () => {
     expect(decoded.asset).toBe("native");
     expect(decoded.to.toLowerCase()).toBe(to.toLowerCase());
     expect(decoded.amount_atomic).toBe("777");
+  });
+
+  it("decodes a signed ERC-20 transferFrom transaction, using the named owner (not the tx signer) as `from`", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const owner = canaries(SEED, "evm-test", "evm").get("legit").address as `0x${string}`;
+    const to = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData, erc20Abi } = await import("viem");
+    const data = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "transferFrom",
+      args: [owner, to, 999n],
+    });
+    const serialized = await account.signTransaction({
+      chainId,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const decoded = await decodeEvmTx({ serialized });
+    expect(decoded.valid).toBe(true);
+    expect(decoded.from.toLowerCase()).toBe(owner.toLowerCase());
+    expect(decoded.to.toLowerCase()).toBe(to.toLowerCase());
+    expect(decoded.amount_atomic).toBe("999");
+    expect(decoded.asset.toLowerCase()).toBe(CHAIN_DEFAULTS.evm.asset.toLowerCase());
+  });
+
+  it("decodes a signed EIP-3009 transferWithAuthorization transaction and sets authorization_seconds", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const owner = canaries(SEED, "evm-test", "evm").get("legit").address as `0x${string}`;
+    const to = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData } = await import("viem");
+    const transferWithAuthorizationAbi = [
+      {
+        type: "function",
+        name: "transferWithAuthorization",
+        stateMutability: "nonpayable",
+        inputs: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+          { name: "v", type: "uint8" },
+          { name: "r", type: "bytes32" },
+          { name: "s", type: "bytes32" },
+        ],
+        outputs: [],
+      },
+    ] as const;
+    const nonce = `0x${"03".padStart(64, "0")}` as `0x${string}`;
+    const r = `0x${"11".repeat(32)}` as `0x${string}`;
+    const s = `0x${"22".repeat(32)}` as `0x${string}`;
+    // Realistic epoch-relative values (not arbitrary small numbers): validAfter is
+    // already in the past, validBefore is 590s in the future, so the remaining window
+    // at receipt (validBefore - max(validAfter, now)) is ~590s - see authorizationSeconds().
+    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+    const validAfter = nowSeconds - 10n;
+    const validBefore = nowSeconds + 590n;
+    const data = encodeFunctionData({
+      abi: transferWithAuthorizationAbi,
+      functionName: "transferWithAuthorization",
+      args: [owner, to, 555n, validAfter, validBefore, nonce, 27, r, s],
+    });
+    const serialized = await account.signTransaction({
+      chainId,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const decoded = await decodeEvmTx({ serialized });
+    expect(decoded.valid).toBe(true);
+    expect(decoded.from.toLowerCase()).toBe(owner.toLowerCase());
+    expect(decoded.to.toLowerCase()).toBe(to.toLowerCase());
+    expect(decoded.amount_atomic).toBe("555");
+    // validAfter is already in the past, so the effective floor is "now": the remaining
+    // window is validBefore - now, which is ~590s (allow a couple of seconds of test slop).
+    expect(decoded.authorization_seconds).toBeGreaterThan(585);
+    expect(decoded.authorization_seconds).toBeLessThanOrEqual(590);
+  });
+
+  it("authorization_seconds is the remaining window at receipt, not validBefore - validAfter, when validAfter is already in the past", async () => {
+    // Regression for the orchestrator's U11-finding fix: the real @x402/evm client sets
+    // validAfter to a constant "0" (far in the past) and validBefore to a wall-clock-relative
+    // future timestamp, so a naive `validBefore - validAfter` would report a huge, ever-
+    // growing number instead of a stable "seconds remaining" value.
+    const reqs = requirements();
+    const payload = await buildRealPayment(reqs);
+    const decoded = await decodeEvmPayload(payload);
+    expect(decoded.authorization_seconds).toBeDefined();
+    // requirements()'s maxTimeoutSeconds defaults to 60 (see PaymentRequirements above);
+    // validAfter is "0" for the real client, so effectiveAfter = now, and the remaining
+    // window is ~maxTimeoutSeconds.
+    expect(decoded.authorization_seconds as number).toBeGreaterThan(0);
+    expect(decoded.authorization_seconds as number).toBeLessThanOrEqual(60);
+  });
+
+  it("M2 (code review): decodes ERC-20 approve calldata - scheme approve, to = spender", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const spender = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData, erc20Abi } = await import("viem");
+    const data = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, 123456n],
+    });
+    const serialized = await account.signTransaction({
+      chainId,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const decoded = await decodeEvmTx({ serialized });
+    expect(decoded.scheme).toBe("approve");
+    expect(decoded.from.toLowerCase()).toBe(account.address.toLowerCase());
+    expect(decoded.to.toLowerCase()).toBe(spender.toLowerCase());
+    expect(decoded.amount_atomic).toBe("123456");
+    expect(decoded.valid).toBe(true);
+  });
+
+  it("H1 (code review): a tx with both calldata and non-zero native value records two legs", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const to = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData, erc20Abi } = await import("viem");
+    const data = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [to, 111n] });
+    const serialized = await account.signTransaction({
+      chainId,
+      nonce: 0,
+      to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+      data,
+      value: 222n, // non-zero native value alongside a recognised ERC-20 call
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+
+    const decoded = await decodeEvmTx({ serialized });
+    expect(decoded.legs).toHaveLength(2);
+    const [calldataLeg, nativeLeg] = decoded.legs as NonNullable<typeof decoded.legs>;
+    expect(calldataLeg?.asset.toLowerCase()).toBe(CHAIN_DEFAULTS.evm.asset.toLowerCase());
+    expect(calldataLeg?.amount_atomic).toBe("111");
+    expect(nativeLeg?.asset).toBe("native");
+    expect(nativeLeg?.amount_atomic).toBe("222");
+    expect(nativeLeg?.to.toLowerCase()).toBe(CHAIN_DEFAULTS.evm.asset.toLowerCase());
+    expect(calldataLeg?.dedupe_key).not.toBe(nativeLeg?.dedupe_key);
+  });
+
+  it("M4 (code review): transferWithAuthorization's dedupe_key matches the header path's for the same nonce, so it merges as header+rpc", async () => {
+    const reqs = requirements();
+    const headerPayload = await buildRealPayment(reqs);
+    const headerDecoded = await decodeEvmPayload(headerPayload);
+    const authorization = (
+      headerPayload as unknown as {
+        payload: {
+          authorization: {
+            from: string;
+            to: string;
+            value: string;
+            validAfter: string;
+            validBefore: string;
+            nonce: string;
+          };
+        };
+      }
+    ).payload.authorization;
+
+    // Now submit the *same* authorization directly on-chain via transferWithAuthorization
+    // calldata (a different channel, e.g. relayed by anyone holding the signature), signed
+    // by an unrelated tx sender - the merge should key on the authorization's own nonce,
+    // not the tx signer or tx hash.
+    const relayer = privateKeyToAccount(
+      canaries(SEED, "evm-test", "evm").get("attacker").secret as `0x${string}`,
+    );
+    const { encodeFunctionData } = await import("viem");
+    const transferWithAuthorizationAbi = [
+      {
+        type: "function",
+        name: "transferWithAuthorization",
+        stateMutability: "nonpayable",
+        inputs: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+          { name: "v", type: "uint8" },
+          { name: "r", type: "bytes32" },
+          { name: "s", type: "bytes32" },
+        ],
+        outputs: [],
+      },
+    ] as const;
+    const data = encodeFunctionData({
+      abi: transferWithAuthorizationAbi,
+      functionName: "transferWithAuthorization",
+      args: [
+        authorization.from as `0x${string}`,
+        authorization.to as `0x${string}`,
+        BigInt(authorization.value),
+        BigInt(authorization.validAfter),
+        BigInt(authorization.validBefore),
+        authorization.nonce as `0x${string}`,
+        27,
+        `0x${"11".repeat(32)}` as `0x${string}`,
+        `0x${"22".repeat(32)}` as `0x${string}`,
+      ],
+    });
+    const serialized = await relayer.signTransaction({
+      chainId,
+      nonce: 0,
+      to: reqs.asset as `0x${string}`,
+      data,
+      value: 0n,
+      gas: 100_000n,
+      maxFeePerGas: 1_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000n,
+      type: "eip1559",
+    });
+    const rpcDecoded = await decodeEvmTx({ serialized });
+
+    expect(rpcDecoded.dedupe_key).toBe(headerDecoded.dedupe_key);
+    expect(rpcDecoded.dedupe_key).toBe(`evm:${authorization.nonce}`);
   });
 });

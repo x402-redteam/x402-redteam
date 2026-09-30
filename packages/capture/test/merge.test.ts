@@ -47,6 +47,28 @@ function shimPayment(overrides: Partial<Payment> = {}): Payment {
   };
 }
 
+/** v2 (ADR-013): a direct transfer observed at the mock chain RPC boundary. */
+function rpcPayment(overrides: Partial<Payment> = {}): Payment {
+  return {
+    payment_id: "p2",
+    seq: 2,
+    capture: "rpc",
+    chain: "evm",
+    network: "eip155:84532",
+    scheme: "transfer",
+    asset: "native",
+    from: "0x1111111111111111111111111111111111111111",
+    to: "0xAbCdEf0000000000000000000000000000001234",
+    amount_atomic: "500",
+    amount_usd: 0.0005,
+    dedupe_key: "evmtx:0xdeadbeef",
+    instruction_source: "prose",
+    replay: false,
+    valid: true,
+    ...overrides,
+  };
+}
+
 describe("merge", () => {
   it("merges a shim capture into an existing header capture, taking route/host/challenge_id/instruction_source from the header side", () => {
     const header = headerPayment();
@@ -93,5 +115,56 @@ describe("merge", () => {
     expect(result).toHaveLength(2);
     expect(result.map((p) => p.dedupe_key)).toEqual(["evm:0xnonce1", "evm:0xnonce2"]);
     expect(result.map((p) => p.capture)).toEqual(["header", "shim"]);
+  });
+
+  // v2 (ADR-013, application-design.md §4 "Merge rule (v2)"): a shim event and an RPC
+  // submission of the same transaction share a dedupe_key and merge into "rpc+shim",
+  // not replay-flagged, with the rpc side (the actual chain-boundary observation)
+  // taking priority over the self-reported shim side.
+  it("merges an rpc capture into an existing shim capture into capture: rpc+shim, rpc side wins", () => {
+    const shim = shimPayment({
+      seq: 0,
+      dedupe_key: "evmtx:0xdeadbeef",
+      instruction_source: "none",
+    });
+    const rpc = rpcPayment({ seq: 1, dedupe_key: "evmtx:0xdeadbeef", instruction_source: "prose" });
+    const result = merge([shim], rpc);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      capture: "rpc+shim",
+      instruction_source: "prose",
+      seq: 0,
+    });
+  });
+
+  it("merges a shim capture into an existing rpc capture into capture: rpc+shim, rpc side still wins, lower seq kept", () => {
+    const rpc = rpcPayment({
+      seq: 3,
+      dedupe_key: "evmtx:0xcafebabe",
+      instruction_source: "prose",
+      replay: false,
+    });
+    const shim = shimPayment({
+      seq: 1,
+      dedupe_key: "evmtx:0xcafebabe",
+      instruction_source: "none",
+      replay: true,
+    });
+    const result = merge([rpc], shim);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      capture: "rpc+shim",
+      instruction_source: "prose",
+      replay: false,
+      seq: 1,
+    });
+  });
+
+  it("a header capture never merges with an rpc capture (distinct dedupe_key schemes)", () => {
+    const header = headerPayment({ seq: 0, dedupe_key: "evm:0xnonce1" });
+    const rpc = rpcPayment({ seq: 1, dedupe_key: "evmtx:0xnonce1" });
+    const result = merge([header], rpc);
+    expect(result).toHaveLength(2);
+    expect(result.map((p) => p.capture)).toEqual(["header", "rpc"]);
   });
 });

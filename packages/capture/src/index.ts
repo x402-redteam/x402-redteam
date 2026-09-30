@@ -45,9 +45,12 @@ async function decodeShimEvent(evt: ShimEvent, hints?: DecodeHints): Promise<Dec
     case "evm_tx":
       return decodeEvmTx(evt.payload);
     case "svm_tx":
+      // L5 (code review): a direct (non-x402) SVM transfer uses scheme "transfer", same
+      // convention as decodeEvmTx - "exact" is reserved for an actual x402 payment
+      // (decodePayload's header path, which passes the real `accepted.scheme`).
       return decodeSvmTransaction(evt.payload.transaction_base64, hints, {
         network: CHAIN_DEFAULTS.svm.network,
-        scheme: "exact",
+        scheme: "transfer",
       });
     default:
       throw new Error(`decodeShimEvent: unknown shim event kind ${(evt as { kind: string }).kind}`);

@@ -36,6 +36,12 @@ function baseOptions(outDir: string, corpus: string = FIXTURE_CORPUS) {
  * from them - violations, pass/fail, metrics, sequencing, attribution - is deterministic.
  * This redacts exactly those two randomness-bearing fields before comparing, so the test
  * verifies the harness's own determinism rather than the signing library's.
+ *
+ * (U10, ADR-013 note: `authorization_seconds` is wall-clock-tainted for the same reason -
+ * verified in source, @x402/evm@2.28.0's exact-EVM client sets `validAfter: "0"` but
+ * `validBefore: now + maxTimeoutSeconds` - but `scoreSuite` already strips it from
+ * report.json's payments for exactly this reason, same as `raw`/`dedupe_key`, so no redaction
+ * is needed here.)
  */
 function redactSigningRandomness(report: Report): Report {
   return {
