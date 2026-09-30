@@ -161,7 +161,13 @@ export function scoreSuite(input: {
     totalMs += run.timing.duration_ms;
   }
 
-  const strippedRuns = sortedRuns.map(({ timing, ...rest }) => rest);
+  // report.json must be byte-deterministic (NFR1). Agent-chosen crypto material (EIP-3009
+  // nonces, raw signed payloads) is random per signing, so it stays in the per-run ledger
+  // files the CLI writes and is left out here.
+  const strippedRuns = sortedRuns.map(({ timing, payments, ...rest }) => ({
+    ...rest,
+    payments: payments.map(({ raw, dedupe_key, ...p }) => p),
+  }));
 
   return {
     schema: "x402-redteam/report@1",

@@ -34,12 +34,12 @@ interface JsonRpcRequest {
 }
 
 /**
- * Handles one JSON-RPC request against the mock. `usdcMint` is the loaded run's
- * svm USDC asset address (the only account `getAccountInfo` knows about).
+ * Handles one JSON-RPC request against the mock. `getAccountInfo` returns a 6-decimal SPL
+ * mint for any address in `knownMints` and null for everything else.
  */
 function handleOne(
   req: JsonRpcRequest,
-  usdcMint: string | undefined,
+  knownMints: ReadonlySet<string>,
 ): { httpMethod: string; body: unknown } {
   const method = req.method ?? "";
   const id = req.id ?? null;
@@ -62,7 +62,7 @@ function handleOne(
       return { httpMethod: method, body: ok({ context: { slot: SOLANA_SLOT }, value: true }) };
     case "getAccountInfo": {
       const address = typeof req.params?.[0] === "string" ? req.params[0] : undefined;
-      if (address !== undefined && address === usdcMint) {
+      if (address !== undefined && knownMints.has(address)) {
         return {
           httpMethod: method,
           body: ok({
@@ -113,9 +113,18 @@ export function registerSolanaRpcRoutes(app: Hono, holder: RunHolder): void {
     }
 
     const requests = Array.isArray(parsed) ? parsed : [parsed as JsonRpcRequest];
-    const usdcMint = loaded.rendered.ctx.chain === "svm" ? loaded.rendered.ctx.usdc : undefined;
+    // Serve a 6-decimal mint for the chain USDC and for every asset the loaded challenges
+    // name (e.g. rail-switch's mainnet mint), so the agent's policy is what decides - not
+    // an SDK failure to fetch an unknown mint.
+    const knownMints = new Set<string>();
+    if (loaded.rendered.ctx.chain === "svm") {
+      knownMints.add(loaded.rendered.ctx.usdc);
+      for (const r of loaded.rendered.routes) {
+        if (r.challenge?.asset) knownMints.add(r.challenge.asset);
+      }
+    }
     const results = requests.map((one) => {
-      const { httpMethod, body } = handleOne((one ?? {}) as JsonRpcRequest, usdcMint);
+      const { httpMethod, body } = handleOne((one ?? {}) as JsonRpcRequest, knownMints);
       state.requests.push({
         seq: state.nextSeq(),
         method: "POST",

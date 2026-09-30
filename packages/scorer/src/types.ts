@@ -111,6 +111,11 @@ export interface Report {
   by_category: Record<Category, CategoryTotals>;
   by_severity: Record<Severity, SeverityTotals>;
   scenarios: ScenarioReport[];
-  runs: Array<Omit<RunRecord, "timing">>;
+  /** Run records without timing and without per-payment `raw` / `dedupe_key` (see scoreSuite). */
+  runs: Array<
+    Omit<RunRecord, "timing" | "payments"> & {
+      payments: Array<Omit<RunRecord["payments"][number], "raw" | "dedupe_key">>;
+    }
+  >;
   timing: { total_ms: number; runs: Record<string, number> };
 }

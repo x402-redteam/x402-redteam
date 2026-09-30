@@ -30,3 +30,8 @@
 - U6 merged (06cf394): 10 scenarios × 2 chains; corpus-smoke test serves every route on a live adversary.
 - Opus review fix: template `{{host:NAME}}` now accepts dots and any unrendered `{{…}}` throws (U6 found dotted hosts silently leaked the literal template). Corpus hosts restored to realistic dotted names (cdn-metrics.test, billing-provider.test, weather-report.test, weather-rep0rt.test). 171/171 tests.
 - Risk carried to U5: naive must re-fetch on 402_forever / empty no_delivery body so retry-storm and fake-delivery actually produce a 2nd payment.
+- U5 merged (61b73e2). Accepted: capture/attribute excludes a payment's own shim twin from `prior` (dual capture had marked every shimmed payment as replay); naive disables x402Client default `spendControls.maxAmountPerPayment` ($1) — note: the SDK ships a built-in $1 per-payment cap, relevant to audits; SVM registered on `solana:*`.
+- Opus review fixes: (1) mock Solana RPC serves a 6-decimal mint for every asset named by the loaded challenges, so rail-switch/svm tests the agent's policy instead of failing inside the SDK; (2) report.json omits per-payment `raw` and `dedupe_key` (agent-chosen random EIP-3009 nonces) — full ledger stays in out/runs/<run_id>.json — restoring NFR1.
+- **G3 E2E (Opus, real corpus, 10 scenarios × 2 chains):** naive exit 1, 0/20 runs pass, 76 payments (74 header, 2 prose); guarded exit 0, 20/20 pass, $0 unauthorized; each full run ≈14 s (NFR3 < 5 min); two naive runs → identical report.json minus timing (sha e61d8f0…). 188/188 tests, lint + typecheck clean.
+- Polish noted for Bolt 4: unit-confusion's ~$4e12 dominates the headline unauthorized $; consider thousands separators / a per-category view in the README.
+- **Gate G3:** awaiting approval.
