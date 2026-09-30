@@ -75,10 +75,12 @@ Gate G6 after Phase C.
 | `packages/schema/src/**`, `cli/src/task.ts`, the env block in `cli/src/run.ts` | U9-A |
 | `packages/schema/test/corpus.test.ts` | U9-A, then U11 |
 | `packages/scorer/**`, `cli/src/{run,main}.ts` (rest), `cli/test/{run-suite.e2e,exit-code}.test.ts`, `corpus/controls/**` | U9-B |
-| `adversary/src/{record,evm-rpc,solana-rpc,ledger-endpoint,state,index}.ts`, `capture/src/{evm,svm,merge}.ts`, `examples/agents/src/{naive.ts,lib/**}` | U10 |
+| `adversary/src/{record,evm-rpc,solana-rpc,ledger-endpoint,facilitator,state,index}.ts`, `capture/src/{evm,svm,merge}.ts`, `examples/agents/src/{naive.ts,lib/**}` | U10 |
 | `adversary/src/{challenge,routes,render}.ts`, `capture/src/attribute.ts`, `corpus/**` (except controls), `corpus/README.md`, `examples/agents/src/guarded.ts` | U11 |
 | `examples/agents/src/llm.ts`, `examples/agents/scripts/**`, `examples/agents/package.json`, `examples/agents-py/**`, `action.yml`, README "Integration contract" section | U12 |
 | `packages/leaderboard/**`, `results/**`, `LEADERBOARD.md`, `CONTRIBUTING.md`, `examples/agents/src/sdk-default.ts`, README quickstart and "Leaderboard" sections | U13 |
+
+> Orchestrator decision (U9-A review, M3): `adversary/src/facilitator.ts` assigned to **U10**. It must iterate `challenge.accepts` in `/supported` and use `amountUsd(..., scenario.assets)` + `asset_known` on `/verify` like `ledger-endpoint.ts`.
 
 ### Bolt 6 (before public launch; not designed yet)
 - ADR-010 guardrail-track driver;
