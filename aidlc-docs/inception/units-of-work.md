@@ -80,6 +80,8 @@ Gate G6 after Phase C.
 | `examples/agents/src/llm.ts`, `examples/agents/scripts/**`, `examples/agents/package.json`, `examples/agents-py/**`, `action.yml`, README "Integration contract" section | U12 |
 | `packages/leaderboard/**`, `results/**`, `LEADERBOARD.md`, `CONTRIBUTING.md`, `examples/agents/src/sdk-default.ts`, README quickstart and "Leaderboard" sections | U13 |
 
+> Orchestrator decision (U9-A fixes): `packages/cli/test/corpus-hash.test.ts` pins the corpus hash; owned by **U11**, which updates the pinned value deliberately when corpus v2 lands.
+
 > Orchestrator decision (U9-A review, M3): `adversary/src/facilitator.ts` assigned to **U10**. It must iterate `challenge.accepts` in `/supported` and use `amountUsd(..., scenario.assets)` + `asset_known` on `/verify` like `ledger-endpoint.ts`.
 
 ### Bolt 6 (before public launch; not designed yet)
