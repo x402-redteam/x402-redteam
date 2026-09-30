@@ -40,3 +40,9 @@
 - Opus review fix: root `x402-redteam` script so the README quickstart works verbatim; quickstart verified (naive exit 1, guarded exit 0, 20/20).
 - Not verified: GitHub Actions workflows have not run on a real runner (no remote; nothing pushed). 194/194 tests, lint + typecheck clean.
 - **Gate G4 (MVP done):** awaiting approval.
+
+## 2026-09-30 — Process upgrade (post-G4 feedback)
+- **User input:** "How does this compare with modern claude design? Do we need claude .MD with rules and preferences? We need a senior architect to reach a good design" → chose "Rules + roles, then review".
+- Opus self-assessment: roles were ad-hoc prompts; no CLAUDE.md (conventions rediscovered by each agent); gates enforced only by prompt; orchestrator reviewed its own design (no independent architecture review).
+- Added CLAUDE.md, .claude/agents/{senior-architect (opus), lead-developer (sonnet), code-reviewer (opus)}, .claude/settings.json deny rules (push, publish, repo create, global installs). .gitignore now ignores only .claude/worktrees and settings.local.json.
+- G4 left open pending the independent architecture review (G5).

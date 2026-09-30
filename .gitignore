@@ -5,4 +5,5 @@ out/
 .x402-redteam/
 *.log
 .DS_Store
-.claude/
+.claude/worktrees/
+.claude/settings.local.json

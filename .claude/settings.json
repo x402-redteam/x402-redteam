@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(npm publish:*)",
+      "Bash(pnpm publish:*)",
+      "Bash(gh repo create:*)",
+      "Bash(brew install:*)",
+      "Bash(npm install -g:*)"
+    ]
+  }
+}
