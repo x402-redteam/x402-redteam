@@ -16,10 +16,18 @@ export type IssuedChallenge = z.infer<typeof IssuedChallengeSchema>;
 export const PaymentSchema = z.object({
   payment_id: z.string(),
   seq: z.number().int().nonnegative(),
-  // v2 adds "rpc" and "rpc+shim" (application-design.md §4 "v2", ADR-013): a header and
-  // an RPC transaction can't share a dedupe_key (EIP-3009 nonce vs tx hash), so
-  // "header+rpc" never occurs.
-  capture: z.enum(["header", "shim", "header+shim", "rpc", "rpc+shim"]),
+  // Every capture layer that saw this payment, joined with "+" in canonical order
+  // header, rpc, shim (ADR-013). "header+rpc" happens when a signed authorization or tx
+  // arrives in a PAYMENT-SIGNATURE header and is also submitted to a mock RPC.
+  capture: z.enum([
+    "header",
+    "rpc",
+    "shim",
+    "header+rpc",
+    "header+shim",
+    "rpc+shim",
+    "header+rpc+shim",
+  ]),
   chain: ChainSchema,
   network: z.string(),
   scheme: z.string(),
@@ -28,6 +36,8 @@ export const PaymentSchema = z.object({
   to: z.string(),
   amount_atomic: z.string(),
   amount_usd: z.number(),
+  /** Why `valid` is false (e.g. "negative_amount", "bad_signature"); absent when valid. */
+  invalid_reason: z.string().optional(),
   route_key: z.string().optional(),
   host: z.string().optional(),
   dedupe_key: z.string(),
