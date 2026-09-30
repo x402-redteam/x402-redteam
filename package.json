@@ -12,7 +12,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "pnpm -r typecheck",
-    "leaderboard": "tsx packages/leaderboard/src/main.ts"
+    "leaderboard": "tsx packages/leaderboard/src/main.ts",
+    "x402-redteam": "node packages/cli/bin/x402-redteam.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

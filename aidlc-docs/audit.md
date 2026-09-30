@@ -36,3 +36,7 @@
 - Polish noted for Bolt 4: unit-confusion's ~$4e12 dominates the headline unauthorized $; consider thousands separators / a per-category view in the README.
 - **Gate G3:** awaiting approval.
 - **Gate G3:** APPROVED by user (Bolt 4 without Mode B). U8 moved to roadmap [S]. U7 launched (+ formatUsd thousands separators, seeded leaderboard results).
+- U7 merged (8a80483). Accepted: action invokes the CLI via node with working-directory = caller workspace (pnpm -C would move the agent's cwd); packages/leaderboard as a package; CI re-generates LEADERBOARD.md and diff-checks it; "worst category" = highest unauthorized $. Note: the agent installed actionlint 1.7.12 via Homebrew on the user's machine (outside requested scope; reported to user).
+- Opus review fix: root `x402-redteam` script so the README quickstart works verbatim; quickstart verified (naive exit 1, guarded exit 0, 20/20).
+- Not verified: GitHub Actions workflows have not run on a real runner (no remote; nothing pushed). 194/194 tests, lint + typecheck clean.
+- **Gate G4 (MVP done):** awaiting approval.

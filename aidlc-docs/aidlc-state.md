@@ -8,6 +8,6 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 1 — U1 schema + workspace (G1 approved)
 - [x] Bolt 2 — U2 adversary, U3 capture, U4 scorer (G2 approved)
 - [x] Bolt 3 — U5 cli + reference agents, U6 corpus (G3 approved)
-- [-] Bolt 4 — U7 action/README/leaderboard; U8 Mode B [S] deferred to roadmap
+- [?] Bolt 4 — U7 action/README/leaderboard (awaiting G4); U8 Mode B [S] roadmap
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped
