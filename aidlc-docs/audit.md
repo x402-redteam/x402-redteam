@@ -50,3 +50,7 @@
 - Opus reproduced B1: `--agent "true"` and `--agent "exit 3"` both score 20/20, $0, exit 0.
 - Proposed Bolt 5 "Measurement validity" (U9 controls/utility/run errors, U10 chain-boundary capture, U11 oracle fixes + corpus v2 start, U12 real LLM + Python agents, U13 leaderboard canonical-config checks); Bolt 6 before public launch (realistic hosts, attested/held-out results, guardrail track, Rail port for MPP).
 - **Gate G5:** awaiting user decision.
+- **Gate G5:** APPROVED by user ("Accept, plan Bolt 5"). G4 remains open until Bolt 5 lands.
+- Senior-architect wrote Bolt 5 design: ADR-009/013/015 accepted; ADR-010/011/012/014 proposed (Bolt 6); amendments on ADR-001/002/005/008; application-design v2 sections; U9 (A+B), U10, U11, U12, U13 designs; phase plan A → B (U9-B, U10, U11 parallel) → C (U12, U13) → G6; one-owner-per-file table.
+- Architect deviations from own review: Category stays closed (Bolt 6); 2 variants/category not 3; guarded must be recorded failing resource-url spoof before being fixed + no-guardrail agent ≤ 40% attack pass; attack-run crash = `error`; LLM skip via wrapper script; Python agent EVM-only until SVM rpc override confirmed; action shell-injection fix moved into U12.
+- Awaiting user decisions: LLM key/model/spend + network exception + @anthropic-ai/sdk; Python venv x402[evm,httpx]==2.25.0; breaking CI changes (exit 2 = invalid run, fail-on default low); $100 modelled balance + severity weights 1/3/7/10; whether to publish the Coinbase SDK-default baseline.

@@ -37,3 +37,53 @@ U2 depends on U3 at runtime (decoders). To keep Bolt 2 parallel, U2 codes agains
 2. A Sonnet agent implements the unit test-first and runs `pnpm -F <pkg> test` and lint, then reports its deviations.
 3. Opus reviews the diff against the design, runs the tests, merges, and appends to `audit.md`.
 4. Findings go back to the same Sonnet agent through SendMessage and are fixed before the gate.
+
+---
+
+## Bolt 5 — Measurement validity (from Architecture Review 1, accepted at G5)
+
+| Unit | Scope | Design |
+|---|---|---|
+| U9 | **Part A:** schema v2 contract landing. **Part B:** controls, run validity, exposure cap, safety score, CLI exit v2 | `construction/U9-validity/` |
+| U10 | Mock EVM RPC; Solana `sendTransaction` capture; naive switches to real RPC transfers | `construction/U10-chain-capture/` |
+| U11 | Corpus v2: oracle fixes, no-hint prompts, variants, 6 new attack classes, guarded fix *after* recording its failures | `construction/U11-corpus-v2/` |
+| U12 | TS LLM agent (skipped without a key) and a Python x402 agent; integration docs; `action.yml` | `construction/U12-real-agents/` |
+| U13 | Leaderboard acceptance checks, re-scoring, ranking v2, sdk-default baseline, honest CONTRIBUTING | `construction/U13-leaderboard-hygiene/` |
+
+### Dependencies and parallelism
+```
+Phase A (sequential, main tree or 1 worktree):  U9-A schema v2 ──► merge + full checks
+Phase B (3 parallel worktrees):                 U9-B   U10   U11   ──► merge in the order U9-B, U10, U11; integrate
+Phase C (2 parallel worktrees):                 U12    U13          ──► merge U12, then U13 (regenerates results last)
+Gate G6 after Phase C.
+```
+- **Why Part A first:** `schema/scenario.ts`, `ledger.ts`, `chains.ts`, `load.ts`, `cli/task.ts` and the env block in `cli/run.ts` would otherwise be edited by three units at once. Part A lands every contract field (defaults and types only), so Phase B units consume them without touching those files.
+- **Merge order in Phase B:**
+  - U9-B changes the report shape and the E2E expectations.
+  - U10 changes naive's prose path.
+  - U11 changes the corpus and guarded, and needs U10's `solana-rpc.ts` `assetInfo` mint decimals for `asset-swap` on svm.
+  - Expect the orchestrator to fix up the E2E test expectations after the U11 merge; U11's `corpus-v2.e2e.test.ts` is authoritative for corpus-level counts.
+- **Cross-unit features verified only at integration:**
+  - `authorization-lifetime`: U10 capture fills `authorization_seconds`, U9 scores it, U11 supplies the scenario.
+  - `asset-swap` on svm: U10's mint decimals and U11's scenario.
+- **The CI leaderboard diff-check** will be red from the U9-B merge until U13 regenerates `results/`. That's expected; don't hand-patch it in between.
+- **Lockfile:** only U12 adds dependencies (`@anthropic-ai/sdk`). The Python lock is separate (`examples/agents-py/uv.lock`).
+
+### File ownership (Bolt 5; one owner per file; others must request changes via the orchestrator)
+| Path | Owner |
+|---|---|
+| `packages/schema/src/**`, `cli/src/task.ts`, the env block in `cli/src/run.ts` | U9-A |
+| `packages/schema/test/corpus.test.ts` | U9-A, then U11 |
+| `packages/scorer/**`, `cli/src/{run,main}.ts` (rest), `cli/test/{run-suite.e2e,exit-code}.test.ts`, `corpus/controls/**` | U9-B |
+| `adversary/src/{record,evm-rpc,solana-rpc,ledger-endpoint,state,index}.ts`, `capture/src/{evm,svm,merge}.ts`, `examples/agents/src/{naive.ts,lib/**}` | U10 |
+| `adversary/src/{challenge,routes,render}.ts`, `capture/src/attribute.ts`, `corpus/**` (except controls), `corpus/README.md`, `examples/agents/src/guarded.ts` | U11 |
+| `examples/agents/src/llm.ts`, `examples/agents/scripts/**`, `examples/agents/package.json`, `examples/agents-py/**`, `action.yml`, README "Integration contract" section | U12 |
+| `packages/leaderboard/**`, `results/**`, `LEADERBOARD.md`, `CONTRIBUTING.md`, `examples/agents/src/sdk-default.ts`, README quickstart and "Leaderboard" sections | U13 |
+
+### Bolt 6 (before public launch; not designed yet)
+- ADR-010 guardrail-track driver;
+- ADR-011 provenance and a held-out seasonal corpus;
+- ADR-012 realistic hostnames / proxy mode;
+- ADR-014 Rail port (MPP runway);
+- a real-runner Action verification;
+- ≥ 3 variants per category.
