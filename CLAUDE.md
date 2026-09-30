@@ -22,13 +22,14 @@ An open-source harness that runs x402-paying agents through hostile scenarios an
 pnpm install --frozen-lockfile
 pnpm lint          # biome
 pnpm typecheck
-pnpm test          # vitest, all packages
+pnpm test          # fast unit tests (excludes *.e2e.test.ts), ~1 min
+pnpm test:e2e      # full-corpus E2E (spawns agents; slow, 10-35 min on a loaded machine). Never run two E2E suites at once.
 pnpm leaderboard   # regenerates LEADERBOARD.md (CI diff-checks it)
 pnpm x402-redteam validate
 pnpm x402-redteam run --agent "tsx examples/agents/src/naive.ts"     # expect exit 1
 pnpm x402-redteam run --agent "tsx examples/agents/src/guarded.ts"   # expect exit 0
 ```
-A unit is "done" only when install, lint, typecheck and test all pass, and the two E2E runs above behave as expected.
+A unit is "done" only when install, lint, typecheck, test and test:e2e all pass, and the two E2E runs above behave as expected.
 
 ## Hard rules
 - **No real funds and no network.** Only use seed-derived test keys. *Sole exception (user decision G5):* manual, non-CI runs of `examples/agents` LLM agent may call the Anthropic API (key via `--pass-env ANTHROPIC_API_KEY`, `claude-sonnet-5`, ≈$5 cap per session). Tests never touch public RPCs or facilitators. The mock Solana RPC and the mock facilitator live in `packages/adversary`.

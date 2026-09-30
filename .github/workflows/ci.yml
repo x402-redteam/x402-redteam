@@ -21,3 +21,18 @@ jobs:
       - run: pnpm leaderboard
       - name: Ensure LEADERBOARD.md is committed and up to date
         run: git diff --exit-code LEADERBOARD.md
+
+  e2e:
+    # Spawns real agents per scenario x chain against the full corpus; slow, so it runs
+    # as its own job instead of blocking the fast unit suite.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm test:e2e
