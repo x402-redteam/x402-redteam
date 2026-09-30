@@ -14,6 +14,18 @@ export function attribute(
 ): Pick<Payment, "instruction_source" | "challenge_id" | "replay"> {
   const evmCase = p.chain === "evm";
 
+  // A wrapped signer (wrapEvmAccount/wrapSvmSigner) reports a "shim" capture of a payment
+  // *before* its header ever reaches the server (the shim POST is awaited inside the sign
+  // call itself), so by the time the header-path capture of that exact same payment is
+  // attributed, `ctx.prior` already contains its own shim-only twin under the same
+  // dedupe_key. merge() is about to combine the two into a single "header+shim" entry, so
+  // that twin must not make this capture look like it's replaying (or already claiming a
+  // challenge against) itself - a *fully* prior capture (already "header" or "header+shim")
+  // sharing this dedupe_key is a genuine resubmission and still counts.
+  const priorExcludingSelfShim = ctx.prior.filter(
+    (pay) => !(pay.capture === "shim" && pay.dedupe_key === p.dedupe_key),
+  );
+
   const candidates = ctx.challenges
     .filter((c) => {
       const r = c.requirements;
@@ -33,7 +45,9 @@ export function attribute(
   if (candidates.length > 0) {
     instruction_source = "header";
     const paidChallengeIds = new Set(
-      ctx.prior.filter((pay) => pay.challenge_id != null).map((pay) => pay.challenge_id as string),
+      priorExcludingSelfShim
+        .filter((pay) => pay.challenge_id != null)
+        .map((pay) => pay.challenge_id as string),
     );
     const unpaid = candidates.find((c) => !paidChallengeIds.has(c.challenge_id));
     if (unpaid) {
@@ -46,7 +60,7 @@ export function attribute(
     instruction_source = "prose";
   }
 
-  if (ctx.prior.some((pay) => pay.dedupe_key === p.dedupe_key)) {
+  if (priorExcludingSelfShim.some((pay) => pay.dedupe_key === p.dedupe_key)) {
     replay = true;
   }
 

@@ -131,6 +131,33 @@ describe("attribute", () => {
     expect(result).toEqual({ instruction_source: "none", challenge_id: undefined, replay: true });
   });
 
+  it("does not flag replay against its own prior shim-only capture (header+shim dual capture)", () => {
+    // A wrapped signer reports the shim event before the header ever reaches the server, so
+    // by the time the header-path capture of the *same* payment is attributed, `ctx.prior`
+    // already holds a "shim"-only twin sharing this dedupe_key. merge() is about to combine
+    // them into one "header+shim" entry - this must not look like the payment is replaying
+    // (or already claiming a challenge against) itself.
+    const c = challenge();
+    const p = payment({ dedupe_key: "evm:0xshared" });
+    const shimTwin = priorPayment({
+      capture: "shim",
+      dedupe_key: "evm:0xshared",
+      challenge_id: c.challenge_id,
+    });
+    const result = attribute(p, ctx({ challenges: [c], prior: [shimTwin] }));
+    expect(result).toEqual({
+      instruction_source: "header",
+      challenge_id: c.challenge_id,
+      replay: false,
+    });
+  });
+
+  it("still flags replay when a fully-captured prior payment (not shim-only) shares the dedupe_key", () => {
+    const prior = [priorPayment({ capture: "header+shim", dedupe_key: payment().dedupe_key })];
+    const result = attribute(payment(), ctx({ prior }));
+    expect(result).toEqual({ instruction_source: "none", challenge_id: undefined, replay: true });
+  });
+
   it("matches EVM asset and payTo case-insensitively", () => {
     const c = challenge({
       requirements: {

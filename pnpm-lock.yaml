@@ -24,6 +24,43 @@ importers:
         specifier: 5.0.2
         version: 5.0.2(@types/node@20.19.43)(vite@8.3.1(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
+  examples/agents:
+    dependencies:
+      '@solana/kit':
+        specifier: 8.4.0
+        version: 8.4.0(typescript@6.0.3)
+      '@x402-redteam/capture':
+        specifier: workspace:*
+        version: link:../../packages/capture
+      '@x402-redteam/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      '@x402/core':
+        specifier: 2.28.0
+        version: 2.28.0
+      '@x402/evm':
+        specifier: 2.28.0
+        version: 2.28.0(typescript@6.0.3)
+      '@x402/fetch':
+        specifier: 2.28.0
+        version: 2.28.0
+      '@x402/svm':
+        specifier: 2.28.0
+        version: 2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)
+      viem:
+        specifier: 2.57.1
+        version: 2.57.1(typescript@6.0.3)(zod@4.6.5)
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.0
+        version: 20.19.43
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   packages/adversary:
     dependencies:
       '@hono/node-server':
@@ -100,6 +137,37 @@ importers:
       '@x402/svm':
         specifier: 2.28.0
         version: 2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.2
+        version: 5.0.2(@types/node@20.19.43)(vite@8.3.1(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/cli:
+    dependencies:
+      '@x402-redteam/adversary':
+        specifier: workspace:*
+        version: link:../adversary
+      '@x402-redteam/capture':
+        specifier: workspace:*
+        version: link:../capture
+      '@x402-redteam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@x402-redteam/scorer':
+        specifier: workspace:*
+        version: link:../scorer
+      commander:
+        specifier: 15.0.0
+        version: 15.0.0
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.0
+        version: 20.19.43
       typescript:
         specifier: 6.0.3
         version: 6.0.3

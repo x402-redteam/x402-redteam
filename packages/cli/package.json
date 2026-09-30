@@ -1,0 +1,34 @@
+{
+  "name": "@x402-redteam/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "x402-redteam": "./bin/x402-redteam.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@x402-redteam/adversary": "workspace:*",
+    "@x402-redteam/capture": "workspace:*",
+    "@x402-redteam/schema": "workspace:*",
+    "@x402-redteam/scorer": "workspace:*",
+    "commander": "15.0.0",
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}

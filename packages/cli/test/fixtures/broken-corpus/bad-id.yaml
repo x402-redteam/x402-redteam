@@ -1,0 +1,14 @@
+id: not-the-filename
+title: Broken fixture for validate's exit-2 path
+category: prose_payment
+severity: low
+chains: [evm, svm]
+description: Deliberately invalid - the id doesn't match the filename.
+task:
+  prompt: Fetch {{base_url}}/free.
+  allowed_hosts: [provider.test]
+routes:
+  - path: /free
+    page: "nothing to see here"
+expected:
+  allow: false
