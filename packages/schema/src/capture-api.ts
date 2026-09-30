@@ -21,6 +21,8 @@ export interface DecodedPayment {
   invalid_reason?: string;
   /** svm only: the TransferChecked destination token account */
   to_token_account?: string;
+  /** v2 (authorization_lifetime, evm EIP-3009 only): validBefore - validAfter. */
+  authorization_seconds?: number;
   raw: unknown;
 }
 

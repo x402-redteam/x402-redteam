@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { atomicToUsd, CHAIN_DEFAULTS, usdToAtomic } from "../src/chains.js";
+import {
+  amountUsd,
+  assetInfo,
+  atomicToUsd,
+  CHAIN_DEFAULTS,
+  KNOWN_ASSETS,
+  usdToAtomic,
+} from "../src/chains.js";
 
 describe("usdToAtomic", () => {
   it("converts exact cent/micro amounts without float drift", () => {
@@ -35,5 +42,84 @@ describe("CHAIN_DEFAULTS", () => {
       decimals: 6,
       extra: {},
     });
+  });
+});
+
+// v2 (Bolt 5, U9 Part A functional-design.md §A1 "Asset registry").
+describe("KNOWN_ASSETS / assetInfo (v2)", () => {
+  it("has the test and mainnet USDC entries on both chains, 6 decimals, usd_price 1", () => {
+    expect(KNOWN_ASSETS.evm).toHaveLength(2);
+    expect(KNOWN_ASSETS.svm).toHaveLength(2);
+    for (const entry of [...KNOWN_ASSETS.evm, ...KNOWN_ASSETS.svm]) {
+      expect(entry.decimals).toBe(6);
+      expect(entry.usd_price).toBe(1);
+      expect(entry.symbol).toBe("USDC");
+    }
+  });
+
+  it("resolves the default test USDC on each chain to {decimals: 6, usd_price: 1, known: true}", () => {
+    expect(assetInfo("evm", CHAIN_DEFAULTS.evm.asset)).toEqual({
+      decimals: 6,
+      usd_price: 1,
+      symbol: "USDC",
+      known: true,
+    });
+    expect(assetInfo("svm", CHAIN_DEFAULTS.svm.asset)).toEqual({
+      decimals: 6,
+      usd_price: 1,
+      symbol: "USDC",
+      known: true,
+    });
+  });
+
+  it("matches evm addresses case-insensitively", () => {
+    const upper = CHAIN_DEFAULTS.evm.asset.toUpperCase().replace("0X", "0x");
+    expect(assetInfo("evm", upper).known).toBe(true);
+  });
+
+  it("matches svm addresses case-sensitively (an svm case change is unknown)", () => {
+    const flipped = CHAIN_DEFAULTS.svm.asset.toLowerCase();
+    expect(flipped).not.toBe(CHAIN_DEFAULTS.svm.asset);
+    expect(assetInfo("svm", flipped).known).toBe(false);
+  });
+
+  it("resolves the rail-switch mainnet USDC addresses as known", () => {
+    expect(assetInfo("evm", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913").known).toBe(true);
+    expect(assetInfo("svm", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").known).toBe(true);
+  });
+
+  it("falls back to {decimals: 6, usd_price: 1, known: false} for an unknown asset", () => {
+    const result = assetInfo("evm", "0xdeadbeef00000000000000000000000000dead");
+    expect(result.decimals).toBe(6);
+    expect(result.usd_price).toBe(1);
+    expect(result.known).toBe(false);
+  });
+
+  it("prefers a scenario-declared asset over KNOWN_ASSETS", () => {
+    const result = assetInfo("evm", "0xWETH", [
+      { chain: "evm", address: "0xWETH", symbol: "WETH", decimals: 18, usd_price: 3000 },
+    ]);
+    expect(result).toEqual({ decimals: 18, usd_price: 3000, symbol: "WETH", known: true });
+  });
+
+  it("ignores a scenario asset declared for a different chain", () => {
+    const result = assetInfo("evm", "0xWETH", [
+      { chain: "svm", address: "0xWETH", symbol: "WETH", decimals: 18, usd_price: 3000 },
+    ]);
+    expect(result.known).toBe(false);
+  });
+});
+
+describe("amountUsd (v2)", () => {
+  it("computes atomic / 10^decimals * usd_price through assetInfo", () => {
+    expect(amountUsd("evm", CHAIN_DEFAULTS.evm.asset, "10000")).toBeCloseTo(0.01, 6);
+  });
+
+  it("scales by a scenario-declared asset's usd_price and decimals", () => {
+    const scenarioAssets = [
+      { chain: "evm" as const, address: "0xWETH", symbol: "WETH", decimals: 18, usd_price: 3000 },
+    ];
+    // 0.01 WETH (18 decimals) at $3000/WETH = $30.
+    expect(amountUsd("evm", "0xWETH", "10000000000000000", scenarioAssets)).toBeCloseTo(30, 6);
   });
 });

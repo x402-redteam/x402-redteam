@@ -110,6 +110,14 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
     rendered.delivered_body = render(route.delivered_body, ctx);
   if (route.challenge !== undefined) {
     const resolved = challengeForChain(route.challenge, chain);
+    // v2 (application-design.md §3 "v2"): ChallengeSpec.pay_to is now optional (a
+    // challenge may set `accepts` instead) - this render path is v1-only until U11
+    // wires up accepts-aware rendering, and every v1 scenario always sets pay_to.
+    if (resolved.pay_to === undefined) {
+      throw new Error(
+        `renderRoute: route "${rendered.route_key}" challenge has no pay_to (accepts-based challenges are not yet rendered here)`,
+      );
+    }
     rendered.challenge = {
       amount_usd: resolved.amount_usd,
       amount_atomic: resolved.amount_atomic,

@@ -8,11 +8,16 @@ import {
   type RenderContext,
   render,
   type Scenario,
+  walletBalanceUsd,
 } from "@x402-redteam/schema";
 
-/** The harness's task.json (version 1), per application-design.md §6. */
+/**
+ * The harness's task.json, version 2 (application-design.md §6 "v2"): additive over
+ * version 1 - `wallet_balance_usd` and `evm_rpc_url` are the only new fields, so an
+ * agent that ignores unknown fields keeps working unmodified.
+ */
 export interface TaskFile {
-  version: 1;
+  version: 2;
   run_id: string;
   prompt: string;
   base_url: string;
@@ -25,6 +30,10 @@ export interface TaskFile {
   solana_rpc_url: string;
   ledger_url: string;
   notice: string;
+  /** v2 (ADR-015): the modelled wallet balance, defaulted via `walletBalanceUsd()`. */
+  wallet_balance_usd: number;
+  /** v2 (ADR-013): the mock EVM JSON-RPC this run's adversary serves. */
+  evm_rpc_url: string;
 }
 
 /**
@@ -73,7 +82,7 @@ export function buildTask(opts: BuildTaskOptions): TaskFile {
   const wallet = agentWallet(seed, chain);
 
   return {
-    version: 1,
+    version: 2,
     run_id,
     prompt,
     base_url: baseUrl,
@@ -89,6 +98,8 @@ export function buildTask(opts: BuildTaskOptions): TaskFile {
     solana_rpc_url: `${baseUrl}/solana-rpc`,
     ledger_url: `${baseUrl}/__harness/ledger`,
     notice: "TEST KEYS ONLY — no funds",
+    wallet_balance_usd: walletBalanceUsd(scenario.task),
+    evm_rpc_url: `${baseUrl}/evm-rpc`,
   };
 }
 

@@ -15,20 +15,25 @@ interface ChallengeOverrides {
 }
 
 function challenge(overrides: ChallengeOverrides = {}): IssuedChallenge {
+  const requirements: IssuedChallenge["requirements"] = {
+    scheme: "exact",
+    network: "eip155:84532",
+    asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    amount: "1000",
+    payTo: "0xAbCdEf0000000000000000000000000000001234",
+    maxTimeoutSeconds: 60,
+    extra: {},
+    ...overrides.requirements,
+  };
   return {
     challenge_id: overrides.challenge_id ?? "provider.test/weather/today#0",
     route_key: overrides.route_key ?? "provider.test/weather/today",
     seq: overrides.seq ?? 0,
-    requirements: {
-      scheme: "exact",
-      network: "eip155:84532",
-      asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      amount: "1000",
-      payTo: "0xAbCdEf0000000000000000000000000000001234",
-      maxTimeoutSeconds: 60,
-      extra: {},
-      ...overrides.requirements,
-    },
+    requirements,
+    // v2 (application-design.md §4 "v2"): IssuedChallenge.accepts is now required.
+    // attribute() (U11, unmodified in this Part A ripple fix) still only reads
+    // `requirements`, so a 1-element list matching it is the correct v1-equivalent shape.
+    accepts: [requirements],
   };
 }
 

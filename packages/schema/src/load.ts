@@ -1,8 +1,17 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { type Scenario, ScenarioSchema } from "./scenario.js";
-import { type RenderContext, render } from "./template.js";
+import {
+  type Chain,
+  type ChallengeSpec,
+  minPayments,
+  requireDelivered,
+  type Scenario,
+  ScenarioSchema,
+} from "./scenario.js";
+import { type RenderContext, render, renderJsonStrings } from "./template.js";
+
+const CHAINS: readonly Chain[] = ["evm", "svm"];
 
 /** Corpus loading / lint error. `path` is a dotted/bracketed path into the YAML document. */
 export class CorpusError extends Error {
@@ -42,7 +51,43 @@ interface TemplatedField {
   value: string;
 }
 
-/** Every field documented as templated in application-design.md §3, both render with DUMMY_CTX. */
+/**
+ * Every pay_to-like field on a challenge (code review M2): the top-level `pay_to`, its
+ * `per_chain.{evm,svm}.pay_to` overrides, and - v2 (accepts_ordering) - each
+ * `accepts[]` entry's `pay_to` and its own `per_chain.{evm,svm}.pay_to` overrides.
+ * Every one of these is both templated (rule 2) and a payment recipient scanned for
+ * ADR-004 channel separation (rule 3), so both rules share this single source of paths.
+ */
+function payToFields(basePath: string, challenge: ChallengeSpec): TemplatedField[] {
+  const fields: TemplatedField[] = [];
+  if (challenge.pay_to !== undefined) {
+    fields.push({ path: `${basePath}.pay_to`, value: challenge.pay_to });
+  }
+  for (const chain of CHAINS) {
+    const override = challenge.per_chain?.[chain];
+    if (override?.pay_to !== undefined) {
+      fields.push({ path: `${basePath}.per_chain.${chain}.pay_to`, value: override.pay_to });
+    }
+  }
+  challenge.accepts?.forEach((accept, j) => {
+    const acceptPath = `${basePath}.accepts[${j}]`;
+    fields.push({ path: `${acceptPath}.pay_to`, value: accept.pay_to });
+    for (const chain of CHAINS) {
+      const override = accept.per_chain?.[chain];
+      if (override?.pay_to !== undefined) {
+        fields.push({ path: `${acceptPath}.per_chain.${chain}.pay_to`, value: override.pay_to });
+      }
+    }
+  });
+  return fields;
+}
+
+/**
+ * Every plain-string field documented as templated in application-design.md §3, each
+ * rendered with DUMMY_CTX. `body_json` (v2 challenge_injection) is deep-templated, not a
+ * single string, so it's checked separately in `lintScenario` via `renderJsonStrings`
+ * (code review L6) rather than being collected here.
+ */
 function templatedFields(scenario: Scenario): TemplatedField[] {
   const fields: TemplatedField[] = [{ path: "task.prompt", value: scenario.task.prompt }];
   scenario.routes.forEach((route, i) => {
@@ -55,13 +100,20 @@ function templatedFields(scenario: Scenario): TemplatedField[] {
     if (route.delivered_body !== undefined) {
       fields.push({ path: `routes[${i}].delivered_body`, value: route.delivered_body });
     }
-    if (route.challenge?.pay_to !== undefined) {
-      fields.push({ path: `routes[${i}].challenge.pay_to`, value: route.challenge.pay_to });
+    if (route.challenge !== undefined) {
+      fields.push(...payToFields(`routes[${i}].challenge`, route.challenge));
     }
     if (route.challenge?.description !== undefined) {
       fields.push({
         path: `routes[${i}].challenge.description`,
         value: route.challenge.description,
+      });
+    }
+    // v2 (resource_spoof): templated, overrides PaymentRequired.resource.url.
+    if (route.challenge?.resource_url !== undefined) {
+      fields.push({
+        path: `routes[${i}].challenge.resource_url`,
+        value: route.challenge.resource_url,
       });
     }
   });
@@ -71,7 +123,12 @@ function templatedFields(scenario: Scenario): TemplatedField[] {
   return fields;
 }
 
-/** Page-visible text sources for ADR-004 rule 3: rendered `page` and `delivered_body`. */
+/**
+ * Page-visible text sources for ADR-004 rule 3: rendered `page` and `delivered_body`.
+ * `body_json` (v2) also "counts as page-visible text for rule 3" (application-design.md
+ * §3 "v2") - represented here as its whole JSON.stringify'd (unrendered) text, which is
+ * enough for a `{{canary.X}}` substring scan regardless of nesting depth.
+ */
 function pageTextFields(scenario: Scenario): TemplatedField[] {
   const fields: TemplatedField[] = [];
   scenario.routes.forEach((route, i) => {
@@ -80,6 +137,12 @@ function pageTextFields(scenario: Scenario): TemplatedField[] {
     }
     if (route.delivered_body !== undefined) {
       fields.push({ path: `routes[${i}].delivered_body`, value: route.delivered_body });
+    }
+    if (route.challenge?.body_json !== undefined) {
+      fields.push({
+        path: `routes[${i}].challenge.body_json`,
+        value: JSON.stringify(route.challenge.body_json),
+      });
     }
   });
   return fields;
@@ -128,14 +191,28 @@ function lintScenario(file: string, scenario: Scenario): void {
     }
   }
 
-  // ADR-004 canary channel separation: a canary used as a payment recipient
-  // must never also appear in any page-visible text (`page` or
-  // `delivered_body`), scenario-wide.
-  const payToCanaries = new Set<string>();
-  scenario.routes.forEach((route) => {
-    if (route.challenge?.pay_to !== undefined) {
-      for (const name of extractCanaryNames(route.challenge.pay_to)) {
-        payToCanaries.add(name);
+  // v2 (challenge_injection): every string leaf of body_json is templated too, checked
+  // via the shared `renderJsonStrings` (code review L6) rather than a hand-rolled walk.
+  scenario.routes.forEach((route, i) => {
+    if (route.challenge?.body_json === undefined) return;
+    try {
+      renderJsonStrings(route.challenge.body_json, DUMMY_CTX);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new CorpusError(file, `routes[${i}].challenge.body_json`, message);
+    }
+  });
+
+  // ADR-004 canary channel separation: a canary used as a payment recipient must never
+  // also appear in any page-visible text (`page`, `delivered_body` or, v2, `body_json`),
+  // scenario-wide. v2 (code review M2): every payTo-like field is in scope, including
+  // per_chain overrides on both the top-level challenge and each accepts[] entry.
+  const payToCanaries = new Map<string, string>();
+  scenario.routes.forEach((route, i) => {
+    if (route.challenge === undefined) return;
+    for (const { path, value } of payToFields(`routes[${i}].challenge`, route.challenge)) {
+      for (const name of extractCanaryNames(value)) {
+        if (!payToCanaries.has(name)) payToCanaries.set(name, path);
       }
     }
   });
@@ -145,13 +222,16 @@ function lintScenario(file: string, scenario: Scenario): void {
       if (!pageCanaries.has(name)) pageCanaries.set(name, path);
     }
   }
-  for (const name of payToCanaries) {
+  for (const [name, payToPath] of payToCanaries) {
     const leakPath = pageCanaries.get(name);
     if (leakPath !== undefined) {
+      // Code review L5: name the actual payTo source (challenge.pay_to,
+      // challenge.per_chain.evm.pay_to, challenge.accepts[j].pay_to, ...), not a fixed
+      // "a challenge.pay_to" that stopped being accurate once per_chain/accepts joined.
       throw new CorpusError(
         file,
         leakPath,
-        `canary "${name}" appears in both a challenge.pay_to and page text (ADR-004 channel separation)`,
+        `canary "${name}" appears in both ${payToPath} and page text (ADR-004 channel separation)`,
       );
     }
   }
@@ -161,6 +241,48 @@ function lintScenario(file: string, scenario: Scenario): void {
       file,
       "expected.max_usd",
       "expected.max_usd is required when expected.allow is true",
+    );
+  }
+
+  // v2 (ADR-009 control lint, application-design.md §3 "v2"): a control scenario is a
+  // legitimate job the guardrail must still complete - it keeps attack scenarios
+  // passable by refusal by reserving min_payments > 0 for controls only.
+  if (scenario.category === "control") {
+    if (scenario.expected.allow !== true) {
+      throw new CorpusError(
+        file,
+        "expected.allow",
+        'a "control" scenario must have expected.allow: true',
+      );
+    }
+    if (minPayments(scenario.expected) < 1) {
+      throw new CorpusError(
+        file,
+        "expected.min_payments",
+        'a "control" scenario must have expected.min_payments >= 1',
+      );
+    }
+    // Code review L2: min_payments is a floor and max_payments a ceiling on the same
+    // run - a control that requires more payments than it permits can never pass.
+    if (minPayments(scenario.expected) > scenario.expected.max_payments) {
+      throw new CorpusError(
+        file,
+        "expected.min_payments",
+        `a "control" scenario's expected.min_payments (${minPayments(scenario.expected)}) must not exceed expected.max_payments (${scenario.expected.max_payments})`,
+      );
+    }
+    if (!requireDelivered(scenario.expected)) {
+      throw new CorpusError(
+        file,
+        "expected.require_delivered",
+        'a "control" scenario must have expected.require_delivered: true',
+      );
+    }
+  } else if (minPayments(scenario.expected) > 0) {
+    throw new CorpusError(
+      file,
+      "expected.min_payments",
+      `only a "control" scenario may set expected.min_payments > 0 (category "${scenario.category}")`,
     );
   }
 
