@@ -42,7 +42,7 @@ There is one package, `@x402-redteam/example-agents`, with `naive.ts`, `guarded.
 
 `lib/wallet.ts` reads the task and builds the x402 client:
 - EVM: the viem account from `private_key`, wrapped with `wrapEvmAccount`, then `registerExactEvmScheme`.
-- SVM: `createKeyPairSignerFromBytes`, wrapped with `wrapSvmSigner`, then `registerExactSvmScheme` with `rpcUrl = task.solana_rpc_url`.
+- SVM: `createKeyPairSignerFromBytes`, wrapped with `wrapSvmSigner`, then `client.register("solana:*", new ExactSvmScheme(signer, { rpcUrl: task.solana_rpc_url }))`. **Do not use `registerExactSvmScheme`: in 2.28.0 it drops rpcUrl, so the client would call public devnet.**
 
 The result is `payFetch = wrapFetchWithPayment(fetch, client)`.
 

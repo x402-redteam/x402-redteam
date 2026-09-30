@@ -19,3 +19,6 @@
 - **Gate G1:** APPROVED by user ("Approve, launch Bolt 2"). Bolt 2 launched: U2/U3/U4 Sonnet agents in worktrees.
 - Opus: added `challenge.per_chain` + `challengeForChain()` to schema (rail-switch needs per-chain network/asset); biome ignores .claude/ worktrees. Bolt 3 designs (U5, U6) written.
 - U4 merged (c990ccd). Deviations accepted: biome override for vendored SARIF schema; ajv named import; too_many_payments only when allow; SuiteMeta = {harness_version, agent_id, guardrail_id}. Opus review fix: USD shown with up to 6 decimals (formatUsd) so sub-cent price-bait payments aren't rendered "$0.00". 86/86 tests.
+- U3 merged (1e9a023). Deps: @solana-program/token 0.17.0, token-2022 0.19.0.
+- **SDK finding:** `registerExactSvmScheme` in @x402/svm@2.28.0 drops `schemeOptions`/rpcUrl (always `new ExactSvmScheme(config.signer)`); verified in source. Agents must `client.register("solana:*", new ExactSvmScheme(signer, {rpcUrl}))`. Candidate upstream issue (not filed).
+- Decisions on U3 open points: v1 EVM falls back to chain-default domain (accepted); direct transfers use scheme "transfer" (accepted); `no_transfer_instruction` reason accepted; prose attribution matches `to` only — application-design §4 updated. Opus hoisted `FIXED_BLOCKHASH` into schema/chains.ts; capture uses it. 113/113 tests.

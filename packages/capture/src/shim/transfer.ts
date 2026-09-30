@@ -17,7 +17,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import type { Chain, DecodedPayment } from "@x402-redteam/schema";
-import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
+import { CHAIN_DEFAULTS, FIXED_BLOCKHASH } from "@x402-redteam/schema";
 import { encodeFunctionData, erc20Abi, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { decodeEvmTx } from "../evm.js";
@@ -31,7 +31,6 @@ import { decodeSvmTransaction } from "../svm.js";
  * `@x402-redteam/schema` does not currently export such a constant - see
  * this unit's report for a note to the architect.
  */
-const FIXED_BLOCKHASH = "11111111111111111111111111111111";
 
 async function postLedgerEvent(ledgerUrl: string, event: unknown): Promise<void> {
   try {

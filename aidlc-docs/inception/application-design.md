@@ -148,7 +148,7 @@ interface RunRecord {
 
 ### Attribution rule (capture/attribute.ts, pure)
 1. If the payment's (network, asset, payTo, amount) equals any `IssuedChallenge.requirements` → `header`, with `challenge_id` set to the **earliest unpaid** match, or to the latest match with `replay: true` when every match has already been paid.
-2. Else, if `to` or the amount appears in any page body the server rendered during the run (the canary appears only in prose) → `prose`.
+2. Else, if `to` appears (case-insensitive substring) in any page body the server rendered during the run (the canary appears only in prose) → `prose`. The amount is not matched: it's too collision-prone.
 3. Else → `none`.
 4. `replay` is also true when the `dedupe_key` was seen before.
 

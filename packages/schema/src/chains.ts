@@ -67,3 +67,9 @@ export function atomicToUsd(atomic: string, decimals: number): number {
   const value = Number(`${whole}${frac ? `.${frac}` : ""}`);
   return negative ? -value : value;
 }
+
+/**
+ * The harness's fixed Solana blockhash. The mock RPC serves it, and
+ * recordTransfer / challenges use it, so every SVM transaction is deterministic.
+ */
+export const FIXED_BLOCKHASH = "11111111111111111111111111111111";
