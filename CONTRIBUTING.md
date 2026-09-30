@@ -2,12 +2,20 @@
 
 ## Submit a guardrail result to the leaderboard
 
+**LEADERBOARD.md is currently unranked / experimental** (ADR-010): the guardrail-track standard
+driver that would let scores be compared fairly across different guardrails hasn't shipped yet, so
+pass/fail today still depends partly on crawl and retry behaviour, not only on the guardrail under
+test. Submissions are still welcome and still checked — see below — but treat the numbers as
+"passed the harness's own acceptance checks", not as a certified ranking.
+
 The [leaderboard](LEADERBOARD.md) is generated from committed `results/*.json` report files. To
 add (or update) yours:
 
-1. Run the harness against your agent, against the full bundled corpus, giving it a stable
-   `--guardrail-id` (this becomes both the committed filename and the name shown on the
-   leaderboard):
+1. Run the harness against your agent, against the full bundled corpus with the **canonical
+   configuration** (default seed, both chains, controls included, no `--scenario` filter), giving
+   it a stable `--guardrail-id` (this becomes both the committed filename and the name shown on
+   the leaderboard). An LLM agent should also pass `--repeat 5`, since a single attempt doesn't
+   say much about a non-deterministic agent:
 
    ```bash
    pnpm x402-redteam run --agent "<your agent command>" \
@@ -30,19 +38,37 @@ add (or update) yours:
    git commit -m "leaderboard: add <your-guardrail-id> result"
    ```
 
-4. Open a PR. CI re-runs `pnpm leaderboard`, which recomputes the current corpus's hash from
-   `corpus/` and checks it against your result's `corpus_hash`:
-   - **Match** → your result is ranked.
-   - **Mismatch** (the corpus changed since you ran) → your result is listed separately under
-     "Stale corpus" in `LEADERBOARD.md`, not ranked. Rerun step 1 against the current corpus and
-     update your PR.
+4. Open a PR. CI re-runs `pnpm leaderboard`, which checks your submission against every
+   acceptance rule before it's ranked:
+   - `report.json`'s `schema` is `x402-redteam/report@2`.
+   - Its `corpus_hash` matches the current corpus. A **mismatch** (the corpus changed since you
+     ran) doesn't reject the result — it's listed separately under "Stale corpus" in
+     `LEADERBOARD.md`, not ranked. Rerun step 1 against the current corpus and update your PR.
+   - `config` is the canonical configuration above (default seed, both chains, no `--scenario`
+     filter, controls included).
+   - `summary.valid` is `true` (every control passed — see ADR-009).
+   - **Re-scoring `runs[]`** — stripping the stored scores and re-running the scorer against the
+     current corpus — reproduces the stored summary and per-scenario results exactly. This is
+     what actually catches a hand-edited summary.
+   - The filename matches `guardrail_id`, and no other committed file claims the same id.
 
-   A result is never taken on trust as a bare claim — the committed `report.json` is the actual
-   output of a real harness run, and the `corpus_hash` field it contains is checked, not the
-   number you say you got.
+   Any of these failing lands your submission in `LEADERBOARD.md`'s "Rejected" section with the
+   specific reason, not silently dropped — fix it and update your PR.
+
+**What this does and doesn't prove.** The checks above run in CI and are not a rubber stamp: a
+result that only hand-edits its own summary, or that was run with a non-canonical configuration,
+is caught and rejected. But results are still **self-submitted** — nothing here proves *who* ran
+the harness, or that `runs[]` itself wasn't edited before the scores were computed from it.
+Provenance (a public-CI attestation, or a maintainer re-run) and a held-out, seasonal ranked
+corpus are planned (ADR-011) but not built yet; maintainers may re-run any submission by hand, and
+a result that can't be reproduced is removed. `reference`-kind entries (`naive`, `guarded`, and
+similar) are harness-authored oracles used to sanity-check the harness itself, not evidence that
+any real guardrail is safe (ADR-008 amendment) — they're never the only "passing" evidence for a
+claim about the corpus.
 
 Only commit `results/<id>.json` — not your agent's own source, unless you're also contributing it
-as a reference/example agent (see below).
+as a reference/example agent (see below). Never commit anything under `results/internal/` — that
+directory holds harness-internal baselines the leaderboard deliberately never reads.
 
 ## Add a scenario
 
