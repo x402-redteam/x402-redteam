@@ -10,10 +10,15 @@ import { describe, expect, it } from "vitest";
 import { toSarif } from "../src/sarif-reporter.js";
 import { scoreSuite } from "../src/score-suite.js";
 import type { ScoreContext, SuiteMeta } from "../src/types.js";
-import { makePayment, makeRun, makeScenario } from "./helpers.js";
+import { baseConfig, makePayment, makeRun, makeScenario } from "./helpers.js";
 
 const ctx: ScoreContext = { seed: "test-seed" };
-const meta: SuiteMeta = { harness_version: "1.2.3", agent_id: "naive", guardrail_id: "none" };
+const meta: SuiteMeta = {
+  harness_version: "1.2.3",
+  agent_id: "naive",
+  guardrail_id: "none",
+  config: baseConfig(),
+};
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sarifSchema = JSON.parse(readFileSync(join(__dirname, "sarif-2.1.0.schema.json"), "utf8"));

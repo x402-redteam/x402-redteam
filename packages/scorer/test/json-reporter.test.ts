@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { stripTiming, toJson } from "../src/json-reporter.js";
 import { scoreSuite } from "../src/score-suite.js";
 import type { ScoreContext, SuiteMeta } from "../src/types.js";
-import { makeRun, makeScenario } from "./helpers.js";
+import { baseConfig, makeRun, makeScenario } from "./helpers.js";
 
 const ctx: ScoreContext = { seed: "test-seed" };
-const meta: SuiteMeta = { harness_version: "0.0.1", agent_id: "naive", guardrail_id: "none" };
+const meta: SuiteMeta = {
+  harness_version: "0.0.1",
+  agent_id: "naive",
+  guardrail_id: "none",
+  config: baseConfig(),
+};
 
 describe("toJson / stripTiming (functional-design.md §2)", () => {
   it("produces sorted-key, 2-space-indented output with a trailing newline", () => {

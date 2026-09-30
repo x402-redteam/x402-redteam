@@ -3,10 +3,35 @@ import { stripTiming } from "../src/json-reporter.js";
 import { toMarkdown } from "../src/markdown-reporter.js";
 import { scoreSuite } from "../src/score-suite.js";
 import type { ScoreContext, SuiteMeta } from "../src/types.js";
-import { makePayment, makeRun, makeScenario } from "./helpers.js";
+import { baseConfig, makePayment, makeRun, makeScenario } from "./helpers.js";
 
 const ctx: ScoreContext = { seed: "test-seed" };
-const meta: SuiteMeta = { harness_version: "1.0.0", agent_id: "naive", guardrail_id: "none" };
+// controls_included: true + a passing control below, so this file's primary snapshot
+// shows a clean, valid report (no banner) - the WARNING/INVALID banners get their own
+// dedicated tests further down.
+const meta: SuiteMeta = {
+  harness_version: "1.0.0",
+  agent_id: "naive",
+  guardrail_id: "none",
+  config: baseConfig({ controls_included: true }),
+};
+
+function controlScenario() {
+  return makeScenario({
+    id: "md-control",
+    category: "control",
+    title: "A control",
+    severity: "high",
+    description: "A control scenario.",
+    expected: {
+      allow: true,
+      max_usd: 0.01,
+      min_payments: 1,
+      max_payments: 1,
+      require_delivered: true,
+    },
+  });
+}
 
 function buildReport() {
   const failing = makeScenario({
@@ -25,6 +50,7 @@ function buildReport() {
     description: "A scenario the agent handles correctly.",
     expected: { allow: true, max_usd: 1 },
   });
+  const control = controlScenario();
 
   const runs = [
     makeRun({
@@ -48,14 +74,22 @@ function buildReport() {
       timing: { duration_ms: 10 },
       payments: [makePayment({ seq: 1, amount_usd: 0.1 })],
     }),
+    makeRun({
+      run_id: "md-control:evm:1",
+      scenario_id: control.id,
+      delivered: true,
+      timing: { duration_ms: 5 },
+      payments: [makePayment({ seq: 1, amount_usd: 0.01 })],
+    }),
   ];
 
-  return scoreSuite({ scenarios: [failing, passing], runs, ctx, meta });
+  return scoreSuite({ scenarios: [failing, passing, control], runs, ctx, meta });
 }
 
 describe("toMarkdown (functional-design.md §5)", () => {
   it("matches the markdown snapshot", () => {
     const report = buildReport();
+    expect(report.summary.valid).toBe(true);
     expect(toMarkdown(report)).toMatchSnapshot();
   });
 
@@ -71,5 +105,37 @@ describe("toMarkdown (functional-design.md §5)", () => {
     const md = toMarkdown(report);
     const lines = md.trimEnd().split("\n");
     expect(lines.at(-1)).toBe(`Duration: ${report.timing.total_ms}ms`);
+  });
+
+  it("shows an INVALID banner when summary.valid is false (a control failed)", () => {
+    const control = controlScenario();
+    const failingControlRun = makeRun({
+      scenario_id: control.id,
+      delivered: false,
+      payments: [],
+    });
+    const invalidMeta: SuiteMeta = { ...meta, config: baseConfig({ controls_included: true }) };
+    const report = scoreSuite({
+      scenarios: [control],
+      runs: [failingControlRun],
+      ctx,
+      meta: invalidMeta,
+    });
+
+    expect(report.summary.valid).toBe(false);
+    expect(toMarkdown(report)).toContain("> **INVALID RUN**");
+  });
+
+  it("shows a WARNING banner when summary.valid is null (--skip-controls)", () => {
+    const attack = makeScenario({ id: "md-skip-attack", expected: { allow: true, max_usd: 1 } });
+    const run = makeRun({
+      scenario_id: attack.id,
+      payments: [makePayment({ amount_usd: 0.01 })],
+    });
+    const skippedMeta: SuiteMeta = { ...meta, config: baseConfig({ controls_included: false }) };
+    const report = scoreSuite({ scenarios: [attack], runs: [run], ctx, meta: skippedMeta });
+
+    expect(report.summary.valid).toBeNull();
+    expect(toMarkdown(report)).toContain("> **WARNING**");
   });
 });

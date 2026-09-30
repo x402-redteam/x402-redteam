@@ -38,11 +38,17 @@ export interface RunSuiteOptions {
   /** Extra env var names to pass through to the agent, beyond PATH/HOME/NODE_OPTIONS. */
   passEnv?: string[];
   harnessVersion?: string;
+  /**
+   * v2 (ADR-009, debug only): skips control scenarios entirely. `summary.valid` is then
+   * `null` and the leaderboard rejects the report.
+   */
+  skipControls?: boolean;
 }
 
 export interface RunSuiteResult {
   report: Report;
-  exitCode: 0 | 1;
+  /** v2 (ADR-009/-015): 2 now also means "harness error or summary.valid === false". */
+  exitCode: 0 | 1 | 2;
 }
 
 function computeRunId(seed: string, scenarioId: string, chain: Chain, attempt: number): string {
@@ -77,11 +83,19 @@ function buildAgentEnv(taskPath: string, task: ReturnType<typeof buildTask>, pas
   return env;
 }
 
-/** Exit code per functional-design.md §2 step 6: 1 iff some scenario x chain at/above `failOn` failed. */
-export function computeExitCode(report: Report, failOn: Severity): 0 | 1 {
+/**
+ * Exit code per U9 Part B functional-design.md §B3 (application-design.md §6 "v2"):
+ * 2 when the run is invalid (a harness error, or `summary.valid === false` - a control
+ * failed, per ADR-009); else 1 iff some *attack* scenario x chain at/above `failOn`
+ * isn't passing (`fail` or `error`); else 0.
+ */
+export function computeExitCode(report: Report, failOn: Severity): 0 | 1 | 2 {
+  if (report.summary.valid === false) return 2;
+
   const order = SeveritySchema.options;
   const threshold = order.indexOf(failOn);
   for (const scenario of report.scenarios) {
+    if (scenario.kind === "control") continue;
     if (order.indexOf(scenario.severity) < threshold) continue;
     if (scenario.results.some((r) => !r.pass)) return 1;
   }
@@ -98,9 +112,25 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const allScenarios = loadCorpus(opts.corpus);
   const scenarioFilter = opts.scenarioIds ? new Set(opts.scenarioIds) : undefined;
   const chainFilter = opts.chains ?? CHAIN_ORDER;
+  const skipControls = opts.skipControls ?? false;
 
+  // Code review fix 7: --skip-controls silently produces an unrankable report
+  // (summary.valid === null); warn loudly every time it's used, not just in the report.
+  if (skipControls) {
+    console.error(
+      "x402-redteam: --skip-controls given - controls will not run, summary.valid will be null, and this report cannot be ranked or published.",
+    );
+  }
+
+  // v2 (ADR-009 §B3): controls always run, even under a --scenario filter, unless
+  // --skip-controls is given (debug only).
   const scenarios = allScenarios
-    .filter((s) => scenarioFilter === undefined || scenarioFilter.has(s.id))
+    .filter((s) => {
+      if (skipControls && s.category === "control") return false;
+      if (scenarioFilter === undefined) return true;
+      if (s.category === "control") return true;
+      return scenarioFilter.has(s.id);
+    })
     .sort((a, b) => a.id.localeCompare(b.id));
 
   const outDir = resolve(opts.outDir);
@@ -178,6 +208,18 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
       harness_version: opts.harnessVersion ?? "0.0.1",
       agent_id: opts.agentId,
       guardrail_id: opts.guardrailId,
+      config: {
+        seed: opts.seed,
+        // Code review fix 5 (LOW): record chains in canonical CHAIN_ORDER regardless of
+        // the order --chains was given in, and dedupe+sort the scenario filter, so
+        // config is a stable, comparable fingerprint of the run.
+        chains: CHAIN_ORDER.filter((c) => chainFilter.includes(c)),
+        repeat: opts.repeat,
+        timeout_s: opts.timeoutMs / 1000,
+        fail_on: opts.failOn,
+        scenario_filter: opts.scenarioIds ? [...new Set(opts.scenarioIds)].sort() : null,
+        controls_included: !skipControls,
+      },
     },
   });
 
