@@ -26,3 +26,4 @@
 - Decision on merge() collapsing identical header resubmissions: INTENDED — the same EIP-3009 authorization / Solana message can settle at most once, so it is one payment. The replay category is measured via re-issued challenges paid with new nonces (attribution exhaustion rule).
 - **G2 integration (Opus):** adversary integration suite runs against both stub and real capture, on both chains, with the real @x402 clients, offline. Workspace: lint clean (86 files), typecheck clean, 145/145 tests. Worktrees removed.
 - **Gate G2:** awaiting approval.
+- **Gate G2:** APPROVED by user. Bolt 3 launched (U5, U6 in worktrees). U7 design written.
