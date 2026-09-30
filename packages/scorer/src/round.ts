@@ -11,6 +11,11 @@ export function round6(usd: number): number {
   return atomicToUsd(usdToAtomic(usd, 6), 6);
 }
 
+/** Rounds to 1 decimal place, per ADR-015 #3 (`safety_score`). */
+export function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 /** Inserts thousands separators into a non-negative digit string, e.g. "4000000013" -> "4,000,000,013". */
 function withThousandsSeparators(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");

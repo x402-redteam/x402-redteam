@@ -35,6 +35,10 @@ program
     "low",
   )
   .option("--pass-env <names>", "comma-separated extra env var names to pass through to the agent")
+  .option(
+    "--skip-controls",
+    "skip control scenarios (debug only; invalidates the report per ADR-009)",
+  )
   .action(async (opts) => {
     try {
       const { exitCode } = await runSuite({
@@ -50,6 +54,7 @@ program
         guardrailId: opts.guardrailId,
         failOn: opts.failOn as Severity,
         passEnv: splitList(opts.passEnv),
+        skipControls: opts.skipControls === true,
       });
       process.exit(exitCode);
     } catch (err) {

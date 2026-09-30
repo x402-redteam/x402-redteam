@@ -3,17 +3,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Chain } from "@x402-redteam/schema";
 import type { Report } from "@x402-redteam/scorer";
-import { stripTiming, toJson } from "@x402-redteam/scorer";
+import { stripTiming, toJson, toMarkdown } from "@x402-redteam/scorer";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runSuite } from "../src/run.js";
 import { agentCmd } from "./helpers/agent-cmd.js";
 
 const FIXTURE_CORPUS = new URL("./fixtures/corpus", import.meta.url).pathname;
+// The real corpus (including corpus/controls/**, owned by U9 Part B), for the ADR-009 /
+// ADR-015 acceptance E2E in U9 Part B functional-design.md §B4, which needs real controls
+// to exercise `summary.valid`/`utility`/`safety_score`.
+const REAL_CORPUS = new URL("../../../corpus", import.meta.url).pathname;
 const SEED = "x402-redteam-v1";
 
-function baseOptions(outDir: string) {
+function baseOptions(outDir: string, corpus: string = FIXTURE_CORPUS) {
   return {
-    corpus: FIXTURE_CORPUS,
+    corpus,
     chains: ["evm", "svm"] as Chain[],
     repeat: 1,
     timeoutMs: 30_000,
@@ -61,6 +65,11 @@ describe("runSuite against the U5 fixture corpus", () => {
       agentCmd: agentCmd("naive"),
       agentId: "naive",
       guardrailId: "none",
+      // This U5 fixture corpus predates ADR-009 and has no corpus/controls/**; without
+      // --skip-controls, controls_included: true + zero control runs is itself invalid
+      // (code review fix 1) and would always return exit 2 here, which isn't what this
+      // test is about (attack-scenario behavior for the reference agents).
+      skipControls: true,
     });
     const wallClockMs = performance.now() - start;
     console.log(`naive: full fixture corpus took ${Math.round(wallClockMs)}ms`);
@@ -92,6 +101,8 @@ describe("runSuite against the U5 fixture corpus", () => {
       agentCmd: agentCmd("guarded"),
       agentId: "guarded",
       guardrailId: "policy-v1",
+      // See the naive test above: this fixture corpus has no corpus/controls/**.
+      skipControls: true,
     });
     const wallClockMs = performance.now() - start;
     console.log(`guarded: full fixture corpus took ${Math.round(wallClockMs)}ms`);
@@ -133,4 +144,113 @@ describe("runSuite against the U5 fixture corpus", () => {
       rmSync(outDirB, { recursive: true, force: true });
     }
   });
+});
+
+/**
+ * U9 Part B functional-design.md §B4 acceptance E2E, against the real corpus (the fixture
+ * corpus above has no `corpus/controls/**`, so it can't exercise ADR-009's controls / the
+ * ADR-015 exposure cap and safety score).
+ */
+describe("runSuite against the real corpus (ADR-009 controls, ADR-015 exposure cap/safety score)", () => {
+  let outDir: string;
+
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), "x402-redteam-real-e2e-"));
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it('a no-op agent ("true") is invalid: exit 2, summary.valid === false, utility === 0', async () => {
+    const { report, exitCode } = await runSuite({
+      ...baseOptions(outDir, REAL_CORPUS),
+      agentCmd: "true",
+      agentId: "noop",
+      guardrailId: "none",
+    });
+
+    expect(exitCode).toBe(2);
+    expect(report.summary.valid).toBe(false);
+    expect(report.summary.utility).toBe(0);
+  }, 60_000);
+
+  it('a crashing agent ("exit 3") is invalid: exit 2', async () => {
+    const { exitCode, report } = await runSuite({
+      ...baseOptions(outDir, REAL_CORPUS),
+      agentCmd: "exit 3",
+      agentId: "crash",
+      guardrailId: "none",
+    });
+
+    expect(exitCode).toBe(2);
+    expect(report.summary.valid).toBe(false);
+  }, 60_000);
+
+  it("naive: exit 1, valid, every control passed, unauthorized_usd capped, notional uncapped", async () => {
+    const { report, exitCode } = await runSuite({
+      ...baseOptions(outDir, REAL_CORPUS),
+      agentCmd: agentCmd("naive"),
+      agentId: "naive",
+      guardrailId: "none",
+    });
+
+    expect(exitCode).toBe(1);
+    expect(report.summary.valid).toBe(true);
+    expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
+    expect(report.summary.controls.runs).toBeGreaterThan(0);
+    expect(report.summary.utility).toBe(1);
+    expect(report.summary.unauthorized_usd).toBeLessThanOrEqual(100 * report.summary.runs);
+    expect(report.summary.notional_unauthorized_usd).toBeGreaterThanOrEqual(1e12);
+  }, 120_000);
+
+  it("guarded: exit 0, valid, every control passed, safety_score 100", async () => {
+    const { report, exitCode } = await runSuite({
+      ...baseOptions(outDir, REAL_CORPUS),
+      agentCmd: agentCmd("guarded"),
+      agentId: "guarded",
+      guardrailId: "policy-v1",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(report.summary.valid).toBe(true);
+    expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
+    expect(report.summary.controls.runs).toBeGreaterThan(0);
+    expect(report.summary.safety_score).toBe(100);
+  }, 120_000);
+
+  it("code review fix 6: controls are retained under a --scenario filter", async () => {
+    const { report, exitCode } = await runSuite({
+      ...baseOptions(outDir, REAL_CORPUS),
+      agentCmd: agentCmd("guarded"),
+      agentId: "guarded",
+      guardrailId: "policy-v1",
+      scenarioIds: ["price-bait"],
+    });
+
+    const attackIds = report.scenarios.filter((s) => s.kind === "attack").map((s) => s.id);
+    const controlIds = report.scenarios.filter((s) => s.kind === "control").map((s) => s.id);
+    expect(attackIds).toEqual(["price-bait"]);
+    expect(controlIds.length).toBeGreaterThan(0);
+    expect(report.summary.controls.runs).toBeGreaterThan(0);
+    expect(report.summary.valid).toBe(true);
+    expect(exitCode).toBe(0);
+  }, 60_000);
+
+  it("code review fix 6: --skip-controls gives summary.valid === null, a WARNING banner, and an exit code driven only by attacks", async () => {
+    const { report, exitCode } = await runSuite({
+      ...baseOptions(outDir, REAL_CORPUS),
+      agentCmd: agentCmd("naive"),
+      agentId: "naive",
+      guardrailId: "none",
+      scenarioIds: ["ghost-paywall"],
+      skipControls: true,
+    });
+
+    expect(report.scenarios.every((s) => s.kind !== "control")).toBe(true);
+    expect(report.summary.valid).toBeNull();
+    expect(toMarkdown(report)).toContain("> **WARNING**");
+    // naive fails ghost-paywall regardless of controls being skipped.
+    expect(exitCode).toBe(1);
+  }, 60_000);
 });

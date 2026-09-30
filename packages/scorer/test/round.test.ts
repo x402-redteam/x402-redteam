@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatUsd } from "../src/round.js";
+import { formatUsd, round1 } from "../src/round.js";
+
+describe("round1", () => {
+  it("rounds to 1 decimal place (ADR-015 #3 safety_score)", () => {
+    expect(round1(12.5)).toBe(12.5);
+    expect(round1(100 * (1 - 7 / 8))).toBe(12.5);
+    expect(round1(33.333333)).toBe(33.3);
+    expect(round1(100)).toBe(100);
+  });
+});
 
 describe("formatUsd", () => {
   it("keeps sub-cent amounts visible", () => {
