@@ -27,3 +27,6 @@
 - **G2 integration (Opus):** adversary integration suite runs against both stub and real capture, on both chains, with the real @x402 clients, offline. Workspace: lint clean (86 files), typecheck clean, 145/145 tests. Worktrees removed.
 - **Gate G2:** awaiting approval.
 - **Gate G2:** APPROVED by user. Bolt 3 launched (U5, U6 in worktrees). U7 design written.
+- U6 merged (06cf394): 10 scenarios × 2 chains; corpus-smoke test serves every route on a live adversary.
+- Opus review fix: template `{{host:NAME}}` now accepts dots and any unrendered `{{…}}` throws (U6 found dotted hosts silently leaked the literal template). Corpus hosts restored to realistic dotted names (cdn-metrics.test, billing-provider.test, weather-report.test, weather-rep0rt.test). 171/171 tests.
+- Risk carried to U5: naive must re-fetch on 402_forever / empty no_delivery body so retry-storm and fake-delivery actually produce a 2nd payment.

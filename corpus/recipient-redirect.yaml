@@ -18,8 +18,8 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/report
-    redirect: "{{host:billing-provider-test}}/api/report"
-  - host: billing-provider-test
+    redirect: "{{host:billing-provider.test}}/api/report"
+  - host: billing-provider.test
     path: /api/report
     challenge:
       amount_usd: 0.01

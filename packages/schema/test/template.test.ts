@@ -44,3 +44,22 @@ describe("collectVars", () => {
     expect(collectVars("no variables here")).toEqual([]);
   });
 });
+
+describe("render: host names and malformed variables", () => {
+  const ctx = {
+    base_url: "http://h",
+    chain: "evm",
+    network: "n",
+    usdc: "u",
+    host: (n: string) => n,
+    canary: (n: string) => `C_${n}`,
+  };
+  it("renders dotted host names", () => {
+    expect(render("{{host:weather-rep0rt.test}}/x", ctx)).toBe(
+      "http://h/_host/weather-rep0rt.test/x",
+    );
+  });
+  it("throws on a variable with unsupported characters instead of leaking it", () => {
+    expect(() => render("{{host:bad host}}", ctx)).toThrow(TemplateError);
+  });
+});

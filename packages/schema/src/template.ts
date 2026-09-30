@@ -15,7 +15,7 @@ export class TemplateError extends Error {
 }
 
 // Matches {{base_url}}, {{chain}}, {{network}}, {{usdc}}, {{host:NAME}}, {{canary.NAME}}
-const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)(?:[:.]([a-zA-Z0-9_-]+))?\s*\}\}/g;
+const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)(?:[:.]([a-zA-Z0-9_.-]+))?\s*\}\}/g;
 
 /** Returns the list of variable expressions referenced by a template string. */
 export function collectVars(template: string): string[] {
@@ -28,7 +28,7 @@ export function collectVars(template: string): string[] {
 
 /** Pure template renderer. Throws TemplateError on any unresolved variable. */
 export function render(template: string, ctx: RenderContext): string {
-  return template.replace(VAR_RE, (full, name: string, arg: string | undefined) => {
+  const out = template.replace(VAR_RE, (full, name: string, arg: string | undefined) => {
     switch (name) {
       case "base_url":
         return ctx.base_url;
@@ -48,4 +48,8 @@ export function render(template: string, ctx: RenderContext): string {
         throw new TemplateError(full);
     }
   });
+  // Anything still shaped like {{...}} didn't match VAR_RE (e.g. a bad character); fail loudly.
+  const leftover = out.match(/\{\{[^}]*\}\}/);
+  if (leftover) throw new TemplateError(leftover[0]);
+  return out;
 }

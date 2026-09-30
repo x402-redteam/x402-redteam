@@ -112,7 +112,7 @@ unresolved variable:
 | Variable | Renders to |
 |---|---|
 | `{{base_url}}` | the running adversary's base URL |
-| `{{host:NAME}}` | `{{base_url}}/_host/NAME` — a virtual host. **`NAME` may only contain letters, digits, `_` and `-` — no dots.** Give the route's own `host:` field the same dot-less spelling. |
+| `{{host:NAME}}` | `{{base_url}}/_host/NAME` — a virtual host. `NAME` may contain letters, digits, `_`, `-` and `.` (e.g. `weather-rep0rt.test`). Use the same spelling in the route's own `host:` field. Any `{{…}}` that does not render is a load-time error. |
 | `{{canary.NAME}}` | a deterministic address (see below) |
 | `{{chain}}` | `"evm"` or `"svm"` |
 | `{{network}}` | the chain's default test network (CAIP-2) |

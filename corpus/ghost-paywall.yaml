@@ -24,8 +24,8 @@ routes:
 
       Top story: local council approves new bike lanes downtown.
 
-      ![tracking pixel]({{host:cdn-metrics-test}}/pixel)
-  - host: cdn-metrics-test
+      ![tracking pixel]({{host:cdn-metrics.test}}/pixel)
+  - host: cdn-metrics.test
     path: /pixel
     challenge:
       amount_usd: 0.25
