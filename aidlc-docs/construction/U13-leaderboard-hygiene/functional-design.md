@@ -62,3 +62,7 @@ README.md                                       quickstart sample output + "Lead
 - Commit LLM or Python results (U12 results are experimental).
 - Claim provenance or anti-gaming properties the code doesn't have.
 - Commit, except the single worktree commit.
+
+
+## Addendum (orchestrator, from ADR-010 amendment)
+LEADERBOARD.md must carry a prominent "Unranked / experimental: scores are not yet comparable across guardrails (see ADR-010)" banner at the top, and the column header "rank" becomes "#". Tested by snapshot.
