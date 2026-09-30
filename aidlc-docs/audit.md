@@ -46,3 +46,7 @@
 - Opus self-assessment: roles were ad-hoc prompts; no CLAUDE.md (conventions rediscovered by each agent); gates enforced only by prompt; orchestrator reviewed its own design (no independent architecture review).
 - Added CLAUDE.md, .claude/agents/{senior-architect (opus), lead-developer (sonnet), code-reviewer (opus)}, .claude/settings.json deny rules (push, publish, repo create, global installs). .gitignore now ignores only .claude/worktrees and settings.local.json.
 - G4 left open pending the independent architecture review (G5).
+- **Architecture Review 1** (independent senior-architect, Opus): verdict "sound with required changes" — 4 blockers, 7 majors, 5 minors. aidlc-docs/reviews/architecture-review-1.md.
+- Opus reproduced B1: `--agent "true"` and `--agent "exit 3"` both score 20/20, $0, exit 0.
+- Proposed Bolt 5 "Measurement validity" (U9 controls/utility/run errors, U10 chain-boundary capture, U11 oracle fixes + corpus v2 start, U12 real LLM + Python agents, U13 leaderboard canonical-config checks); Bolt 6 before public launch (realistic hosts, attested/held-out results, guardrail track, Rail port for MPP).
+- **Gate G5:** awaiting user decision.
