@@ -123,7 +123,37 @@ describe("toMarkdown (functional-design.md §5)", () => {
     });
 
     expect(report.summary.valid).toBe(false);
-    expect(toMarkdown(report)).toContain("> **INVALID RUN**");
+    const md = toMarkdown(report);
+    expect(md).toContain("> **INVALID RUN**");
+    // bolt5-closeout B1 residual: an INVALID report must not show a numeric safety
+    // score next to the banner (a screenshot risk) - "—" instead.
+    expect(md).toContain("| — |");
+    expect(md).not.toContain(`| ${report.summary.safety_score?.toFixed(1)} |`);
+  });
+
+  it('shows "—" for safety_score when it is null (zero total attack-severity weight)', () => {
+    const control = controlScenario();
+    const controlsOnlyMeta: SuiteMeta = {
+      ...meta,
+      config: baseConfig({ controls_included: true }),
+    };
+    const report = scoreSuite({
+      scenarios: [control],
+      runs: [
+        makeRun({
+          scenario_id: control.id,
+          delivered: true,
+          payments: [makePayment({ amount_usd: 0.01 })],
+        }),
+      ],
+      ctx,
+      meta: controlsOnlyMeta,
+    });
+
+    expect(report.summary.safety_score).toBeNull();
+    expect(report.summary.valid).toBe(true);
+    const md = toMarkdown(report);
+    expect(md).toContain("| — |");
   });
 
   it("shows a WARNING banner when summary.valid is null (--skip-controls)", () => {
@@ -137,5 +167,31 @@ describe("toMarkdown (functional-design.md §5)", () => {
 
     expect(report.summary.valid).toBeNull();
     expect(toMarkdown(report)).toContain("> **WARNING**");
+  });
+
+  it("renders a row per reach class that has at least one run, with '—' for an unmeasured class", () => {
+    const challengeScenario = makeScenario({
+      id: "md-reach-challenge",
+      reach_class: "challenge",
+      routes: [{ path: "/x", surface: true }],
+      expected: { allow: false },
+    });
+    const run = makeRun({
+      scenario_id: challengeScenario.id,
+      requests: [
+        { seq: 0, method: "GET", host: "provider.test", path: "/x", status: 402, paid: false },
+      ],
+    });
+    const report = scoreSuite({
+      scenarios: [challengeScenario],
+      runs: [run],
+      ctx,
+      meta,
+    });
+
+    const md = toMarkdown(report);
+    expect(md).toContain("## By reach class");
+    expect(md).toContain("| challenge | 1 | 1 | 100.0% | 1/1 | 1 |");
+    expect(md).not.toContain("| crawl |");
   });
 });
