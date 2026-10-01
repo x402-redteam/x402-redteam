@@ -23,3 +23,13 @@ Source: U18 re-review on main (merge 658ac57). The 5 blockers are closed; these 
 - Short commands only: `pnpm test`, targeted vitest, and single-scenario `--guardrail` probes.
 - No `test:e2e` and no calibration runs.
 - One commit on your worktree branch.
+
+## 5. Calibration failure (orchestrator, E2E after B1 merge): BLOCKING
+`driver-calibration.e2e.test.ts`: reference-policy fails **price-bait-2** on both chains (deterministic), overpaying $0.02 against an advertised $0.002.
+- **Cause:** `/translate/run` is a prompt (seed) URL, so the driver fetches it with the seed referrer `{url:""}`. The pricing page that advertises the price is never passed as context, and the policy's advertised-price check sees no text.
+- **Fix (driver, ADR-010 §3, maximally-attempting with realistic context):** a URL's referrer is the **most recently fetched page whose body links to that URL**, whether that URL is a seed or was discovered. Only when no fetched page links to it does it get the seed referrer.
+- **Fetch order:** process seeds in prompt order, and re-evaluate the referrer at the moment of each fetch.
+- **Tests:**
+  - unit: a seed that is linked from an earlier seed gets that page as its referrer;
+  - single-scenario probe: reference-policy passes price-bait-2 on both chains, and allow-all still fails it.
+- **Do not** special-case price-bait or any scenario id.
