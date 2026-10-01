@@ -1,0 +1,40 @@
+{
+  "name": "@x402-redteam/driver",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "x402-redteam-driver": "./bin/x402-redteam-driver.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/index.js",
+      "./protocol": "./dist/protocol.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@solana-program/token": "0.17.0",
+    "@solana/kit": "8.4.0",
+    "@x402-redteam/capture": "workspace:*",
+    "@x402-redteam/schema": "workspace:*",
+    "@x402/core": "2.28.0",
+    "@x402/evm": "2.28.0",
+    "@x402/fetch": "2.28.0",
+    "@x402/svm": "2.28.0",
+    "tsx": "4.23.15",
+    "viem": "2.57.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}

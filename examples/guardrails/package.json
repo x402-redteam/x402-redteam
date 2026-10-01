@@ -1,0 +1,19 @@
+{
+  "name": "@x402-redteam/example-guardrails",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@x402-redteam/driver": "workspace:*",
+    "@x402-redteam/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3"
+  }
+}
