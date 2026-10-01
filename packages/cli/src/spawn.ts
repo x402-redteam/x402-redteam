@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readFileSync, writeFileSync } from "node:fs";
 
 export interface RunAgentOptions {
   /** Run as `sh -c <cmd>`, per application-design.md §6. */
@@ -100,4 +100,42 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     child.on("close", (code) => finish(code));
     child.on("error", () => finish(null));
   });
+}
+
+/**
+ * U22 code review round 2 (item 3): a `--pass-env`'d secret is only ever meant to reach
+ * the agent subprocess's own env - but an agent that echoes its env (deliberately, or by
+ * accident in an error message) can still put that literal value into `logFile`, which
+ * ends up both on disk under `out/logs/` and, by default, in this action's uploaded
+ * build artifact (a wider-visibility surface than the job's own console). Called once
+ * `runAgent` has resolved (its own `log.end()` callback already flushed and closed the
+ * stream, so the file is complete and safe to read back), this replaces every literal
+ * occurrence of each given secret value with `[REDACTED]`, in place.
+ *
+ * Best-effort, not a guarantee: it only catches the *exact* literal value passed through
+ * `--pass-env` appearing verbatim (e.g. not re-encoded, wrapped, or partially printed) -
+ * which is why `action.yml` still keeps `logs/` out of the uploaded artifact by default
+ * (`include-agent-logs: false`) rather than relying on this alone. Values under 8
+ * characters are skipped: short, low-entropy values (a port number, a boolean) are more
+ * likely to appear in log text for unrelated reasons than to be a secret worth redacting,
+ * and redacting them would make ordinary log output misleading.
+ */
+export function scrubSecretsFromLog(logFile: string, secrets: readonly string[]): void {
+  const values = secrets.filter((s) => s.length >= 8);
+  if (values.length === 0) return;
+
+  let content: string;
+  try {
+    content = readFileSync(logFile, "utf8");
+  } catch {
+    return;
+  }
+
+  let scrubbed = content;
+  for (const value of values) {
+    scrubbed = scrubbed.split(value).join("[REDACTED]");
+  }
+  if (scrubbed !== content) {
+    writeFileSync(logFile, scrubbed);
+  }
 }

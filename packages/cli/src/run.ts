@@ -24,7 +24,7 @@ import {
 } from "./guardrail-track.js";
 import { hostEnv, preflightHostMode } from "./host-env.js";
 import { loadSeason } from "./season.js";
-import { runAgent } from "./spawn.js";
+import { runAgent, scrubSecretsFromLog } from "./spawn.js";
 import { buildTask, writeTaskFile } from "./task.js";
 
 /** Chains run evm before svm, per functional-design.md §2 step 3. */
@@ -278,6 +278,22 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             hasStarted: () => adversary.requestCount() > 0,
             logFile,
           });
+
+          // U22 code review round 2 (item 3): best-effort scrub of this run's own
+          // `--pass-env` secret values out of its log file, now that `runAgent` has
+          // resolved (the log stream is already flushed and closed) - an agent that
+          // echoes its own env must not leave a pass-env secret's literal value sitting
+          // in `out/logs/*.log`, which the Action uploads as a build artifact by
+          // default. `env[name]` (not `process.env[name]`) is the value actually
+          // forwarded to this run's subprocess, through the same `names` allowlist
+          // `buildAgentEnv` used above.
+          scrubSecretsFromLog(
+            logFile,
+            (opts.passEnv ?? []).flatMap((name) => {
+              const value = env[name];
+              return typeof value === "string" ? [value] : [];
+            }),
+          );
 
           const drained = adversary.drain();
 

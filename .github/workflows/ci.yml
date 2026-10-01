@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,7 +17,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -22,11 +25,19 @@ jobs:
       - name: Ensure LEADERBOARD.md is committed and up to date
         run: git diff --exit-code LEADERBOARD.md
 
-  e2e:
-    # Spawns real agents per scenario x chain against the full corpus; slow, so it runs
-    # as its own job instead of blocking the fast unit suite.
+  # Real-runner-checklist.md item 2 (ADR-012 full §3): proves `*.localhost` actually
+  # resolves on ubuntu-latest, the way `packages/cli/src/host-env.ts`'s
+  # `preflightHostMode` and this repo's Python agent both rely on, via three independent
+  # resolvers plus the real `preflightHostMode("localhost")` function itself, so a pass
+  # here can't be an artifact of just one resolver having its own fallback path. ADR-012
+  # (full) §3 notes `*.localhost` was only verified on macOS/Node 20/Python before this
+  # job existed - this is that verification, for real, on the runner this harness
+  # actually ships Actions on. If any step fails: `host_mode: localhost` cannot be the
+  # canonical default on ubuntu-latest runners - stop and escalate to the architect
+  # (ADR-012's proxy-mode fallback, or an `/etc/hosts` step added to this action, per
+  # real-runner-checklist.md item 2).
+  host-resolution:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -34,5 +45,90 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install
-      - run: pnpm test:e2e
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pnpm install --frozen-lockfile
+
+      - name: getent hosts x402rt-probe.localhost (glibc NSS resolution)
+        run: getent hosts x402rt-probe.localhost
+
+      - name: node dns.lookup('x402rt-probe.localhost') resolves to a loopback address
+        run: |
+          node -e "
+            require('node:dns').lookup('x402rt-probe.localhost', (err, address, family) => {
+              if (err) { console.error(err); process.exit(1); }
+              console.log('node dns.lookup ->', address, 'IPv' + family);
+              if (address !== '127.0.0.1' && address !== '::1') {
+                console.error('expected a loopback address (127.0.0.1 or ::1), got', address);
+                process.exit(1);
+              }
+            });
+          "
+
+      - name: python socket.getaddrinfo('x402rt-probe.localhost') resolves to a loopback address
+        run: |
+          python3 -c "
+          import socket
+          results = socket.getaddrinfo('x402rt-probe.localhost', 80)
+          print('python getaddrinfo ->', results)
+          addrs = {r[4][0] for r in results}
+          assert addrs and addrs <= {'127.0.0.1', '::1'}, f'expected only loopback addresses, got {addrs}'
+          "
+
+      # The three checks above prove DNS resolution; this proves the CLI's own
+      # fallback logic (packages/cli/src/host-env.ts) actually takes the localhost
+      # path end-to-end on this runner, rather than silently (if quietly logged)
+      # falling back to "path" - which is the one failure mode the three checks above
+      # can't see on their own (they never exercise a real loopback HTTP round trip).
+      - name: preflightHostMode("localhost") must not fall back to "path"
+        run: |
+          cat > .ci-preflight-check.mts <<'EOF'
+          import { preflightHostMode } from "./packages/cli/src/host-env.js";
+
+          const mode = await preflightHostMode("localhost");
+          if (mode !== "localhost") {
+            console.error(
+              `preflightHostMode("localhost") returned "${mode}" - *.localhost is not usable end-to-end on this runner`,
+            );
+            process.exit(1);
+          }
+          console.log('preflightHostMode("localhost") -> "localhost" (OK)');
+          EOF
+          pnpm exec tsx .ci-preflight-check.mts
+          rm -f .ci-preflight-check.mts
+
+  # Spawns real agents per scenario x chain against the full corpus; slow, so these run
+  # as their own job, sharded by e2e test file (real-runner-checklist.md item 3) rather
+  # than one long `pnpm test:e2e` invocation - each shard carries this job's full 60-minute
+  # budget independently, so as the corpus (and the E2E suite) grows, a single slow file
+  # can't silently eat into every other file's margin, and a slow/stuck shard is isolated
+  # to its own matrix entry instead of the whole suite. Record each shard's own duration
+  # (real-runner-checklist.md item 3) from the job's own timing in the Actions UI.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every packages/cli/test/*.e2e.test.ts file, by basename - kept in sync with
+        # the real files by packages/cli/test/action-yaml.test.ts (it fails the build
+        # if this list and that glob ever diverge, so a new e2e file can't go silently
+        # un-sharded, and a removed one can't leave a dangling, always-skipped shard).
+        shard:
+          - corpus-v2
+          - driver-calibration
+          - guardrail-integrity
+          - hosts
+          - rpc-capture
+          - run-suite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run e2e shard (${{ matrix.shard }}.e2e.test.ts)
+        run: pnpm vitest run --project cli "${{ matrix.shard }}.e2e"

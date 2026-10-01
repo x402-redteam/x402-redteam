@@ -122,6 +122,14 @@ the same way). Anything ending in `_PROXY` is dropped even if you name it explic
 [the LLM agent below](#bring-an-llm-agent) gets `ANTHROPIC_API_KEY` without the harness ever
 writing it anywhere.
 
+> **`--pass-env` and logs:** a pass-env'd value is only meant to reach the agent subprocess, but an
+> agent that echoes its own env (deliberately, or by accident in an error message) can still put
+> that literal value into `out/logs/*.log`. The harness scrubs every pass-env secret's literal
+> value out of its own copy of that log after each run (best-effort — it only catches an exact,
+> unmodified match), and the GitHub Action keeps `logs/` out of the uploaded artifact by default
+> (`include-agent-logs: false` — see below). Name env vars deliberately with `--pass-env`, not
+> reflexively.
+
 > **Action permissions:** the composite action's SARIF-upload step needs
 > `permissions: security-events: write` on your *calling* job or workflow — a composite action
 > can't grant that to itself, only use what your workflow's `GITHUB_TOKEN` already has. Without it,
@@ -363,19 +371,86 @@ x402-redteam report --in out/report.json --format md|sarif
 
 ## GitHub Action
 
+Agent track:
+
+```yaml
+permissions:
+  security-events: write # upload-sarif (default true) needs this - see "Permissions" below
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: <owner>/x402-redteam@v0
+        with:
+          agent: "node my-agent.js"
+          guardrail-id: my-guardrail-v1
+          # fail-on defaults to "low": any failing scenario fails the job (ADR-015).
+```
+
+Guardrail track (ADR-010): give `guardrail` instead of `agent` and the standard driver runs your
+guardrail over stdio (GDP v1) against the same corpus — `agent` and `guardrail` are mutually
+exclusive, and the action fails fast (exit 2) if you give both or neither:
+
 ```yaml
 - uses: <owner>/x402-redteam@v0
   with:
-    agent: "node my-agent.js"
+    guardrail: "node my-guardrail.js"
     guardrail-id: my-guardrail-v1
-    # fail-on defaults to "low": any failing scenario fails the job (ADR-015).
+    host-mode: localhost # default; see "Host modes" above — falls back to `path` if
+    #                      *.localhost doesn't resolve on this runner
 ```
 
-Runs the harness, uploads `report.sarif` to code scanning (`category: x402-redteam`), attaches the
-full output directory as a build artifact, and appends `report.md` to the job summary. See
-[`action.yml`](action.yml) for every input/output, and
-[`.github/workflows/self-test.yml`](.github/workflows/self-test.yml) for the action exercised
-against both reference agents (naive fails, guarded passes).
+Running the action more than once in the same job (e.g. a matrix over several guardrails)? Give
+each leg its own `artifact-name` — `actions/upload-artifact` fails the job if two legs try to
+upload under the same name:
+
+```yaml
+strategy:
+  matrix:
+    guardrail: [allow-all, deny-all, reference-policy]
+steps:
+  - uses: <owner>/x402-redteam@v0
+    with:
+      guardrail: "tsx examples/guardrails/${{ matrix.guardrail }}.ts"
+      artifact-name: "report-${{ matrix.guardrail }}"
+      exit-on-result: "false" # inspect every leg's outputs yourself instead of failing
+      #                         the job on the first leg that doesn't pass
+```
+
+Runs the harness, uploads `report.sarif` to code scanning (`category: x402-redteam`) when one was
+written, uploads the output directory as a build artifact (`report.json`/`.md`/`.sarif`, `tasks/`,
+`runs/` — `logs/` only if you opt in, see `include-agent-logs` below), and appends `report.md` (or,
+if the harness never got that far, the last lines of its own output) to the job summary. These
+three steps, and the final step that turns the harness's exit code into this job's own pass/fail,
+all run with `if: always()` — so they still happen, and the job's final status still reflects the
+harness's real result, even if an earlier step like the SARIF upload failed for an unrelated
+reason (e.g. a permissions error). See [`action.yml`](action.yml)
+for every input/output — including the exit-code/valid/safety-score/reach-rate outputs read
+straight off `report.json`'s `summary` in one pass, each left as an **empty string** (never the
+string `"null"`, never a misleading `0`) when no report was produced at all — and
+[`.github/workflows/self-test.yml`](.github/workflows/self-test.yml), which asserts the action's
+`exit-code` output (not `outcome`, which can't tell "an attack got through" apart from "the run
+itself was invalid") against six commands spanning both tracks and all three exit codes.
+
+**Permissions**, both set on your *calling* job or workflow (a composite action can't grant its own
+— it only uses what your `GITHUB_TOKEN` already has):
+
+- `security-events: write` — only if `upload-sarif: true` (the default) *and* a `report.sarif` was
+  actually written. Without this permission, the SARIF upload step fails — but that failure is
+  swallowed (`continue-on-error: true`) and never affects the job's own pass/fail result, only
+  code-scanning annotations are lost. Expected on a private repo, a restrictive org default, or a
+  `pull_request` from a fork (which never gets write access to the base repo's token).
+- `id-token: write` / `attestations: write` — **not** needed by this action. Those belong to
+  `rank.yml` (ADR-011, a separate workflow that produces a signed provenance attestation for a
+  ranked leaderboard submission) — this action never needs them just to run the harness.
+
+**Artifact and secrets:** the uploaded artifact's `report.json`/`.md`/`.sarif` only ever contain the
+harness's own decoded ledger — what the agent tried to pay, to whom, whether it was authorized —
+over wallets marked `"TEST KEYS ONLY — no funds"` (see [Safety](#safety)); never a real secret.
+`logs/*.log` (the agent's/guardrail's own stdout+stderr) is the one place a `--pass-env` value
+could end up, so it's excluded from the artifact unless you set `include-agent-logs: true`.
 
 ## Leaderboard
 
