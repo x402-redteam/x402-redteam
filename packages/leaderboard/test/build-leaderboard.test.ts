@@ -574,6 +574,21 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     expect(rejected[0]?.reason).toMatch(/guardrail_hooks/);
   });
 
+  // U18b item 3: `collectGuardrailInfo` (packages/cli/src/guardrail-track.ts) reports
+  // `guardrail_hooks: null` - not `[]` - when different runs in a suite disagreed about
+  // their declared hooks; the leaderboard must reject that the same way it rejects an
+  // empty declaration, rather than treating `null` as "no guardrail" and skipping the
+  // check.
+  it("rejects a guardrail-track entry with guardrail_hooks: null (runs disagreed, U18b)", () => {
+    const entry = acceptedEntry("disagreeing-hooks", {
+      config: { ...CANONICAL_CONFIG, guardrail_hooks: null },
+    });
+    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(guardrails).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["disagreeing-hooks"]);
+    expect(rejected[0]?.reason).toMatch(/guardrail_hooks/);
+  });
+
   it("rejects guardrail_hooks outside {payment, transfer, sign}", () => {
     const entry = acceptedEntry("bogus-hook", {
       config: { ...CANONICAL_CONFIG, guardrail_hooks: ["payment", "teleport"] },

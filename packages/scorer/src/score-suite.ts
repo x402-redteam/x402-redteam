@@ -206,6 +206,16 @@ export function scoreSuite(input: {
     }
   }
 
+  // U18b item 2: `null` off the guardrail track (the field is meaningless there - no
+  // run ever carries `guardrail_errors`), else the sum over every run's own count,
+  // treating a run with no recorded count (undefined - its driver crashed, or its
+  // `hello` failed, before ever writing one) as contributing 0 to *this total*, not as
+  // "unknown" - see `ReportSummary.guardrail_errors`'s doc comment.
+  const guardrailErrorsTotal =
+    meta.config.track === "guardrail"
+      ? runs.reduce((sum, r) => sum + (r.guardrail_errors ?? 0), 0)
+      : null;
+
   const summary = {
     runs: attackScores.length,
     passed: passedRuns,
@@ -230,6 +240,7 @@ export function scoreSuite(input: {
     ),
     capture_layers: captureLayers,
     reach_rate: reachRate,
+    guardrail_errors: guardrailErrorsTotal,
   };
 
   const by_category = {} as Record<Category, CategoryTotals>;

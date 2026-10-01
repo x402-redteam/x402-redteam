@@ -201,6 +201,19 @@ export interface ReportSummary {
    * `surface: true` route).
    */
   reach_rate: number;
+  /**
+   * U18b item 2 (ADR-010 §2): the total `guardrail_errors` (GDP protocol failures -
+   * timeouts, malformed lines, invalid decisions, a mid-run exit) across every run in
+   * this suite. `null` off the guardrail track (`config.track !== "guardrail"`, where
+   * no run ever carries a `guardrail_errors` field at all) - never `0`, which would
+   * falsely claim "ran on the guardrail track with a clean guardrail". On the guardrail
+   * track, a run with no recorded count (its driver crashed or its `hello` failed
+   * before ever writing one - `RunRecord.guardrail_errors` is `undefined` there, per
+   * `readGuardrailErrors`) contributes `0` to this total, since that run's own
+   * `status`/`agent_ok` already surfaces the failure; this total is specifically "errors
+   * the guardrail produced while actually running", not a stand-in for run failures.
+   */
+  guardrail_errors: number | null;
 }
 
 export interface CategoryTotals {

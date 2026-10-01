@@ -92,6 +92,17 @@ export class GdpClient {
   ) {
     this.log = log;
     this.hookTimeoutMs = hookTimeoutMs;
+    // U18b item 1: the guardrail's cwd is left as the driver's own (whatever the
+    // harness launched it with, typically the caller's cwd) - a documented, isolated
+    // temp cwd was tried and reverted (coordinator decision): guardrail commands in the
+    // wild (and this repo's own README/CONTRIBUTING examples) are routinely written
+    // with *relative* paths, e.g. `tsx examples/guardrails/my-policy.ts`, which a
+    // different cwd silently breaks. The driver's own run record no longer lives
+    // anywhere the guardrail could find by cwd at all (see `main.ts`: it's written to a
+    // private per-run directory named only by an `X402_`-prefixed env var, which
+    // `scrubGuardrailEnv` strips before the guardrail ever sees its env) - isolating cwd
+    // was solving a problem the env-var move already solves, at the cost of breaking
+    // relative-path commands.
     // `sh -c <cmd>` mirrors how run.ts/spawn.ts spawn the agent itself, so a guardrail
     // command works in any language - its stderr is inherited straight into the
     // driver's own stderr, which the harness already redirects into the run's log file.
@@ -252,10 +263,36 @@ export class GdpClient {
     return this.send(build, "decision", this.hookTimeoutMs) as Promise<R>;
   }
 
-  /** Kills the guardrail child process. Idempotent. */
+  /** Kills the guardrail child process. Idempotent. Does not wait for the process to
+   * actually exit - use `closeAndWait` when a caller needs that guarantee (U18b item 1). */
   close(): void {
     if (!this.child.killed) {
       this.child.kill();
     }
+  }
+
+  /**
+   * U18b item 1: kills the guardrail and waits for it to actually exit (`this.dead`,
+   * set by the constructor's `exit` listener) - or `graceMs`, escalating to `SIGKILL` -
+   * before resolving. A caller that writes the run's GDP record only after this
+   * resolves is guaranteed to do so only once the guardrail process can no longer
+   * observe or race that write.
+   */
+  async closeAndWait(graceMs = 2000): Promise<void> {
+    if (this.dead) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        try {
+          this.child.kill("SIGKILL");
+        } catch {
+          // already gone.
+        }
+      }, graceMs);
+      this.child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      this.child.kill();
+    });
   }
 }

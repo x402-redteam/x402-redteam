@@ -6,11 +6,19 @@
  * rather than the functional-design draft's `X402_TASK_FILE` (reported as a deviation;
  * see this unit's report). `X402_GUARDRAIL_CMD` names the guardrail subprocess to spawn.
  *
+ * U18b item 1 (coordinator revision): the driver's own verdict on the guardrail (hooks,
+ * nondeterministic, guardrail_errors) is written to `X402_GDP_RECORD_DIR` - a private
+ * per-run temp directory `run.ts` creates, names only via this env var, reads back
+ * itself, then deletes. The guardrail subprocess is spawned with the driver's own cwd
+ * (never an isolated one - that broke relative-path guardrail commands) but never learns
+ * this directory's path at all: `scrubGuardrailEnv` strips every `X402_*` var, this one
+ * included, before the guardrail ever sees its env.
+ *
  * Any behaviour change to this loop bumps the driver's own version tag past `driver@1`
  * (functional-design.md §3).
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createKeyPairSignerFromBytes, getBase58Encoder } from "@solana/kit";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
@@ -21,6 +29,7 @@ import { DEFAULT_HELLO_TIMEOUT_MS, GdpClient } from "./gdp.js";
 import { extractTransferIntents, type TransferIntent } from "./intent.js";
 import { buildPayFetch, type PayContext } from "./pay.js";
 import type { GdpHook, GdpTransferResponse } from "./protocol.js";
+import { SourceMap } from "./source-map.js";
 import { sendDirectTransfer, type TransferContext } from "./transfer.js";
 
 export const DRIVER_VERSION = "driver@1";
@@ -139,9 +148,11 @@ async function main(): Promise<void> {
     );
   }
 
-  const taskPath = process.env.X402_REDTEAM_TASK as string;
-  const runsDir = resolve(dirname(taskPath), "..", "runs");
-  mkdirSync(runsDir, { recursive: true });
+  // U18b item 1: `run.ts` creates this directory (mkdtemp'd, so it's always fresh - no
+  // stale-leftover concern) before spawning the driver, and deletes it after reading the
+  // record back; the driver only ever writes into it, never reads it back itself.
+  const recordDir = process.env.X402_GDP_RECORD_DIR;
+  if (!recordDir) throw new Error("X402_GDP_RECORD_DIR is not set");
 
   const evmAccount: LocalAccount | undefined =
     task.chain === "evm"
@@ -199,17 +210,20 @@ async function main(): Promise<void> {
       challengeTexts: [],
     };
 
-    // Every (url, text) pair the driver has seen, so a GDP `payment`/`transfer`
-    // request's `referrer`/`source` can cite where the instruction came from. A seed
-    // (a URL named directly in the task prompt, not discovered via a page) cites the
-    // empty string as its "page URL" and the task prompt itself as its text - there is
-    // no page it was found on, only the prompt - matching the reference agents'
-    // convention of treating the prompt as the depth-0 "referrer".
-    const sourceByUrl = new Map<string, { url: string; text: string }>();
+    // Every URL the driver has seen, mapped to the referrer a GDP `payment`/`transfer`
+    // request should cite for it - see `source-map.ts` for the full rule (U18b item 5,
+    // the driver-calibration fix). A seed (a URL named directly in the task prompt, not
+    // discovered via a page) falls back to the empty string as its "page URL" and the
+    // task prompt itself as its text - there is no page it was found on, only the
+    // prompt - unless a fetched page is later found to link to it too, which wins.
+    const sourceByUrl = new SourceMap();
     const TASK_PROMPT_AS_SOURCE_URL = "";
 
     // Code review finding 7: `crawl()` itself now fetches every seed (and every
-    // discovered link) twice, so seeds are passed once each here.
+    // discovered link) twice, so seeds are passed once each here. Seeds are queued in
+    // prompt order (`extractUrls` preserves order of first appearance), so an earlier
+    // seed's own page - once fetched - can supply a better referrer for a later seed
+    // before that later seed is ever fetched (`SourceMap.record` always overwrites).
     const seedUrls = extractUrls(task.prompt, origins);
     const seeds: CrawlSeed[] = seedUrls.map((url) => ({
       url,
@@ -217,7 +231,7 @@ async function main(): Promise<void> {
       referrerBody: task.prompt,
     }));
 
-    const payFetch = buildPayFetch(payCtx, (url) => sourceByUrl.get(url) ?? null);
+    const payFetch = buildPayFetch(payCtx, (url) => sourceByUrl.lookup(url));
     const fetchWithRetries = withRetries(payFetch);
 
     const pages = await crawl(fetchWithRetries, seeds, {
@@ -225,9 +239,7 @@ async function main(): Promise<void> {
       maxDepth: MAX_DEPTH,
       maxFetches: MAX_DISCOVERY_FETCHES,
       onDiscover: (url, referrerUrl, referrerBody) => {
-        if (!sourceByUrl.has(url)) {
-          sourceByUrl.set(url, { url: referrerUrl, text: referrerBody });
-        }
+        sourceByUrl.record(url, referrerUrl, referrerBody);
       },
     });
 
@@ -291,22 +303,31 @@ async function main(): Promise<void> {
     // Code review finding 4 (BLOCK): written once, at the very end of a successful run,
     // so `guardrail_errors` reflects the *whole* session (hello plus every payment/
     // transfer/sign round trip), not just whatever had happened by the time `hello`
-    // returned. `run.ts` deletes any stale copy of this file before spawning the
-    // driver (finding 5) and requires a fresh one to exist when this run exits 0.
-    writeFileSync(
-      resolve(runsDir, `${task.run_id}.gdp.json`),
-      `${JSON.stringify(
-        {
-          hooks: hello.hooks,
-          name: hello.name,
-          version: hello.version,
-          nondeterministic: hello.nondeterministic,
-          guardrail_errors: gdp.errorCount,
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    // returned.
+    //
+    // U18b item 1 (coordinator revision): the record is built first, but only *written*
+    // after `gdp.closeAndWait()` resolves - i.e. after the guardrail process has
+    // actually exited (confirmed by its `exit` event), not merely asked to. A guardrail
+    // that is still running when this file is created could otherwise observe (or,
+    // depending on filesystem permissions, tamper with) its own driver's verdict about
+    // it before the write completes; waiting for it to be gone first closes that
+    // window. It's written into `recordDir` - a private per-run temp directory only
+    // `run.ts` and the driver know the path to (never the guardrail - the env var
+    // naming it is scrubbed) - not the shared `out/runs/` tree, and `run.ts` reads it
+    // back, copies it into `out/runs/<run_id>.gdp.json` for audit, and deletes
+    // `recordDir`, never re-reading that audit copy. `run.ts`'s other half of this fix:
+    // it only trusts a record read this way when the driver's own exit code is 0, so a
+    // driver killed or crashed mid-write can never leave a half-written record that
+    // gets scored as real.
+    const record = {
+      hooks: hello.hooks,
+      name: hello.name,
+      version: hello.version,
+      nondeterministic: hello.nondeterministic,
+      guardrail_errors: gdp.errorCount,
+    };
+    await gdp.closeAndWait();
+    writeFileSync(resolve(recordDir, "gdp.json"), `${JSON.stringify(record, null, 2)}\n`);
   } finally {
     gdp.close();
   }

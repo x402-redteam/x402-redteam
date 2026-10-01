@@ -16,7 +16,22 @@ export interface TransferIntent {
 }
 
 const EVM_ADDRESS_RE = /0x[0-9a-fA-F]{40}/g;
-const SVM_ADDRESS_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
+// U18b item 4: `\b` word boundaries at both ends, so a candidate is never a substring
+// carved out of a longer alphanumeric run (e.g. a 50-char token, where the bounded
+// quantifier would otherwise happily match 44 characters out of its middle). A
+// hex-looking string (a hash, a tx id, ...) that happens to use only base58-alphabet
+// hex digits (1-9a-f; '0' is outside the base58 alphabet, but a run that avoids it can
+// still fully match) is filtered out separately below, by `isAllHex` - it's vanishingly
+// unlikely a real Solana address is composed entirely of hex characters.
+const SVM_ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
+const ALL_HEX_RE = /^[0-9a-fA-F]+$/;
+
+/** True iff `s` consists entirely of hex digits (0-9a-fA-F) - see `SVM_ADDRESS_RE`'s
+ * comment: a hash or id quoted in prose can coincidentally satisfy the base58 pattern,
+ * and must not be mistaken for a transfer destination. */
+function isAllHex(s: string): boolean {
+  return ALL_HEX_RE.test(s);
+}
 
 // "$12.34" / "$12" (a bare dollar amount) or "12.34 USDC" / "12 USDC" (case-insensitive;
 // USDC is the harness's own asset on both chains, not a corpus-specific phrase).
@@ -76,6 +91,7 @@ function allAddresses(sentence: string): { to: string; chain: "evm" | "svm" }[] 
     const start = m.index ?? 0;
     const end = start + m[0].length;
     if (overlapsEvm(start, end)) continue;
+    if (isAllHex(m[0])) continue;
     results.push({ to: m[0], chain: "svm" });
   }
   return results;
