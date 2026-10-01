@@ -1,0 +1,4 @@
+{
+  "naive-baseline": { "kind": "reference" },
+  "guarded-reference": { "kind": "reference" }
+}
