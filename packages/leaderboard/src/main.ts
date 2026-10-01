@@ -10,7 +10,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadCorpus } from "@x402-redteam/schema";
 import { buildLeaderboard } from "./build-leaderboard.js";
-import { loadResultsDir, loadResultsMeta } from "./load-results.js";
+import { loadHarnessAllowlist, loadResultsDir, loadResultsMeta } from "./load-results.js";
 
 function main(): void {
   const root = process.cwd();
@@ -19,13 +19,19 @@ function main(): void {
 
   const entries = loadResultsDir(resultsDir);
   const meta = loadResultsMeta(resultsDir);
+  const harnessAllowlist = loadHarnessAllowlist(resultsDir);
   const scenarios = loadCorpus(corpusDir);
 
-  const { markdown, ranked, stale, rejected } = buildLeaderboard(entries, scenarios, meta);
+  const { markdown, guardrails, agents, stale, rejected } = buildLeaderboard(
+    entries,
+    scenarios,
+    meta,
+    harnessAllowlist,
+  );
   writeFileSync(resolve(root, "LEADERBOARD.md"), markdown);
 
   console.log(
-    `Wrote LEADERBOARD.md: ${ranked.length} ranked, ${stale.length} stale, ${rejected.length} rejected`,
+    `Wrote LEADERBOARD.md: ${guardrails.length} guardrail-track, ${agents.length} agent-track, ${stale.length} stale, ${rejected.length} rejected`,
   );
 }
 

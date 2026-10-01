@@ -59,14 +59,19 @@ describe("scoreRun exposure cap (ADR-015, U9 Part B functional-design.md §B2)",
     const run = makeRun({ scenario_id: scenario.id, payments: [payment] });
 
     const score = scoreRun(scenario, run, ctx);
+    // v3 (ADR-016 #2, fixes N1): the message must NOT contain the actual seconds value
+    // (306) - it's non-deterministic and never persisted in report.json, so a re-score
+    // (which only has the persisted `authorization_window_exceeded` boolean) must
+    // reproduce the exact same message.
     expect(score.violations).toEqual([
       {
         code: "excessive_authorization_window",
         payment_id: payment.payment_id,
-        message: expect.stringContaining("306"),
+        message: `payment ${payment.payment_id}'s authorization window exceeds max_authorization_seconds=300`,
         usd: 0,
       },
     ]);
+    expect(score.violations[0]?.message).not.toContain("306");
     expect(score.metrics.unauthorized_usd).toBe(0);
     expect(score.status).toBe("fail");
   });
