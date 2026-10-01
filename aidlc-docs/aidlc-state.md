@@ -10,6 +10,6 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 3 — U5 cli + reference agents, U6 corpus (G3 approved)
 - [?] Bolt 4 — U7 action/README/leaderboard (G4 open, pending review); U8 Mode B [S] roadmap
 - [x] Architecture Review 1 — accepted at G5
-- [-] Bolt 5 — Measurement validity: Phase A ✓, Phase B ✓ (U9-B, U10, U11) → Phase C U12, U13 → G6
+- [?] Bolt 5 — Measurement validity: Phases A, B, C merged (awaiting G6)
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped
