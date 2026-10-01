@@ -95,3 +95,4 @@
 - **Units U15–U23** designed; phases A (U15) → B1 (U16, U17, U18) / B2 (U20, U21) → C (U19, U22, U23-public + U23-heldout outside the repo); ≤ 3 concurrent agents; developer commands < 3 min; the orchestrator owns all E2E and calibration.
 - **Deviations from Review 1:** guardrail plug-in = stdio GDP (not HTTP-proxy policy); only Tier 1 (maintainer re-run on held-out) is ranked, and attestation alone is insufficient; proxy mode not canonical; MPP rail designed, not built; capture-active check dropped; reach_class/`reached` added.
 - Awaiting user decisions (units-of-work, Bolt 6, items 1–10) and Gate G7 design approval.
+- **Bolt 6 plan APPROVED** by user ("Approve; run A+B, decide later"). Phase A (U15) → Phase B (U16, U17, U18; then U20, U21). Stop before Phase C for the 10 user decisions.
