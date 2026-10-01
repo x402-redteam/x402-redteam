@@ -1,4 +1,11 @@
-import type { Category, Chain, RunRecord, Severity } from "@x402-redteam/schema";
+import type {
+  Category,
+  Chain,
+  HostMode,
+  ReachClass,
+  RunRecord,
+  Severity,
+} from "@x402-redteam/schema";
 
 /** Input the scorer needs beyond the corpus/run data: the seed used to derive canaries. */
 export interface ScoreContext {
@@ -74,6 +81,14 @@ export interface RunScore {
   metrics: RunScoreMetrics;
   exit_code: number | null;
   timed_out: boolean;
+  /**
+   * v3 (ADR-016 reach/`reached`, Bolt 6). Types only here - U15 doesn't set either field
+   * in `scoreRun` (owned by U16), so both stay `undefined` on every `RunScore` this unit
+   * produces; `scoreSuite`'s `by_reach_class` is built straight from each run's
+   * `scenario.reach_class` + `status` instead of reading these two fields back.
+   */
+  reach_class?: ReachClass;
+  reached?: boolean | null;
 }
 
 /** v2 (application-design.md §7 "v2"): recorded on the report for provenance/replay checks. */
@@ -85,6 +100,36 @@ export interface RunConfig {
   fail_on: Severity;
   scenario_filter: string[] | null;
   controls_included: boolean;
+  // v3 (ADR-016 #3, the full config fingerprint; application-design.md "Contracts (v3,
+  // Bolt 6)"). Canonical for ranking: timeout_s 60, startup_timeout_s 120,
+  // host_mode "localhost", track "guardrail", driver "driver@1", repeat 1 (or >= 3 if
+  // the guardrail declares nondeterministic); the agent track requires repeat >= 5.
+  /** How long an agent may take to make its first request before the run is killed. */
+  startup_timeout_s: number;
+  /** ADR-012: "localhost" (canonical), "path" (fallback) or "proxy". U15 always records
+   * "path" (Phase A default); U17 flips the CLI default and implements the other two. */
+  host_mode: HostMode;
+  /** "agent" (the `--agent` CLI) or "guardrail" (the `--guardrail` GDP track, U18). */
+  track: "agent" | "guardrail";
+  /** The guardrail-track driver's own version tag (e.g. "driver@1"), or null on the
+   * agent track / until U18 lands. */
+  driver: string | null;
+  /** The GDP hooks a guardrail declared in its `hello` response, or null when there is
+   * no guardrail (agent track) or U18 hasn't landed yet. */
+  guardrail_hooks: string[] | null;
+  /** v3 (code review item 3, U18 seam): whether the guardrail's `hello` response
+   * declared itself `nondeterministic` (ADR-016 #3: a nondeterministic guardrail needs
+   * `repeat >= 3` to be canonical) - null when there is no guardrail or U18 hasn't
+   * landed yet. */
+  guardrail_nondeterministic: boolean | null;
+  /** `git rev-parse HEAD` of the harness checkout that produced this report, or
+   * "unknown" when that fails (e.g. not a git checkout). Constant within a checkout, so
+   * it never breaks the NFR1 determinism check. */
+  harness_commit: string;
+  /** ADR-011 seasons: null for the public corpus / until U19 lands. */
+  season: string | null;
+  /** ADR-011 seasons: a commitment to the season's secret seed, or null until U19 lands. */
+  seed_commitment: string | null;
 }
 
 /** Suite-level metadata that isn't derivable from the scenarios/runs themselves. */
@@ -154,8 +199,23 @@ export interface SeverityTotals {
   failed: number;
 }
 
+/**
+ * v3 (ADR-016 #1, Bolt 6): per-`ReachClass` totals. `reached`/`passed_while_reached`
+ * need the ledger's request log cross-referenced against each scenario's `surface`
+ * route(s) (U16's job); U15 fills every entry with null-safe placeholders (`reached` and
+ * `passed_while_reached` are always `null`) so `report@3` consumers never see
+ * `undefined` here, without claiming reach data this unit doesn't compute.
+ */
+export interface ReachClassTotals {
+  runs: number;
+  passed: number;
+  pass_rate: number;
+  reached: number | null;
+  passed_while_reached: number | null;
+}
+
 export interface Report {
-  schema: "x402-redteam/report@2";
+  schema: "x402-redteam/report@3";
   harness_version: string;
   agent_id: string;
   guardrail_id: string;
@@ -166,6 +226,8 @@ export interface Report {
   summary: ReportSummary;
   by_category: Record<Category, CategoryTotals>;
   by_severity: Record<Severity, SeverityTotals>;
+  /** v3 (ADR-016 #1, Bolt 6). */
+  by_reach_class: Record<ReachClass, ReachClassTotals>;
   scenarios: ScenarioReport[];
   /**
    * Run records without timing and without per-payment `raw` / `dedupe_key` / (code

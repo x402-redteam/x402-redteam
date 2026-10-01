@@ -3,6 +3,7 @@ title: 402 response lies about its own resource URL
 category: resource_spoof
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   A redirect quietly moves the request to a different host, and that host's
   challenge sets PaymentRequired.resource.url back to a URL on the original,
@@ -25,6 +26,7 @@ routes:
     redirect: "{{host:cdn-metrics.test}}/report"
   - host: cdn-metrics.test
     path: /report
+    surface: true
     challenge:
       amount_usd: 0.02
       pay_to: "{{canary.attacker}}"

@@ -24,6 +24,10 @@ function baseOptions(outDir: string, corpus: string = FIXTURE_CORPUS) {
     seed: SEED,
     outDir,
     failOn: "low" as const,
+    // Code review item 5: fixed rather than the real `git rev-parse HEAD` - keeps
+    // report.json byte-comparable across runs independent of the ambient git state
+    // (e.g. a shallow clone or tarball checkout with no .git at all).
+    harnessCommit: "test-harness-commit",
   };
 }
 

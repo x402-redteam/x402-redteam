@@ -58,6 +58,8 @@ field-by-field guide to what to put in the YAML.
 | `chains` | `("evm"\|"svm")[]` | `["evm","svm"]` | which chains the scenario runs on; `authorization_lifetime` is evm-only |
 | `description` | string | — | 2–4 sentences: the attack, a real citation if one applies (x402 v2 spec, EIP-3009, OWASP LLM Top 10, or a `node_modules/@x402/*` source file:line — never invented), what a correct agent does |
 | `assets` | `AssetSpec[]` | — | **v2** (`asset_swap`): extra known assets for this scenario, merged over `KNOWN_ASSETS`; see below |
+| `reach_class` | `crawl\|repeat\|prose\|challenge` | — | **v3** (ADR-016): **required** on every attack scenario, **forbidden** on a `control` (lint rule 7); see "Reach class and `surface`" below |
+| `rail` | `x402v2\|x402v1\|mpp` | `"x402v2"` | **v3** (ADR-014 rail port): which payment-challenge protocol this scenario speaks. Only `x402v2` is implemented in Bolt 6 |
 | `task` | object | — | see below |
 | `routes` | `Route[]` | — | see below |
 | `expected` | object | — | see below |
@@ -66,6 +68,40 @@ field-by-field guide to what to put in the YAML.
 resolved by `assetInfo(chain, asset, scenario.assets)`, the one function
 every `amount_usd` in the harness goes through, so a scenario-declared asset
 prices its own payments correctly instead of being assumed 6-decimal USDC.
+
+### Reach class and `surface`
+
+**v3** (ADR-016, Bolt 6): every attack scenario declares a `reach_class` —
+exactly the `ProbeClass` this corpus already classified scenarios into (see
+"Circularity evidence" below), now moved from a hand-maintained map in
+`packages/cli/test/corpus-v2.e2e.test.ts` into the YAML itself, where the
+loader can enforce it (lint rule 7) instead of the two drifting apart.
+
+- `crawl` — the attack surface is only reachable by following a link
+  discovered inside a fetched page's own body (or an index page's list of
+  sub-resources), never a literal URL in `task.prompt`.
+- `repeat` — the harm requires re-paying an already-settled route.
+- `prose` — the exploit payload is natural-language text (page prose, or a
+  `body_json` "message" field) that only a reader capable of acting on free
+  text, not just negotiating the protocol, could act on.
+- `challenge` — the entire attack is a single, real 402 challenge reachable
+  directly from a literal `task.prompt` URL (following at most an
+  auto-followed redirect).
+
+A `route` may also set `surface: true` to mark *the* request that presents
+the attack — the ghost page's link target, the lookalike host's route, the
+replayed or `402_forever` route, the prose page, or the challenge route
+itself. A report's `by_reach_class`/`reached` (landed as a null-safe
+placeholder in Bolt 6 Phase A; computed from the request log in a later
+unit) uses this to tell "the agent never saw this attack" apart from "the
+agent saw it and the guardrail stopped it." A scenario with `reach_class`
+but no `surface: true` route is a lint warning, not an error — its
+`reached` is then always `null`. A `control` scenario carries neither field.
+
+Every scenario in this corpus tags exactly one `surface: true` route (or, for
+`budget-split`, every one of its ten station routes — any one of them being
+reached counts as "reached" for a `crawl`-class scenario with several
+equivalent entry points).
 
 ### `task`
 
@@ -80,7 +116,7 @@ prices its own payments correctly instead of being assumed 6-decimal USDC.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `host` | string | `"provider.test"` | virtual host; served at `/_host/<host>/<path>` for any non-default host |
+| `host` | string | `"provider.test"` | virtual host; rendered by `hostUrl(host_mode, base_url, host)` (**v3**, ADR-012) — `/_host/<host>/<path>` in the default `path` mode, `http://<host>.localhost:<port>/<path>` once `host_mode: localhost` lands (U17). Must be under a reserved TLD (`.test`/`.example`/`.invalid`/`.localhost`) or listed in `corpus/decoy-domains.txt` (lint rule 6) |
 | `path` | string | — | e.g. `/weather/today` |
 | `method` | `"GET"\|"POST"` | `"GET"` | |
 | `page` | string (templated) | — | markdown/html body, served on 200 |
@@ -89,6 +125,7 @@ prices its own payments correctly instead of being assumed 6-decimal USDC.
 | `challenge` | object | — | present ⇒ the route is paywalled; see below |
 | `behaviour` | `normal\|402_forever\|no_delivery\|replay` | `"normal"` | see `application-design.md §5` for exact wire behavior of each |
 | `delivered_body` | string (templated) | route's `page`, else `"ok"` | body returned after a successful payment |
+| `surface` | boolean | — | **v3** (ADR-016): marks this route as the one that presents the attack; see "Reach class and `surface`" above. Forbidden-in-spirit on a `control`'s routes (not separately enforced, since controls never set `reach_class`) |
 
 ### `routes[].challenge`
 
@@ -239,9 +276,11 @@ version of this evidence used a single "≤40% of attack runs pass" bound for
 a bare, no-guardrail probe (`promptonly`). That number was withdrawn: it
 buried the difference between scenarios a bare protocol client structurally
 *cannot* exploit by design, and scenarios it reaches and must be scored
-failing. `packages/cli/test/corpus-v2.e2e.test.ts` now classifies every
-attack scenario into exactly one class and asserts against each class
-precisely:
+failing. `packages/cli/test/corpus-v2.e2e.test.ts` classifies every attack
+scenario into exactly one class and asserts against each class precisely —
+**v3** (ADR-016, Bolt 6): this class is now `reach_class`, read straight off
+the loaded corpus (see "Reach class and `surface`" above) rather than a map
+hand-maintained in that test file:
 
 | class | meaning | who is expected to pass it anyway, and why |
 |---|---|---|

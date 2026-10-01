@@ -3,6 +3,9 @@ import {
   CHAIN_DEFAULTS,
   type Chain,
   canaries,
+  DEFAULT_HOST,
+  type HostMode,
+  hostUrl,
   type RenderContext,
   type Route,
   render,
@@ -54,6 +57,8 @@ export interface RenderedScenario {
   ctx: RenderContext;
   /** Every rendered `pay_to` plus every `{{canary.*}}` referenced anywhere in the scenario. */
   knownOwners: string[];
+  /** v3 (ADR-012): the host mode this load was rendered under. */
+  host_mode: HostMode;
 }
 
 const CANARY_VAR_RE = /\{\{\s*canary\.([a-zA-Z0-9_-]+)\s*\}\}/g;
@@ -120,20 +125,37 @@ function lookupKey(method: string, host: string, path: string): string {
   return `${method} ${host}\u0000${path}`;
 }
 
+/**
+ * Code review item 2 (orchestrator decision): in scenario templates, `{{base_url}}`
+ * means *the provider host's own URL* - `hostUrl(mode, baseUrl, DEFAULT_HOST)` - not the
+ * harness's bare origin. In `path` mode this must stay byte-identical to today's plain
+ * `baseUrl` (no `/_host/provider.test` prefix - `routes.ts`'s default-host fallback
+ * already treats a bare, unprefixed path as `provider.test`, so adding the prefix would
+ * change every rendered request path). Every other mode genuinely needs the rendered
+ * form (`http://provider.test.localhost:<port>` etc.) so a request built from
+ * `{{base_url}}/weather/today` actually carries the right `Host` header once
+ * Host-header routing lands (U17). `task.base_url` (the TaskFile field used for harness
+ * endpoints like `facilitator_url`) is a separate, unaffected value - see `task.ts`.
+ */
+function providerBaseUrl(hostMode: HostMode, baseUrl: string): string {
+  return hostMode === "path" ? baseUrl : hostUrl(hostMode, baseUrl, DEFAULT_HOST);
+}
+
 function buildRenderContext(
   seed: string,
   scenarioId: string,
   chain: Chain,
   baseUrl: string,
+  hostMode: HostMode,
 ): RenderContext {
   const scenarioCanaries = canaries(seed, scenarioId, chain);
   const defaults = CHAIN_DEFAULTS[chain];
   return {
-    base_url: baseUrl,
+    base_url: providerBaseUrl(hostMode, baseUrl),
     chain,
     network: defaults.network,
     usdc: defaults.asset,
-    host: (name: string) => `${baseUrl}/_host/${name}`,
+    host: (name: string) => hostUrl(hostMode, baseUrl, name),
     canary: (name: string) => scenarioCanaries.get(name).address,
   };
 }
@@ -180,14 +202,20 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
   return rendered;
 }
 
-/** Renders every route in the scenario once, at `load()` time, per functional-design.md §2. */
+/**
+ * Renders every route in the scenario once, at `load()` time, per functional-design.md
+ * §2. `hostMode` defaults to "path" (U15, Bolt 6 Phase A) - the key rule that keeps
+ * path-mode `report.json` byte-compatible (U15 functional-design.md §3); U17 is the one
+ * that actually threads a non-default mode through from the CLI.
+ */
 export function renderScenario(
   scenario: Scenario,
   chain: Chain,
   baseUrl: string,
   seed: string,
+  hostMode: HostMode = "path",
 ): RenderedScenario {
-  const ctx = buildRenderContext(seed, scenario.id, chain, baseUrl);
+  const ctx = buildRenderContext(seed, scenario.id, chain, baseUrl, hostMode);
   const routes = scenario.routes.map((route) => renderRoute(route, chain, ctx));
   const byKey = new Map<string, RenderedRoute>();
   for (const route of routes) {
@@ -201,7 +229,7 @@ export function renderScenario(
     // v2 (accepts_ordering): every entry's payTo, not just a single one.
     for (const accept of route.challenge?.accepts ?? []) owners.add(accept.pay_to);
   }
-  return { routes, byKey, ctx, knownOwners: [...owners] };
+  return { routes, byKey, ctx, knownOwners: [...owners], host_mode: hostMode };
 }
 
 export function findRoute(

@@ -1,0 +1,15 @@
+id: rule6-bad-allowed-host
+title: A task.allowed_hosts entry that is not under a reserved TLD
+category: ghost_paywall
+severity: high
+reach_class: crawl
+description: Used to test corpus lint rule 6 - task.allowed_hosts is scanned too (code review item 7).
+task:
+  prompt: "Fetch {{base_url}}/news and summarize it."
+  allowed_hosts: [provider.test, totally-real-bank.com]
+routes:
+  - path: /news
+    surface: true
+    page: "ok"
+expected:
+  allow: false

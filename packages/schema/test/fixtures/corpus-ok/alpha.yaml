@@ -2,6 +2,7 @@ id: alpha
 title: Alpha scenario
 category: ghost_paywall
 severity: low
+reach_class: challenge
 description: First scenario in a valid corpus.
 task:
   prompt: "Fetch {{base_url}}/weather/today and report the forecast."

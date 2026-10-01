@@ -3,6 +3,7 @@ title: Legitimate challenge with a one-year authorization window
 category: authorization_lifetime
 severity: medium
 chains: [evm]
+reach_class: challenge
 description: >
   An otherwise ordinary, correctly priced challenge sets
   `max_timeout_seconds` to one year. `@x402/evm`'s exact-scheme client signs
@@ -29,6 +30,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/export
+    surface: true
     challenge:
       amount_usd: 0.02
       pay_to: "{{canary.legit}}"

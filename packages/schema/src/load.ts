@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
@@ -9,9 +9,16 @@ import {
   type Scenario,
   ScenarioSchema,
 } from "./scenario.js";
-import { type RenderContext, render, renderJsonStrings } from "./template.js";
+import { collectVars, type RenderContext, render, renderJsonStrings } from "./template.js";
 
 const CHAINS: readonly Chain[] = ["evm", "svm"];
+
+// v3 (ADR-012 / lint rule 6, application-design.md "Contracts (v3, Bolt 6)"): in a
+// proxy-capable corpus, every host must be under one of these IANA-reserved TLDs, or
+// listed in `decoy-domains.txt` - a real DNS name the agent could actually resolve and
+// hit, if it bypasses the harness's forward proxy.
+const RESERVED_HOST_TLDS = [".test", ".example", ".invalid", ".localhost"];
+const DECOY_DOMAINS_FILENAME = "decoy-domains.txt";
 
 /** Corpus loading / lint error. `path` is a dotted/bracketed path into the YAML document. */
 export class CorpusError extends Error {
@@ -44,6 +51,24 @@ const CANARY_VAR_RE = /\{\{\s*canary\.([a-zA-Z0-9_-]+)\s*\}\}/g;
 
 function extractCanaryNames(template: string): string[] {
   return [...template.matchAll(CANARY_VAR_RE)].map((m) => m[1] as string);
+}
+
+/** One `collectVars()` match against the `{{host:NAME}}` shape, for lint rule 6 (code
+ * review item 7). */
+const HOST_VAR_ARG_RE = /^\{\{\s*host:([a-zA-Z0-9_.-]+)\s*\}\}$/;
+
+/**
+ * Extracts every `{{host:NAME}}` reference's NAME from a template string via the shared
+ * `collectVars()` (template.ts) - so this can never see a different variable set than
+ * `render()` itself resolves.
+ */
+function hostNamesIn(template: string): string[] {
+  const names: string[] = [];
+  for (const variable of collectVars(template)) {
+    const match = variable.match(HOST_VAR_ARG_RE);
+    if (match) names.push(match[1] as string);
+  }
+  return names;
 }
 
 interface TemplatedField {
@@ -148,6 +173,29 @@ function pageTextFields(scenario: Scenario): TemplatedField[] {
   return fields;
 }
 
+/**
+ * Lint rule 6 (code review item 7): every host this scenario could ever cause a request
+ * to - a declared route's `host`, a `task.allowed_hosts` entry, and every
+ * `{{host:NAME}}` reference anywhere in templated text (via `templatedFields` and
+ * `pageTextFields`, so `body_json` is covered too) - each paired with a
+ * `CorpusError`-ready path.
+ */
+function collectHostReferences(scenario: Scenario): { path: string; host: string }[] {
+  const refs: { path: string; host: string }[] = [];
+  for (const { path, value } of [...templatedFields(scenario), ...pageTextFields(scenario)]) {
+    for (const host of hostNamesIn(value)) {
+      refs.push({ path: `${path} ({{host:${host}}})`, host });
+    }
+  }
+  scenario.routes.forEach((route, i) => {
+    refs.push({ path: `routes[${i}].host`, host: route.host });
+  });
+  (scenario.task.allowed_hosts ?? []).forEach((host, i) => {
+    refs.push({ path: `task.allowed_hosts[${i}]`, host });
+  });
+  return refs;
+}
+
 function resolveRedirectTarget(rendered: string): { host: string; path: string } | null {
   const hostPrefix = `${BASE_MARKER}/_host/`;
   if (rendered.startsWith(hostPrefix)) {
@@ -168,11 +216,46 @@ function routeKey(host: string, path: string): string {
 }
 
 /**
+ * Reads `<dir>/decoy-domains.txt` (one hostname per line, `#`-prefixed lines and blank
+ * lines ignored), per lint rule 6. Missing file -> empty set, which is the shipped
+ * default (`corpus/decoy-domains.txt` starts empty - adding a domain is a user decision).
+ */
+function readDecoyDomains(dir: string): ReadonlySet<string> {
+  const file = join(dir, DECOY_DOMAINS_FILENAME);
+  if (!existsSync(file)) return new Set();
+  const domains = new Set<string>();
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    domains.add(trimmed.toLowerCase());
+  }
+  return domains;
+}
+
+/**
+ * Lint rule 6: `host` is under a reserved TLD, or explicitly allow-listed as a decoy.
+ * Decoy matching is EXACT (case-insensitive), not a suffix/subdomain match - a decoy
+ * entry of "example.com" allows exactly "example.com", never "sub.example.com" (that
+ * would need its own entry). A reserved-TLD match, by contrast, *is* a suffix match
+ * (`.endsWith(tld)`), since every subdomain under `.test`/`.example`/`.invalid`/
+ * `.localhost` is itself reserved.
+ */
+function isAllowedHost(host: string, decoyDomains: ReadonlySet<string>): boolean {
+  const lower = host.toLowerCase();
+  if (RESERVED_HOST_TLDS.some((tld) => lower.endsWith(tld))) return true;
+  return decoyDomains.has(lower);
+}
+
+/**
  * Corpus lint rules from functional-design.md §2, rules 1 (filename half),
  * 2-5. Rule 1's uniqueness half is enforced by `loadCorpus`, which is the
  * only place with visibility across files.
  */
-function lintScenario(file: string, scenario: Scenario): void {
+function lintScenario(
+  file: string,
+  scenario: Scenario,
+  decoyDomains: ReadonlySet<string> = new Set(),
+): void {
   const expectedId = basename(file, extname(file));
   if (scenario.id !== expectedId) {
     throw new CorpusError(
@@ -299,10 +382,69 @@ function lintScenario(file: string, scenario: Scenario): void {
       );
     }
   });
+
+  // Lint rule 6 (ADR-012): every host this scenario references - a declared route's
+  // `host`, a `task.allowed_hosts` entry, or a `{{host:NAME}}` reference anywhere in
+  // templated text (code review item 7: a scenario can reference a virtual host purely
+  // in prose/a link without ever declaring a route at it) - must be under a reserved
+  // TLD or an explicitly allow-listed decoy domain. A corpus hostname that resolves on
+  // the real internet is a safety hazard once an agent is run in `proxy` mode and
+  // bypasses the harness's forward proxy.
+  for (const { path, host } of collectHostReferences(scenario)) {
+    if (!isAllowedHost(host, decoyDomains)) {
+      throw new CorpusError(
+        file,
+        path,
+        `host "${host}" is not under a reserved TLD (.test/.example/.invalid/.localhost) ` +
+          "and is not listed in corpus/decoy-domains.txt (lint rule 6)",
+      );
+    }
+  }
+
+  // Lint rule 7 (ADR-016 reach/`reached`): `reach_class` is required on every attack
+  // scenario and forbidden on a control, and (code review item 7) a control's routes
+  // must never set `surface: true` either - that field only means anything alongside a
+  // `reach_class`, which a control never has. A scenario with `reach_class` but no
+  // `surface: true` route is only a warning - its `reached` is then `null`, which is a
+  // valid (if less useful) shape, not a corpus error.
+  if (scenario.category === "control") {
+    if (scenario.reach_class !== undefined) {
+      throw new CorpusError(
+        file,
+        "reach_class",
+        'a "control" scenario must not set reach_class (lint rule 7)',
+      );
+    }
+    const surfaceRouteIndex = scenario.routes.findIndex((route) => route.surface === true);
+    if (surfaceRouteIndex !== -1) {
+      throw new CorpusError(
+        file,
+        `routes[${surfaceRouteIndex}].surface`,
+        'a "control" scenario must not set surface: true on any route (lint rule 7)',
+      );
+    }
+  } else {
+    if (scenario.reach_class === undefined) {
+      throw new CorpusError(
+        file,
+        "reach_class",
+        `scenario "${scenario.id}" (category "${scenario.category}") must set reach_class (lint rule 7)`,
+      );
+    }
+    if (!scenario.routes.some((route) => route.surface === true)) {
+      console.warn(
+        `x402-redteam: ${file}: scenario "${scenario.id}" has reach_class but no ` +
+          'route with "surface: true" - its "reached" will be null (lint rule 7)',
+      );
+    }
+  }
 }
 
 /** Parses, zod-validates and lints a single scenario YAML file. */
-export function loadScenario(file: string): Scenario {
+export function loadScenario(
+  file: string,
+  decoyDomains: ReadonlySet<string> = new Set(),
+): Scenario {
   const raw = readFileSync(file, "utf8");
 
   let parsed: unknown;
@@ -322,7 +464,7 @@ export function loadScenario(file: string): Scenario {
   }
 
   const scenario = result.data;
-  lintScenario(file, scenario);
+  lintScenario(file, scenario, decoyDomains);
   return scenario;
 }
 
@@ -346,12 +488,16 @@ function walkYamlFiles(dir: string): string[] {
  */
 export function loadCorpus(dir: string): Scenario[] {
   const files = walkYamlFiles(dir).sort((a, b) => relative(dir, a).localeCompare(relative(dir, b)));
+  // Lint rule 6: `<dir>/decoy-domains.txt`, read once and shared across every scenario
+  // in this corpus (a decoy domain is a corpus-wide, user-approved allow-list entry, not
+  // a per-scenario one).
+  const decoyDomains = readDecoyDomains(dir);
 
   const scenarios: Scenario[] = [];
   const seenIds = new Map<string, string>();
 
   for (const file of files) {
-    const scenario = loadScenario(file);
+    const scenario = loadScenario(file, decoyDomains);
     const priorFile = seenIds.get(scenario.id);
     if (priorFile !== undefined) {
       throw new CorpusError(

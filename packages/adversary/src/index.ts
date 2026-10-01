@@ -3,6 +3,7 @@ import { type ServerType, serve } from "@hono/node-server";
 import type {
   CaptureApi,
   Chain,
+  HostMode,
   IssuedChallenge,
   Payment,
   RequestLog,
@@ -23,6 +24,8 @@ export interface CreateAdversaryOptions {
   port?: number;
   capture: CaptureApi;
   host?: "127.0.0.1";
+  /** v3 (ADR-012): defaults to "path" - see `render.ts`'s `renderScenario`. */
+  hostMode?: HostMode;
 }
 
 export interface DrainedRun {
@@ -37,6 +40,10 @@ export interface DrainedRun {
 
 export interface Adversary {
   baseUrl: string;
+  /** v3 (ADR-012, code review item 4: U17 seam). The forward proxy's own origin, once
+   * `host_mode: "proxy"` actually serves one (U17) - always `undefined` until then, so
+   * `run.ts` falls back to `task.base_url` for `hostEnv`'s `proxyUrl` argument. */
+  proxyUrl?: string;
   load(run: { scenario: Scenario; chain: Chain; run_id: string }): void;
   drain(): DrainedRun;
   /** Requests the loaded run has received so far (0 when nothing is loaded). */
@@ -77,7 +84,7 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
     baseUrl,
     load(run) {
       const state = new RunState(run.scenario, run.chain, run.run_id);
-      const rendered = renderScenario(run.scenario, run.chain, baseUrl, opts.seed);
+      const rendered = renderScenario(run.scenario, run.chain, baseUrl, opts.seed, opts.hostMode);
       holder.current = { state, rendered };
     },
     drain() {

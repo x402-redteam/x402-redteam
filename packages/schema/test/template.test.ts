@@ -51,7 +51,11 @@ describe("render: host names and malformed variables", () => {
     chain: "evm",
     network: "n",
     usdc: "u",
-    host: (n: string) => n,
+    // v3 (ADR-012, code review HIGH-1): render() now actually delegates to ctx.host()
+    // instead of hard-coding the path-mode URL - this mock builds the same shape every
+    // real RenderContext's path-mode host() does, so this test still asserts the
+    // rendered string, not render()'s own (now-removed) internal URL construction.
+    host: (n: string) => `http://h/_host/${n}`,
     canary: (n: string) => `C_${n}`,
   };
   it("renders dotted host names", () => {

@@ -29,6 +29,22 @@ export const CategorySchema = z.enum([
 ]);
 export type Category = z.infer<typeof CategorySchema>;
 
+/**
+ * v3 (ADR-016 reach/`reached`, Bolt 6): required on every attack scenario, forbidden on
+ * `control` (lint rule 7, `load.ts`). Marks *why* a given scenario's attack surface is
+ * reachable, so a bare, no-guardrail probe's pass on an unreached attack isn't mistaken
+ * for a safe policy (see `corpus/README.md`'s "Circularity evidence" table, whose
+ * `ProbeClass` this type mirrors exactly).
+ */
+export const ReachClassSchema = z.enum(["crawl", "repeat", "prose", "challenge"]);
+export type ReachClass = z.infer<typeof ReachClassSchema>;
+
+/** v3 (ADR-014 rail port): which payment-challenge protocol a scenario speaks. Only
+ * `x402v2` is implemented in Bolt 6; `x402v1` and `mpp` are reserved for the rail port
+ * (U20) and the MPP rail (Bolt 7). */
+export const RailSchema = z.enum(["x402v2", "x402v1", "mpp"]);
+export type Rail = z.infer<typeof RailSchema>;
+
 /** Per-chain overrides merged over a challenge/accept's own fields (e.g. rail_switch mainnet ids). */
 const PerChainOverrideSchema = z.partialRecord(
   z.enum(["evm", "svm"]),
@@ -129,6 +145,11 @@ export const RouteSchema = z.object({
   challenge: ChallengeSpecSchema.optional(),
   behaviour: z.enum(["normal", "402_forever", "no_delivery", "replay"]).default("normal"),
   delivered_body: z.string().optional(),
+  // v3 (ADR-016 reach/`reached`): marks the route whose request presents the attack
+  // (corpus/README.md documents the tagging convention). Optional, no default - a
+  // scenario with `reach_class` but no `surface: true` route is a lint-rule-7 warning,
+  // not an error, and its `reached` is `null`. Controls carry no `surface`.
+  surface: z.boolean().optional(),
 });
 export type Route = z.infer<typeof RouteSchema>;
 
@@ -208,6 +229,12 @@ export const ScenarioSchema = z.object({
   // v2 (asset_swap): extra known assets for this scenario only. Optional, no default,
   // so a v1 scenario (which never sets this) is unaffected.
   assets: z.array(AssetSpecSchema).optional(),
+  // v3 (ADR-016): required on every attack scenario, forbidden on "control" - enforced
+  // by lint rule 7 (load.ts), not here, so the error carries a file/path (CorpusError).
+  reach_class: ReachClassSchema.optional(),
+  // v3 (ADR-014 rail port): defaults to "x402v2" - every scenario in this corpus speaks
+  // x402 v2 until the rail port (U20) and a future scenario set this explicitly.
+  rail: RailSchema.default("x402v2"),
 });
 export type Scenario = z.infer<typeof ScenarioSchema>;
 

@@ -8,24 +8,11 @@ import type { RequestLog } from "@x402-redteam/schema";
 import type { Context, Hono } from "hono";
 import { buildPaymentRequired, buildRequirementsList } from "./challenge.js";
 import { fakeTransactionHash } from "./fake-hash.js";
+import { resolveHost } from "./hosts.js";
 import { recordDecodedLegs } from "./record.js";
 import { findRoute, type RenderedRoute, type RenderedScenario } from "./render.js";
 import type { Shared } from "./shared.js";
 import type { RunState } from "./state.js";
-
-const HOST_PREFIX = "/_host/";
-const DEFAULT_HOST = "provider.test";
-
-function resolveHostPath(pathname: string): { host: string; path: string } {
-  if (pathname.startsWith(HOST_PREFIX)) {
-    const rest = pathname.slice(HOST_PREFIX.length);
-    const slash = rest.indexOf("/");
-    return slash === -1
-      ? { host: rest, path: "" }
-      : { host: rest.slice(0, slash), path: rest.slice(slash) };
-  }
-  return { host: DEFAULT_HOST, path: pathname };
-}
 
 function logRequest(state: RunState, entry: Omit<RequestLog, "seq">): void {
   state.requests.push({ ...entry, seq: state.nextSeq() });
@@ -38,8 +25,7 @@ export function registerScenarioRoutes(app: Hono, shared: Shared): void {
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
     const { state, rendered } = loaded;
 
-    const url = new URL(c.req.url);
-    const { host, path } = resolveHostPath(url.pathname);
+    const { host, path } = resolveHost(c, rendered.host_mode);
     const method = c.req.method;
 
     const route = findRoute(rendered, method, host, path);
@@ -52,7 +38,7 @@ export function registerScenarioRoutes(app: Hono, shared: Shared): void {
       return serveFree(c, state, route, method, host, path);
     }
 
-    return serveChallenge(c, shared, state, rendered, route, method, host, path, url.toString());
+    return serveChallenge(c, shared, state, rendered, route, method, host, path, c.req.url);
   });
 }
 

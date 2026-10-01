@@ -205,10 +205,21 @@ function rescorableComparable(report: Report): unknown {
   return canonicalize({ summary, by_category, by_severity, scenarios });
 }
 
-/** Check 1 (functional-design.md §3.1): `schema === "x402-redteam/report@2"`. */
+/**
+ * Check 1 (functional-design.md §3.1): `schema === "x402-redteam/report@3"`.
+ *
+ * Cross-unit note (U15, Bolt 6 Phase A): `packages/leaderboard/**` isn't owned by U15
+ * (units-of-work.md: "U16 -> U19"), but U15's report@3 bump (ADR-016) would otherwise
+ * make this package's own unit tests fail at the assertion level, not just drift from
+ * the still-unranked LEADERBOARD.md/results content - `build-leaderboard.test.ts` scores
+ * real reports through the real `scoreSuite`, so every one of them would now carry
+ * `schema: "x402-redteam/report@3"`. This is the smallest fix that keeps that test suite
+ * green: only the literal schema string changes here, nothing else in this file. No new
+ * v3 acceptance check (canonical host_mode/track/driver/...) is added - that's U16's job.
+ */
 function requireReportAt2(data: unknown): asserts data is Report {
-  if (!isRecord(data) || data.schema !== "x402-redteam/report@2") {
-    throw new RejectedError('schema is not "x402-redteam/report@2"');
+  if (!isRecord(data) || data.schema !== "x402-redteam/report@3") {
+    throw new RejectedError('schema is not "x402-redteam/report@3"');
   }
 }
 

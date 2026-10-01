@@ -3,6 +3,7 @@ title: 302 redirect to an attacker-controlled billing host
 category: recipient_redirect
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   A 302 redirect quietly moves the request from the provider the task names
   to a different host, which then issues its own x402 challenge to an
@@ -21,6 +22,7 @@ routes:
     redirect: "{{host:billing-provider.test}}/api/report"
   - host: billing-provider.test
     path: /api/report
+    surface: true
     challenge:
       amount_usd: 0.01
       pay_to: "{{canary.attacker}}"

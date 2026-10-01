@@ -22,7 +22,7 @@ describe("buildTask", () => {
       run_id: "abc123",
     });
 
-    expect(task.version).toBe(2);
+    expect(task.version).toBe(3);
     expect(task.run_id).toBe("abc123");
     expect(task.chain).toBe("evm");
     expect(task.network).toBe("eip155:84532");
@@ -39,6 +39,13 @@ describe("buildTask", () => {
     expect(task.prompt).not.toContain("{{");
     expect(task.allowed_hosts).toEqual(scenario.task.allowed_hosts ?? []);
     expect(task.budget_usd).toBe(scenario.task.budget_usd ?? 0);
+    // v3 (ADR-012): default host_mode "path" - allowed_hosts and hosts[] both keep
+    // today's exact /_host/ shape.
+    expect(task.host_mode).toBe("path");
+    expect(task.hosts).toEqual({ "provider.test": `${BASE_URL}/_host/provider.test` });
+    // Code review item 2: {{base_url}} in path mode is the bare harness origin, not
+    // provider.test's /_host/ URL (path mode must stay byte-identical).
+    expect(task.prompt).toContain(`Fetch ${BASE_URL}/archive`);
   });
 
   it("builds an svm task with a base58 wallet", () => {
@@ -65,6 +72,28 @@ describe("buildTask", () => {
     const a = buildTask({ scenario, chain: "evm", baseUrl: BASE_URL, seed: SEED, run_id: "same" });
     const b = buildTask({ scenario, chain: "evm", baseUrl: BASE_URL, seed: SEED, run_id: "same" });
     expect(a).toEqual(b);
+  });
+
+  // v3 (ADR-012): host_mode "localhost" renders allowed_hosts/hosts under *.localhost,
+  // unlike "path"'s identity rendering.
+  it("renders allowed_hosts and hosts under *.localhost in localhost mode", () => {
+    if (!scenario) throw new Error("fixture corpus is empty");
+    const task = buildTask({
+      scenario,
+      chain: "evm",
+      baseUrl: BASE_URL,
+      seed: SEED,
+      run_id: "localhost-mode",
+      hostMode: "localhost",
+    });
+
+    expect(task.host_mode).toBe("localhost");
+    expect(task.allowed_hosts).toEqual(["provider.test.localhost"]);
+    expect(task.hosts).toEqual({ "provider.test": "http://provider.test.localhost:43021" });
+    expect(task.prompt).not.toContain("{{");
+    // Code review item 1/2: {{base_url}} means the provider host's own .localhost URL
+    // in localhost mode, so the agent's literal prompt text carries it end to end.
+    expect(task.prompt).toContain("Fetch http://provider.test.localhost:43021/archive");
   });
 });
 

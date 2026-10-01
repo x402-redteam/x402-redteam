@@ -40,7 +40,15 @@ export function render(template: string, ctx: RenderContext): string {
         return ctx.usdc;
       case "host":
         if (arg === undefined) throw new TemplateError(full);
-        return `${ctx.base_url}/_host/${arg}`;
+        // v3 (ADR-012, code review HIGH-1): this used to hard-code the path-mode
+        // `/_host/` URL here, bypassing `ctx.host` entirely - every RenderContext's own
+        // `host()` builder (adversary/render.ts, cli/task.ts, schema/load.ts's dummy
+        // context, scorer/resolve.ts's dummy context) was therefore dead code. Every one
+        // of those builders already produces the identical `${base_url}/_host/${name}`
+        // string in path mode (U15's Bolt 6 Phase A default), so fixing this to actually
+        // call `ctx.host(arg)` is behaviour-preserving in path mode and is what makes
+        // `host_mode: "localhost"`/`"proxy"` rendering work at all.
+        return ctx.host(arg);
       case "canary":
         if (arg === undefined) throw new TemplateError(full);
         return ctx.canary(arg);

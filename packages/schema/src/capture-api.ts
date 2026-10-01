@@ -38,12 +38,27 @@ export interface DecodedPayment {
    * carry it. Purely additive/optional, so no existing reader breaks.
    */
   legs?: DecodedPayment[];
+  /**
+   * v3 (ADR-016 capture lows, U21 fills it in): true when this leg grants authority over
+   * an account rather than moving value directly (e.g. svm `SetAuthority` over a known
+   * token account - AccountOwner/CloseAccount - valued at that account's modelled
+   * balance, capped like `approve`). Absent/false for an ordinary value-moving leg.
+   */
+  authority_grant?: boolean;
   raw: unknown;
 }
 
 /** Owners the server knows (payTo values + canaries), used to map an SVM ATA back to its owner. */
 export interface DecodeHints {
   knownOwners?: string[];
+  /**
+   * v3 (ADR-016 capture lows, U21 fills it in): the agent's own associated token
+   * accounts for known mints (owner + mint per ATA address), so a plain SPL `Transfer`
+   * (which carries no mint, unlike `TransferChecked`) can resolve its asset from its
+   * *source* token account when that account is a known ATA, instead of staying
+   * `asset: ""` / `asset_known: false`.
+   */
+  knownTokenAccounts?: Record<string, { owner: string; mint: string }>;
 }
 
 export type ShimEvent =

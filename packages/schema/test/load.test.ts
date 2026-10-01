@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CorpusError, loadCorpus, loadScenario } from "../src/load.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -270,6 +270,124 @@ describe("loadScenario", () => {
       const corpusErr = err as CorpusError;
       expect(corpusErr.path).toBe("expected.min_payments");
       expect(corpusErr.message).toMatch(/only a "control" scenario/);
+    }
+  });
+
+  // v3 (ADR-012 lint rule 6, Bolt 6).
+  it("rule 6: rejects a route host that is not under a reserved TLD", () => {
+    try {
+      loadScenario(join(fixtures, "rule6-bad-host.yaml"));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      const corpusErr = err as CorpusError;
+      expect(corpusErr.path).toBe("routes[1].host");
+      expect(corpusErr.message).toMatch(/weather\.com/);
+      expect(corpusErr.message).toMatch(/decoy-domains/);
+    }
+  });
+
+  it("rule 6: a decoy-listed host is allowed", () => {
+    const scenario = loadScenario(join(fixtures, "rule6-bad-host.yaml"), new Set(["weather.com"]));
+    expect(scenario.id).toBe("rule6-bad-host");
+  });
+
+  it("rule 6: reserved TLDs (.test/.example/.invalid/.localhost) never need a decoy entry", () => {
+    const scenario = loadScenario(join(fixtures, "valid-minimal.yaml"));
+    expect(scenario.routes[0]?.host).toBe("provider.test");
+  });
+
+  // Code review item 7: rule 6 also scans {{host:X}} references (even with no matching
+  // route) and task.allowed_hosts, via collectVars.
+  it("rule 6: catches a {{host:X}} reference in prose with no matching route", () => {
+    try {
+      loadScenario(join(fixtures, "rule6-bad-host-in-prose.yaml"));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      const corpusErr = err as CorpusError;
+      expect(corpusErr.path).toBe("routes[0].page ({{host:evil-tracker.net}})");
+      expect(corpusErr.message).toMatch(/evil-tracker\.net/);
+    }
+  });
+
+  it("rule 6: catches a bad host in task.allowed_hosts", () => {
+    try {
+      loadScenario(join(fixtures, "rule6-bad-allowed-host.yaml"));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      const corpusErr = err as CorpusError;
+      expect(corpusErr.path).toBe("task.allowed_hosts[1]");
+      expect(corpusErr.message).toMatch(/totally-real-bank\.com/);
+    }
+  });
+
+  it("rule 6: a decoy-listed {{host:X}} reference is allowed even with no matching route", () => {
+    const scenario = loadScenario(
+      join(fixtures, "rule6-bad-host-in-prose.yaml"),
+      new Set(["evil-tracker.net"]),
+    );
+    expect(scenario.id).toBe("rule6-bad-host-in-prose");
+  });
+
+  // v3 (ADR-016 lint rule 7, Bolt 6).
+  it("rule 7: rejects an attack scenario without reach_class", () => {
+    try {
+      loadScenario(join(fixtures, "rule7-missing-reach-class.yaml"));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      const corpusErr = err as CorpusError;
+      expect(corpusErr.path).toBe("reach_class");
+      expect(corpusErr.message).toMatch(/must set reach_class/);
+    }
+  });
+
+  it("rule 7: rejects a control scenario that sets reach_class", () => {
+    try {
+      loadScenario(join(fixtures, "rule7-control-with-reach-class.yaml"));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      const corpusErr = err as CorpusError;
+      expect(corpusErr.path).toBe("reach_class");
+      expect(corpusErr.message).toMatch(/must not set reach_class/);
+    }
+  });
+
+  it("rule 7: warns (but still loads) when reach_class has no surface:true route", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const scenario = loadScenario(join(fixtures, "rule7-no-surface-route.yaml"));
+      expect(scenario.id).toBe("rule7-no-surface-route");
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0]?.[0]).toMatch(/surface/);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("rule 7: a scenario with a surface:true route does not warn", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      loadScenario(join(fixtures, "rule6-bad-host.yaml"), new Set(["weather.com"]));
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  // Code review item 7: surface is forbidden on a control's routes too.
+  it("rule 7: rejects a control scenario that sets surface:true on a route", () => {
+    try {
+      loadScenario(join(fixtures, "rule7-control-with-surface-route.yaml"));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      const corpusErr = err as CorpusError;
+      expect(corpusErr.path).toBe("routes[0].surface");
+      expect(corpusErr.message).toMatch(/must not set surface: true/);
     }
   });
 });

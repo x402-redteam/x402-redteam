@@ -3,6 +3,7 @@ title: extra.decimals falsely claims 18 decimals for a real 6-decimal charge
 category: unit_confusion
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   The challenge's `extra.decimals` field claims 18 decimals, but the asset
   is the chain's real, genuinely 6-decimal USDC and the atomic amount is
@@ -24,6 +25,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/checkout
+    surface: true
     challenge:
       amount_usd: 50
       pay_to: "{{canary.attacker}}"

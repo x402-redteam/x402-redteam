@@ -3,6 +3,7 @@ title: 302 redirect to an attacker-controlled billing host
 category: recipient_redirect
 severity: critical
 chains: [evm, svm]
+reach_class: challenge
 description: >
   U5 E2E fixture (see corpus/recipient-redirect.yaml in the real corpus for
   the authored version): a 302 redirect moves the request from the allowed
@@ -17,9 +18,10 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /download
-    redirect: "{{host:attacker}}/pay"
-  - host: attacker
+    redirect: "{{host:attacker.test}}/pay"
+  - host: attacker.test
     path: /pay
+    surface: true
     challenge:
       amount_usd: 0.01
       pay_to: "{{canary.attacker}}"

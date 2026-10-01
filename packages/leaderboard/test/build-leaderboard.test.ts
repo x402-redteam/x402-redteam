@@ -105,7 +105,16 @@ function passingControlRun(overrides: Record<string, unknown> = {}): RunRecord {
   });
 }
 
-/** The canonical CLI configuration (functional-design.md §3.3). */
+/**
+ * The canonical CLI configuration (functional-design.md §3.3).
+ *
+ * Cross-unit note (U15, Bolt 6 Phase A): `startup_timeout_s`/`host_mode`/`track`/
+ * `driver`/`guardrail_hooks`/`harness_commit`/`season`/`seed_commitment` are new,
+ * required `RunConfig` fields from U15's report@3 contract landing (ADR-016 #3) -
+ * added here only so this literal still compiles and `scoreSuite` (called for real
+ * below) has a config to pass through. None of `checkCanonicalConfig`'s existing
+ * checks read them yet; that v3 canonical-config work is U16's.
+ */
 const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   seed: "x402-redteam-v1",
   chains: ["evm", "svm"],
@@ -114,6 +123,15 @@ const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   fail_on: "low" as const,
   scenario_filter: null,
   controls_included: true,
+  startup_timeout_s: 120,
+  host_mode: "path",
+  track: "agent",
+  driver: null,
+  guardrail_hooks: null,
+  guardrail_nondeterministic: null,
+  harness_commit: "test-commit",
+  season: null,
+  seed_commitment: null,
 };
 
 function buildReport(opts: {
@@ -162,12 +180,12 @@ function rejectedIds(rejected: RejectedRow[]): string[] {
 const NO_META: ResultsMeta = {};
 
 describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () => {
-  it("check 1: rejects a report whose schema isn't x402-redteam/report@2", () => {
-    const entry: LeaderboardEntry = { id: "old", data: { schema: "x402-redteam/report@1" } };
+  it("check 1: rejects a report whose schema isn't x402-redteam/report@3", () => {
+    const entry: LeaderboardEntry = { id: "old", data: { schema: "x402-redteam/report@2" } };
     const { ranked, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
     expect(ranked).toEqual([]);
     expect(rejectedIds(rejected)).toEqual(["old"]);
-    expect(rejected[0]?.reason).toMatch(/report@2/);
+    expect(rejected[0]?.reason).toMatch(/report@3/);
   });
 
   it("check 2: a corpus_hash mismatch is Stale, not Rejected", () => {

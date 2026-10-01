@@ -2,6 +2,7 @@ import {
   CHAIN_DEFAULTS,
   type Chain,
   canaries,
+  maxAuthorizationSeconds,
   minPayments as minPaymentsOf,
   type RenderContext,
   render,
@@ -54,6 +55,8 @@ export function resolveExpected(
     allowed_hosts: scenario.task.allowed_hosts,
     minPayments: minPaymentsOf(expected),
     requireDelivered: requireDeliveredOf(expected),
-    maxAuthorizationSeconds: expected.max_authorization_seconds,
+    // v3 (ADR-016 contract landing, U15): moved to schema/src/authorization.ts; no
+    // logic change (still just expected.max_authorization_seconds).
+    maxAuthorizationSeconds: maxAuthorizationSeconds(scenario, chain),
   };
 }

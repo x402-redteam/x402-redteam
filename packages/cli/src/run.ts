@@ -1,16 +1,22 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createAdversary } from "@x402-redteam/adversary";
 import { capture } from "@x402-redteam/capture";
 import {
   type Chain,
+  type HostMode,
   loadCorpus,
   type RunRecord,
   type Severity,
   SeveritySchema,
 } from "@x402-redteam/schema";
 import { type Report, scoreSuite, toJson, toMarkdown, toSarif } from "@x402-redteam/scorer";
+import { collectGuardrailInfo } from "./guardrail-track.js";
+import { hostEnv, preflightHostMode } from "./host-env.js";
+import { loadSeason } from "./season.js";
 import { runAgent } from "./spawn.js";
 import { buildTask, writeTaskFile } from "./task.js";
 
@@ -18,6 +24,34 @@ import { buildTask, writeTaskFile } from "./task.js";
 const CHAIN_ORDER: Chain[] = ["evm", "svm"];
 
 const PROXY_NAME_RE = /_PROXY$/i;
+
+/** This file's own directory, so `git -C` always targets this checkout regardless of
+ * the process's cwd (code review item 5). */
+const CLI_SRC_DIR = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * v3 (ADR-016 #3 config fingerprint): `git -C <this checkout> rev-parse HEAD`, with a 2s
+ * timeout (never let a slow/broken git block a run) falling back to "unknown" (e.g. not
+ * a git checkout, or `git` isn't on PATH). Memoized (code review item 5): computed at
+ * most once per process, since it can't change mid-run, and git's own stderr is
+ * suppressed (a "fatal: not a git repository" message has no business reaching the
+ * agent's own terminal). Constant within a checkout, so it never breaks the NFR1
+ * byte-determinism check across two runs of the same build.
+ */
+let cachedHarnessCommit: string | undefined;
+function computeHarnessCommit(): string {
+  if (cachedHarnessCommit !== undefined) return cachedHarnessCommit;
+  try {
+    cachedHarnessCommit = execFileSync("git", ["-C", CLI_SRC_DIR, "rev-parse", "HEAD"], {
+      timeout: 2000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    cachedHarnessCommit = "unknown";
+  }
+  return cachedHarnessCommit;
+}
 
 export interface RunSuiteOptions {
   /** The `sh -c` command that starts the agent under test. */
@@ -45,6 +79,23 @@ export interface RunSuiteOptions {
    * `null` and the leaderboard rejects the report.
    */
   skipControls?: boolean;
+  /** v3 (ADR-012): defaults to "path" (U15's Phase A default; U17 flips the CLI default
+   * once *.localhost routing lands). */
+  hostMode?: HostMode;
+  /** v3 (ADR-011 seasons): the env var name holding the season's secret seed, if any. */
+  seasonSeedEnv?: string;
+  /** v3 (ADR-016 #3 config fingerprint): overrides `computeHarnessCommit()` - tests
+   * inject a fixed value so report.json stays byte-comparable across runs. */
+  harnessCommit?: string;
+  /** v3 (ADR-010 guardrail track, U18 fills in the real values): "agent" unless a
+   * guardrail driver sets otherwise - U15 never passes anything but the default. */
+  track?: "agent" | "guardrail";
+  /** v3 (ADR-010, U18): the driver's own version tag, or null on the agent track. */
+  driver?: string | null;
+  /** v3 (ADR-010, code review item 3 - U18 seam): extra env vars the resolved track
+   * needs in the agent's env, from `guardrail-track.ts`'s `resolveAgentCommand` (always
+   * `{}` on the agent track today). Merged into `buildAgentEnv`'s output. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface RunSuiteResult {
@@ -67,7 +118,13 @@ function computeRunId(seed: string, scenarioId: string, chain: Chain, attempt: n
  * requested via `passEnv`), and adds the `X402_*`, `SOLANA_RPC_URL` and
  * `X402_FACILITATOR_URL` variables, plus v2's `X402_EVM_RPC_URL` / `ETH_RPC_URL`.
  */
-function buildAgentEnv(taskPath: string, task: ReturnType<typeof buildTask>, passEnv: string[]) {
+function buildAgentEnv(
+  taskPath: string,
+  task: ReturnType<typeof buildTask>,
+  passEnv: string[],
+  proxyUrl: string,
+  extraEnv: NodeJS.ProcessEnv,
+) {
   const names = new Set(["PATH", "HOME", "NODE_OPTIONS", ...passEnv]);
   const env: NodeJS.ProcessEnv = {};
   for (const name of names) {
@@ -82,6 +139,14 @@ function buildAgentEnv(taskPath: string, task: ReturnType<typeof buildTask>, pas
   env.SOLANA_RPC_URL = task.solana_rpc_url;
   env.X402_EVM_RPC_URL = task.evm_rpc_url;
   env.ETH_RPC_URL = task.evm_rpc_url;
+  // v3 (ADR-012, U17 stub; code review item 4): proxy-mode env vars (HTTP_PROXY et al.) -
+  // always {} until U17 lands the forward proxy, so this is a no-op today regardless of
+  // host_mode. `proxyUrl` is the adversary's own forward-proxy origin once U17 adds one,
+  // else the harness's own base_url (the call site below resolves which).
+  Object.assign(env, hostEnv(task.host_mode, proxyUrl));
+  // v3 (ADR-010, code review item 3 - U18 seam): the resolved track's own extra env
+  // (always {} on the agent track today).
+  Object.assign(env, extraEnv);
   return env;
 }
 
@@ -115,6 +180,11 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const scenarioFilter = opts.scenarioIds ? new Set(opts.scenarioIds) : undefined;
   const chainFilter = opts.chains ?? CHAIN_ORDER;
   const skipControls = opts.skipControls ?? false;
+  // v3 (ADR-012): "path" until the CLI's own default flips (U17). `preflightHostMode` is
+  // a no-op stub today (always returns `mode` unchanged, async - code review item 4) -
+  // U17 is the one that actually probes *.localhost and falls back to "path" on failure.
+  const hostMode = await preflightHostMode(opts.hostMode ?? "path");
+  const season = loadSeason({ seasonSeedEnv: opts.seasonSeedEnv });
 
   // Code review fix 7: --skip-controls silently produces an unrankable report
   // (summary.valid === null); warn loudly every time it's used, not just in the report.
@@ -142,7 +212,7 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   mkdirSync(logsDir, { recursive: true });
   mkdirSync(runsDir, { recursive: true });
 
-  const adversary = await createAdversary({ seed: opts.seed, capture });
+  const adversary = await createAdversary({ seed: opts.seed, capture, hostMode });
   const runs: RunRecord[] = [];
 
   try {
@@ -160,10 +230,14 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             baseUrl: adversary.baseUrl,
             seed: opts.seed,
             run_id,
+            hostMode,
           });
           const taskPath = writeTaskFile(outDir, task);
 
-          const env = buildAgentEnv(taskPath, task, opts.passEnv ?? []);
+          // Code review item 4 (U17 seam): the adversary's own forward-proxy origin
+          // once `host_mode: "proxy"` serves one, else the harness's base_url.
+          const proxyUrl = adversary.proxyUrl ?? task.base_url;
+          const env = buildAgentEnv(taskPath, task, opts.passEnv ?? [], proxyUrl, opts.env ?? {});
           const logFile = resolve(logsDir, `${run_id}.log`);
 
           const spawnResult = await runAgent({
@@ -204,6 +278,15 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
     await adversary.close();
   }
 
+  // Code review item 3 (U18 seam): read back whatever the driver recorded about the
+  // guardrail (hooks, nondeterministic) before building the config fingerprint - a
+  // no-op stub today (always "no guardrail"), called here so U18 only needs to make
+  // `collectGuardrailInfo` itself real, not this call site.
+  const guardrailInfo = collectGuardrailInfo(
+    runsDir,
+    runs.map((r) => r.run_id),
+  );
+
   const report = scoreSuite({
     scenarios,
     runs,
@@ -223,6 +306,16 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
         fail_on: opts.failOn,
         scenario_filter: opts.scenarioIds ? [...new Set(opts.scenarioIds)].sort() : null,
         controls_included: !skipControls,
+        // v3 (ADR-016 #3 config fingerprint).
+        startup_timeout_s: (opts.startupTimeoutMs ?? 120_000) / 1000,
+        host_mode: hostMode,
+        track: opts.track ?? "agent",
+        driver: opts.driver ?? null,
+        guardrail_hooks: guardrailInfo.guardrail_hooks,
+        guardrail_nondeterministic: guardrailInfo.guardrail_nondeterministic,
+        harness_commit: opts.harnessCommit ?? computeHarnessCommit(),
+        season: season.season,
+        seed_commitment: season.seed_commitment,
       },
     },
   });

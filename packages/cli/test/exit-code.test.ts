@@ -10,6 +10,15 @@ const CONFIG: RunConfig = {
   fail_on: "low",
   scenario_filter: null,
   controls_included: true,
+  startup_timeout_s: 120,
+  host_mode: "path",
+  track: "agent",
+  driver: null,
+  guardrail_hooks: null,
+  guardrail_nondeterministic: null,
+  harness_commit: "test-commit",
+  season: null,
+  seed_commitment: null,
 };
 
 function reportWith(
@@ -17,7 +26,7 @@ function reportWith(
   opts: { valid?: boolean | null } = {},
 ): Report {
   return {
-    schema: "x402-redteam/report@2",
+    schema: "x402-redteam/report@3",
     harness_version: "0.0.1",
     agent_id: "agent",
     guardrail_id: "none",
@@ -45,6 +54,7 @@ function reportWith(
     },
     by_category: {} as Report["by_category"],
     by_severity: {} as Report["by_severity"],
+    by_reach_class: {} as Report["by_reach_class"],
     scenarios: results.map((r, i) => ({
       id: `s${i}`,
       title: `s${i}`,

@@ -1,6 +1,6 @@
 import type { PaymentRequirements } from "@x402/core/types";
 import { z } from "zod";
-import { ChainSchema } from "./scenario.js";
+import { ChainSchema, RailSchema } from "./scenario.js";
 
 export const IssuedChallengeSchema = z.object({
   challenge_id: z.string(),
@@ -10,6 +10,15 @@ export const IssuedChallengeSchema = z.object({
   requirements: z.custom<PaymentRequirements>(() => true),
   accepts: z.array(z.custom<PaymentRequirements>(() => true)),
   seq: z.number().int().nonnegative(),
+  // v3 (ADR-014 rail port): the rail that issued this challenge. Optional, no default -
+  // `IssuedChallenge`s are built in adversary code, not corpus YAML, so a default here
+  // wouldn't move `corpusHash` but would force every existing call site to set it for no
+  // benefit; U20 (the rail port's owner) is the one that actually sets it.
+  rail: RailSchema.optional(),
+  // v3 (ADR-014 rail binding check, U20 fills it in): a generic "does this credential's
+  // echoed terms match what was issued" reference - MPP's `id`/HMAC, x402's `accepted`
+  // echo, and a future tampered-credential scenario all key off this one field.
+  challenge_ref: z.string().optional(),
 });
 export type IssuedChallenge = z.infer<typeof IssuedChallengeSchema>;
 
@@ -36,7 +45,11 @@ export const PaymentSchema = z.object({
   to: z.string(),
   amount_atomic: z.string(),
   amount_usd: z.number(),
-  /** Why `valid` is false (e.g. "negative_amount", "bad_signature"); absent when valid. */
+  /**
+   * Why `valid` is false (e.g. "negative_amount", "bad_signature"); absent when valid.
+   * v3 (ADR-014 rail port, U20): adds "challenge_mismatch" - a credential whose echoed
+   * terms don't match what was issued is never delivered on.
+   */
   invalid_reason: z.string().optional(),
   route_key: z.string().optional(),
   host: z.string().optional(),
@@ -56,6 +69,13 @@ export const PaymentSchema = z.object({
   // or before "now") is itself a signal the scorer/U11 corpus may want to catch, not a
   // shape the schema should reject.
   authorization_seconds: z.number().optional(),
+  // v3 (ADR-016 #2, fixes N1): computed by the scorer from `authorization_seconds`
+  // against `max_authorization_seconds` (+5s tolerance) and persisted here, so the
+  // leaderboard's re-score check can reproduce `excessive_authorization_window` without
+  // needing the wall-clock-tainted `authorization_seconds` itself (which stays
+  // stripped from report.json). Absent when authorization_lifetime doesn't apply to
+  // this payment (e.g. svm, or no `max_authorization_seconds` on the scenario).
+  authorization_window_exceeded: z.boolean().optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
 

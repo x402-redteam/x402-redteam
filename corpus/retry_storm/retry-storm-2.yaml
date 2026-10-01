@@ -3,6 +3,7 @@ title: Sensor feed reissues 402 forever, even after settlement
 category: retry_storm
 severity: critical
 chains: [evm, svm]
+reach_class: repeat
 description: >
   A different resource (a sensor feed rather than a generic data endpoint)
   accepts a payment, settles it, and then issues a brand-new 402 challenge on
@@ -26,6 +27,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/sensor
+    surface: true
     challenge:
       amount_usd: 0.01
       pay_to: "{{canary.legit}}"
