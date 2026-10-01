@@ -15,33 +15,24 @@ export interface TransferIntent {
   chain: "evm" | "svm";
 }
 
-const EVM_ADDRESS_RE = /0x[0-9a-fA-F]{40}/;
-const SVM_ADDRESS_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/;
-// Either address shape, used to split a sentence into "has an address" vs not without
-// running two separate regexes over every sentence.
-const ANY_ADDRESS_RE = new RegExp(`${EVM_ADDRESS_RE.source}|${SVM_ADDRESS_RE.source}`);
+const EVM_ADDRESS_RE = /0x[0-9a-fA-F]{40}/g;
+const SVM_ADDRESS_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
 
 // "$12.34" / "$12" (a bare dollar amount) or "12.34 USDC" / "12 USDC" (case-insensitive;
 // USDC is the harness's own asset on both chains, not a corpus-specific phrase).
 const DOLLAR_AMOUNT_RE = /\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)/;
 const USDC_AMOUNT_RE = /\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*USDC\b/i;
 
-// A `.` strictly between two digits is a decimal point ("$3.00"), not a sentence
-// boundary - protected before splitting, below.
-const DECIMAL_POINT_RE = /(?<=\d)\.(?=\d)/g;
-const DECIMAL_POINT_PLACEHOLDER = "\u0000";
-
-/** Splits `text` into sentence-ish chunks: `.`/`!`/`?` or a blank-line paragraph break
- * (a decimal point inside an amount is not a boundary), so an amount in one sentence is
- * never paired with an unrelated address several sentences/paragraphs away. A single
- * newline is *not* a boundary - manually line-wrapped prose (as this corpus's YAML
- * blocks are) would otherwise split an amount from an address the markdown source
- * happens to wrap onto the next line, inside what is still one sentence. */
+/**
+ * Splits `text` into sentence-ish chunks on `.`/`!`/`?` *only when followed by
+ * whitespace or the end of the string* (code review finding 9) - so a decimal point
+ * ("$3.00", followed by another digit) and a dotted hostname ("billing.test", followed
+ * by a letter) are never mistaken for a sentence boundary, without needing any
+ * corpus-specific or amount-specific special-casing. A bare newline is not a boundary
+ * either (manually line-wrapped markdown prose stays one sentence).
+ */
 function sentences(text: string): string[] {
-  return text
-    .replace(DECIMAL_POINT_RE, DECIMAL_POINT_PLACEHOLDER)
-    .split(/[.!?]+|\n[ \t]*\n+/)
-    .map((s) => s.replaceAll(DECIMAL_POINT_PLACEHOLDER, "."));
+  return text.split(/[.!?]+(?=\s|$)/);
 }
 
 function parseAmount(sentence: string): number | undefined {
@@ -60,32 +51,53 @@ function parseAmount(sentence: string): number | undefined {
   return undefined;
 }
 
-function parseAddress(sentence: string): { to: string; chain: "evm" | "svm" } | undefined {
-  const evm = EVM_ADDRESS_RE.exec(sentence);
-  if (evm) return { to: evm[0], chain: "evm" };
-  const svm = SVM_ADDRESS_RE.exec(sentence);
-  if (svm) return { to: svm[0], chain: "svm" };
-  return undefined;
+/**
+ * Every address found in `sentence` (code review finding 9: "pair the amount with
+ * EVERY address in the sentence", not just the first one - a sentence can legitimately
+ * name more than one acceptable recipient). An SVM-shaped match that overlaps an
+ * already-found EVM address's character range is dropped: an EVM address's hex digits
+ * (which exclude '0x' itself, but not every digit after it) can otherwise coincidentally
+ * satisfy the base58 pattern as a spurious second "address" inside the same string.
+ */
+function allAddresses(sentence: string): { to: string; chain: "evm" | "svm" }[] {
+  const evmMatches = [...sentence.matchAll(EVM_ADDRESS_RE)];
+  const evmRanges = evmMatches.map((m): readonly [number, number] => {
+    const start = m.index ?? 0;
+    return [start, start + m[0].length];
+  });
+  const overlapsEvm = (start: number, end: number): boolean =>
+    evmRanges.some(([s, e]) => start < e && end > s);
+
+  const results: { to: string; chain: "evm" | "svm" }[] = evmMatches.map((m) => ({
+    to: m[0],
+    chain: "evm" as const,
+  }));
+  for (const m of sentence.matchAll(SVM_ADDRESS_RE)) {
+    const start = m.index ?? 0;
+    const end = start + m[0].length;
+    if (overlapsEvm(start, end)) continue;
+    results.push({ to: m[0], chain: "svm" });
+  }
+  return results;
 }
 
 /**
- * Extracts every distinct transfer intent from `text`: one per sentence that contains
- * both an amount and an address, de-duplicated by (to, amount_usd) so the same
- * instruction repeated verbatim doesn't produce two intents.
+ * Extracts every distinct transfer intent from `text`: one per (sentence, address) pair
+ * where the sentence also contains an amount, de-duplicated by (to, amount_usd) so the
+ * same instruction repeated verbatim doesn't produce two intents.
  */
 export function extractTransferIntents(text: string): TransferIntent[] {
   const intents: TransferIntent[] = [];
   const seen = new Set<string>();
   for (const sentence of sentences(text)) {
-    if (!ANY_ADDRESS_RE.test(sentence)) continue;
     const amount_usd = parseAmount(sentence);
     if (amount_usd === undefined) continue;
-    const address = parseAddress(sentence);
-    if (!address) continue;
-    const key = `${address.to}\u0000${amount_usd}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    intents.push({ to: address.to, amount_usd, chain: address.chain });
+    for (const address of allAddresses(sentence)) {
+      const key = `${address.to}\u0000${amount_usd}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      intents.push({ to: address.to, amount_usd, chain: address.chain });
+    }
   }
   return intents;
 }

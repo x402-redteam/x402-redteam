@@ -2,18 +2,20 @@
  * GDP-gated x402 header payments, per functional-design.md §2/§3 (`src/pay.ts`) and
  * ADR-010 §2 ("payment" then "sign", both must allow).
  *
- * Deviation from the file list's "signer wrapper -> GDP sign" (reported to the
- * architect): rather than wrapping the raw EVM/SVM signer to intercept the
- * cryptographic signing call itself, this builds the *complete, already-signed*
- * x402Client payload first (via the real `@x402/evm`/`@x402/svm` scheme clients, same
- * as the reference agents), decodes it with `@x402-redteam/capture` - the exact decoder
- * the harness later uses, so `decoded_legs` is never a hand-rolled preview - and only
- * then asks the GDP `sign` hook, attaching the payment header and sending the second
- * request iff it allows. In this no-real-funds harness, signing an EIP-3009
- * authorization or an SVM transaction has no side effect by itself (it is not a chain
- * submission); only attaching it to the paid HTTP retry can ever be observed by the
- * server/facilitator, so "deny before the header is ever sent" is exactly equivalent to
- * "deny before signing" - ADR-010's "any deny blocks the payment" holds either way.
+ * Code review round 1, finding 6: the signer *is* wrapped (per the file list's "signer
+ * wrapper -> GDP sign") to capture the exact `signTypedData` input (domain, types,
+ * primaryType, message) the SDK actually signs - this covers Permit2 as well as
+ * EIP-3009, whatever `@x402/evm`'s scheme client decides to use for a given accept,
+ * rather than this file guessing/reconstructing a typed-data shape (the earlier
+ * reconstruction only understood EIP-3009's `authorization` field and silently produced
+ * a broken preview for anything else). The real signature is still produced by calling
+ * through to the wrapped account/signer (signing an EIP-3009 authorization or an SVM
+ * transaction has no side effect by itself in this no-real-funds harness - only
+ * attaching the result to the paid HTTP retry is ever observed by the
+ * server/facilitator), and `decoded_legs` is still computed post-hoc from the complete,
+ * signed payload via `@x402-redteam/capture` - the exact decoder the harness later uses,
+ * never a hand-rolled preview. A `sign` deny still guarantees the header is never
+ * attached/sent, so ADR-010's "any deny blocks the payment" holds either way.
  *
  * Spend controls are disabled entirely (`client.setSpendControls(false)`), not just the
  * per-payment cap: `@x402/core@2.28.0`
@@ -25,10 +27,14 @@
  * caps".
  */
 
-import type { TransactionPartialSigner } from "@solana/kit";
+import {
+  getBase64EncodedWireTransaction,
+  type Transaction,
+  type TransactionPartialSigner,
+} from "@solana/kit";
 import { x402Client } from "@x402/core/client";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
-import type { Network } from "@x402/core/types";
+import type { Network, PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { capture } from "@x402-redteam/capture";
@@ -64,27 +70,91 @@ export interface PayContext {
   challengeTexts: { url: string; text: string }[];
 }
 
+/** Mutable box the wrapped signer below fills in with the exact input it was asked to
+ * sign, so the caller (after `createPaymentPayload` returns) can hand it to the GDP
+ * `sign` hook verbatim instead of reconstructing it. */
+interface CapturedSignInput {
+  value?: GdpSignPayload;
+}
+
 function evmChainId(network: string): number {
   const match = /^eip155:(\d+)$/.exec(network);
   if (!match) throw new Error(`pay: unsupported evm network ${network}`);
   return Number(match[1]);
 }
 
-function buildClientForAccept(wallet: PayWallet, acceptIndex: number): x402Client {
+/**
+ * Builds a fresh `x402Client` for one specific accept (`target`), scoped to this
+ * wallet's chain, with spend controls fully disabled and the signer wrapped to capture
+ * its exact signing input into `captured` (code review finding 6).
+ *
+ * Code review finding 3 (BLOCK): selects `target` by *object identity*, not by
+ * re-indexing. `x402Client`'s own `selectPaymentRequirements`
+ * (`node_modules/@x402/core/dist/esm/client/index.mjs`, ~line 442) filters
+ * `paymentRequired.accepts` down to the entries a registered scheme/network actually
+ * supports *before* any policy runs, so the array a policy receives is not guaranteed to
+ * be `paymentRequired.accepts` in its original order or even the same length - selecting
+ * `requirements[acceptIndex]` on that filtered array could silently pay a *different*
+ * accept than the guardrail's `accept_index` actually named (the kind of bug that
+ * produces a valid-looking but wrong report). `target` is `paymentRequired.accepts[i]`
+ * itself (a specific object reference), so `requirements.includes(target)` is correct
+ * regardless of what got filtered or reordered upstream - and when `target` isn't in the
+ * filtered list at all, the policy returns `[]`, which `createPaymentPayload` turns into
+ * a thrown error the caller logs as "unpayable" rather than silently paying something
+ * else.
+ */
+function buildClientForAccept(
+  wallet: PayWallet,
+  target: PaymentRequirements,
+  captured: CapturedSignInput,
+): x402Client {
   const client = new x402Client();
   client.setSpendControls(false);
-  client.registerPolicy((_version, requirements) => {
-    const chosen = requirements[acceptIndex];
-    return chosen ? [chosen] : [];
-  });
+  client.registerPolicy((_version, requirements) =>
+    requirements.includes(target) ? [target] : [],
+  );
   if (wallet.chain === "evm") {
-    if (!wallet.evmAccount) throw new Error("pay: missing evm account");
-    registerExactEvmScheme(client, { signer: wallet.evmAccount });
+    const account = wallet.evmAccount;
+    if (!account) throw new Error("pay: missing evm account");
+    const wrapped: LocalAccount = {
+      ...account,
+      async signTypedData(parameters) {
+        captured.value = {
+          typed_data: {
+            domain: parameters.domain,
+            types: parameters.types,
+            primaryType: parameters.primaryType as string,
+            message: parameters.message,
+          },
+        };
+        return account.signTypedData(parameters);
+      },
+    };
+    registerExactEvmScheme(client, { signer: wrapped });
   } else {
-    if (!wallet.svmSigner) throw new Error("pay: missing svm signer");
+    const signer = wallet.svmSigner;
+    if (!signer) throw new Error("pay: missing svm signer");
+    const wrapped: TransactionPartialSigner = {
+      address: signer.address,
+      async signTransactions(transactions, config) {
+        const unsigned = transactions[0];
+        if (unsigned) {
+          try {
+            captured.value = {
+              serialized_tx: getBase64EncodedWireTransaction(unsigned as Transaction),
+            };
+          } catch {
+            // Best-effort preview only - `buildSignPayload` falls back to the final,
+            // fully-signed payload's wire transaction if this couldn't be encoded
+            // pre-signature on some kit transaction shape.
+          }
+        }
+        return signer.signTransactions(transactions, config);
+      },
+    };
     client.register(
       "solana:*" as Network,
-      new ExactSvmScheme(wallet.svmSigner, { rpcUrl: wallet.solanaRpcUrl }),
+      new ExactSvmScheme(wrapped, { rpcUrl: wallet.solanaRpcUrl }),
     );
   }
   return client;
@@ -104,29 +174,42 @@ async function readBody(res: Response): Promise<{ text: string; parsed: unknown 
   return { text, parsed };
 }
 
-async function signPreview(
-  paymentPayload: Awaited<ReturnType<x402Client["createPaymentPayload"]>>,
+/**
+ * The GDP `sign` payload for the payment just built: the wrapped signer's captured exact
+ * input when available (finding 6), else a best-effort reconstruction from the final
+ * signed payload (should only happen if the capture above couldn't run, e.g. a scheme
+ * that signs more than one thing and only the first was captured). `decoded_legs` is
+ * always computed post-hoc from the complete, signed `paymentPayload` via
+ * `@x402-redteam/capture`.
+ */
+async function buildSignPayload(
+  paymentPayload: PaymentPayload,
   chain: "evm" | "svm",
+  captured: CapturedSignInput,
 ): Promise<{ payload: GdpSignPayload; decoded_legs: unknown[] }> {
   const decoded = await capture.decodePayload(paymentPayload);
   const decoded_legs = decoded.legs ?? [decoded];
+  if (captured.value) {
+    return { payload: captured.value, decoded_legs };
+  }
   if (chain === "evm") {
-    const inner = paymentPayload.payload as {
-      authorization?: Record<string, unknown>;
-      signature?: string;
-    };
+    const inner = paymentPayload.payload as { authorization?: Record<string, unknown> };
     const accepted = paymentPayload.accepted;
-    const typed_data = {
-      domain: {
-        name: (accepted.extra?.name as string | undefined) ?? "USDC",
-        version: (accepted.extra?.version as string | undefined) ?? "2",
-        chainId: evmChainId(accepted.network),
-        verifyingContract: accepted.asset,
+    return {
+      payload: {
+        typed_data: {
+          domain: {
+            name: (accepted.extra?.name as string | undefined) ?? "USDC",
+            version: (accepted.extra?.version as string | undefined) ?? "2",
+            chainId: evmChainId(accepted.network),
+            verifyingContract: accepted.asset,
+          },
+          primaryType: "TransferWithAuthorization",
+          message: inner.authorization,
+        },
       },
-      primaryType: "TransferWithAuthorization",
-      message: inner.authorization,
+      decoded_legs,
     };
-    return { payload: { typed_data }, decoded_legs };
   }
   const inner = paymentPayload.payload as { transaction?: string };
   return { payload: { serialized_tx: inner.transaction ?? "" }, decoded_legs };
@@ -142,8 +225,9 @@ export interface FetchWithGdpPaymentOptions {
  * implemented) to pick an accept and allow/deny, then - if allowed - builds and signs
  * the chosen payment, runs the GDP `sign` hook (when implemented), and either attaches
  * the payment header and refetches (returning that response) or leaves the original 402
- * response untouched (a deny at either hook). Never retries by itself - the driver's own
- * loop (main.ts) decides whether to retry the whole top-level fetch.
+ * response untouched (a deny at either hook, or an accept the SDK can't actually pay).
+ * Never retries by itself - the driver's own loop (main.ts) decides whether to retry the
+ * whole top-level fetch.
  */
 export async function fetchWithGdpPayment(
   url: string,
@@ -184,8 +268,10 @@ export async function fetchWithGdpPayment(
       },
       history: ctx.history,
     }));
-    if (decision.decision === "deny") {
-      ctx.log(`payment denied for ${url}: ${decision.reason}`);
+    // GdpClient already normalizes a malformed/mismatched/timed-out response to a clean
+    // `{decision:"deny"}`, so the only way past this point is a literal "allow".
+    if (decision.decision !== "allow") {
+      ctx.log(`payment denied for ${url}: ${"reason" in decision ? decision.reason : "denied"}`);
       return res;
     }
     if (
@@ -199,17 +285,32 @@ export async function fetchWithGdpPayment(
     acceptIndex = decision.accept_index;
   }
 
-  const client = buildClientForAccept(ctx.wallet, acceptIndex);
-  let paymentPayload: Awaited<ReturnType<x402Client["createPaymentPayload"]>>;
+  const target = paymentRequired.accepts[acceptIndex];
+  if (!target) {
+    ctx.log(`payment: accept_index ${acceptIndex} for ${url} does not exist; treating as deny`);
+    return res;
+  }
+
+  const captured: CapturedSignInput = {};
+  const client = buildClientForAccept(ctx.wallet, target, captured);
+  let paymentPayload: PaymentPayload;
   try {
     paymentPayload = await client.createPaymentPayload(paymentRequired);
   } catch (err) {
-    ctx.log(`pay: failed to build payment payload for ${url}: ${err}`);
+    // Finding 3: this is also where an accept the guardrail chose but the SDK can't
+    // actually service (filtered by network/scheme/spend controls upstream of our
+    // identity-based policy) lands - logged as unpayable, never silently paid as a
+    // different accept.
+    ctx.log(`payment: accept_index ${acceptIndex} for ${url} is unpayable by this wallet: ${err}`);
     return res;
   }
 
   if (ctx.hooks.has("sign")) {
-    const { payload, decoded_legs } = await signPreview(paymentPayload, ctx.wallet.chain);
+    const { payload, decoded_legs } = await buildSignPayload(
+      paymentPayload,
+      ctx.wallet.chain,
+      captured,
+    );
     const decision = await ctx.gdp.request<GdpSignResponse>((id) => ({
       id,
       type: "sign",
@@ -217,8 +318,8 @@ export async function fetchWithGdpPayment(
       payload,
       decoded_legs,
     }));
-    if (decision.decision === "deny") {
-      ctx.log(`sign denied for ${url}: ${decision.reason}`);
+    if (decision.decision !== "allow") {
+      ctx.log(`sign denied for ${url}: ${"reason" in decision ? decision.reason : "denied"}`);
       return res;
     }
   }

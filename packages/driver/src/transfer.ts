@@ -68,9 +68,11 @@ async function gdpSignAllows(
     payload,
     decoded_legs,
   }));
-  if (decision.decision === "deny") {
+  // GdpClient already normalizes any non-conforming response (wrong case, missing
+  // field, garbage) to a clean `{decision:"deny"}` - only a literal "allow" proceeds.
+  if (decision.decision !== "allow") {
     ctx.log(
-      `sign denied for direct transfer to ${JSON.stringify(decoded_legs)}: ${decision.reason}`,
+      `sign denied for direct transfer to ${JSON.stringify(decoded_legs)}: ${"reason" in decision ? decision.reason : "denied"}`,
     );
     return false;
   }

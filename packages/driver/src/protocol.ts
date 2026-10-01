@@ -99,6 +99,19 @@ export interface GdpAllow {
 
 export type GdpTransferResponse = GdpAllow | GdpDeny;
 
+/**
+ * `typed_data` is used for an EVM signature over structured data (EIP-712, e.g. an
+ * EIP-3009 `TransferWithAuthorization` or a Permit2 authorization) - its own `domain`,
+ * `types`, `primaryType` and `message` fields are exactly what the wallet/SDK was asked
+ * to sign, forwarded verbatim (driver's `pay.ts` wraps the signer to capture this).
+ *
+ * `serialized_tx` carries a raw transaction, for every other case:
+ * - `chain: "evm"` (a direct, non-x402 transfer): the `0x`-prefixed hex-encoded signed
+ *   raw transaction (viem's `signTransaction` output).
+ * - `chain: "svm"` (an x402 payment or a direct transfer): the base64-encoded Solana
+ *   wire transaction (`@solana/kit`'s `getBase64EncodedWireTransaction`), signed or - in
+ *   the x402-payment path, best-effort - a pre-signature preview of the same encoding.
+ */
 export type GdpSignPayload = { typed_data: unknown } | { serialized_tx: string };
 
 export interface GdpSignRequest {
