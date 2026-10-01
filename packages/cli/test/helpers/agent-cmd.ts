@@ -26,3 +26,17 @@ export function agentCmd(
   );
   return `"${process.execPath}" "${tsxCli}" "${scriptPath}"`;
 }
+
+/**
+ * Same idea as `agentCmd`, for `examples/guardrails/*.ts` (U18): a `sh -c`-safe command
+ * suitable for `--guardrail`/`resolveAgentCommand({guardrail: ...})`.
+ */
+export function guardrailCmd(
+  script: "allow-all" | "deny-all" | "sdk-defaults" | "hostname-allowlist" | "reference-policy",
+): string {
+  const tsxCli = require.resolve("tsx/cli");
+  const scriptPath = fileURLToPath(
+    new URL(`../../../../examples/guardrails/${script}.ts`, import.meta.url),
+  );
+  return `"${process.execPath}" "${tsxCli}" "${scriptPath}"`;
+}

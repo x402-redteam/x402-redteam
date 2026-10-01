@@ -70,6 +70,25 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  examples/guardrails:
+    dependencies:
+      '@x402-redteam/driver':
+        specifier: workspace:*
+        version: link:../../packages/driver
+      '@x402-redteam/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.0
+        version: 20.19.43
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   packages/adversary:
     dependencies:
       '@hono/node-server':
@@ -176,6 +195,46 @@ importers:
       tsx:
         specifier: 4.23.15
         version: 4.23.15
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.0
+        version: 20.19.43
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.2
+        version: 5.0.2(@types/node@20.19.43)(vite@8.3.1(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/driver:
+    dependencies:
+      '@solana-program/token':
+        specifier: 0.17.0
+        version: 0.17.0(@solana/kit@8.4.0(typescript@6.0.3))
+      '@solana/kit':
+        specifier: 8.4.0
+        version: 8.4.0(typescript@6.0.3)
+      '@x402-redteam/capture':
+        specifier: workspace:*
+        version: link:../capture
+      '@x402-redteam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@x402/core':
+        specifier: 2.28.0
+        version: 2.28.0
+      '@x402/evm':
+        specifier: 2.28.0
+        version: 2.28.0(typescript@6.0.3)
+      '@x402/svm':
+        specifier: 2.28.0
+        version: 2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      viem:
+        specifier: 2.57.1
+        version: 2.57.1(typescript@6.0.3)(zod@4.6.5)
     devDependencies:
       '@types/node':
         specifier: ^20.19.0

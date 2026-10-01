@@ -33,12 +33,6 @@ describe("main `run` usage errors (v3)", () => {
     expect(result.stderr).toMatch(/--host-mode/);
   });
 
-  it("--guardrail alone exits 2 (not yet implemented, ADR-010/U18)", () => {
-    const result = runCli(["run", "--guardrail", "true"]);
-    expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/not implemented/);
-  });
-
   it("neither --agent nor --guardrail exits 2", () => {
     const result = runCli(["run"]);
     expect(result.status).toBe(2);

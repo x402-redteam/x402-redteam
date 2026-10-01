@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdversary } from "@x402-redteam/adversary";
@@ -14,7 +14,7 @@ import {
   SeveritySchema,
 } from "@x402-redteam/schema";
 import { type Report, scoreSuite, toJson, toMarkdown, toSarif } from "@x402-redteam/scorer";
-import { collectGuardrailInfo } from "./guardrail-track.js";
+import { collectGuardrailInfo, hasGdpRecord, readGuardrailErrors } from "./guardrail-track.js";
 import { hostEnv, preflightHostMode } from "./host-env.js";
 import { loadSeason } from "./season.js";
 import { runAgent } from "./spawn.js";
@@ -240,6 +240,15 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           const proxyUrl = adversary.proxyUrl ?? task.base_url;
           const env = buildAgentEnv(taskPath, task, opts.passEnv ?? [], proxyUrl, opts.env ?? {});
           const logFile = resolve(logsDir, `${run_id}.log`);
+          const isGuardrailTrack = (opts.track ?? "agent") === "guardrail";
+
+          // Code review finding 5 (BLOCK, U18): delete any stale `<run_id>.gdp.json`
+          // sidecar from a previous spawn under this same outDir/run_id *before*
+          // spawning, so a driver that crashes before writing its own fresh record can
+          // never be scored against a leftover file from an earlier attempt.
+          if (isGuardrailTrack) {
+            rmSync(resolve(runsDir, `${run_id}.gdp.json`), { force: true });
+          }
 
           const spawnResult = await runAgent({
             cmd: opts.agentCmd,
@@ -252,6 +261,27 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
 
           const drained = adversary.drain();
 
+          // Code review finding 5 (BLOCK, U18): a guardrail-track run that exited 0 but
+          // left no `*.gdp.json` record is an integrity failure (the driver crashed or
+          // was killed after reporting success, or some other bug), not a quiet pass -
+          // force a non-zero exit code so scoring treats it as `error`, the same as any
+          // other agent failure. Finding 4: copy the driver's own per-run error count
+          // (timeouts, malformed lines, invalid decisions, mid-run exits) onto the
+          // record so a broken guardrail stays visible even when it happens to still
+          // score "safely" (every denied payment both from a real policy and from GDP
+          // protocol noise looks identical to the scorer otherwise).
+          let exit_code = spawnResult.exit_code;
+          let guardrail_errors: number | undefined;
+          if (isGuardrailTrack) {
+            if (exit_code === 0 && !hasGdpRecord(runsDir, run_id)) {
+              console.error(
+                `x402-redteam: guardrail track run ${run_id} exited 0 but left no *.gdp.json record - treating as a harness error, not a pass.`,
+              );
+              exit_code = 1;
+            }
+            guardrail_errors = readGuardrailErrors(runsDir, run_id);
+          }
+
           const runRecord: RunRecord = {
             run_id,
             scenario_id: scenario.id,
@@ -263,8 +293,9 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             challenges: drained.challenges,
             payments: drained.payments,
             delivered: drained.delivered,
-            exit_code: spawnResult.exit_code,
+            exit_code,
             timed_out: spawnResult.timed_out,
+            ...(guardrail_errors !== undefined ? { guardrail_errors } : {}),
             timing: { duration_ms: spawnResult.duration_ms },
           };
           runs.push(runRecord);
@@ -279,14 +310,18 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
     await adversary.close();
   }
 
-  // Code review item 3 (U18 seam): read back whatever the driver recorded about the
-  // guardrail (hooks, nondeterministic) before building the config fingerprint - a
-  // no-op stub today (always "no guardrail"), called here so U18 only needs to make
-  // `collectGuardrailInfo` itself real, not this call site.
-  const guardrailInfo = collectGuardrailInfo(
-    runsDir,
-    runs.map((r) => r.run_id),
-  );
+  // Code review item 3 / finding 5 (U18 seam): read back whatever the driver recorded
+  // about the guardrail (hooks, nondeterministic) before building the config
+  // fingerprint - only on the guardrail track (finding 5: "read gdp.json only on the
+  // guardrail track"), since the agent track never runs the driver and so never has
+  // `*.gdp.json` files to find.
+  const guardrailInfo =
+    (opts.track ?? "agent") === "guardrail"
+      ? collectGuardrailInfo(
+          runsDir,
+          runs.map((r) => r.run_id),
+        )
+      : { guardrail_hooks: null, guardrail_nondeterministic: null };
 
   const report = scoreSuite({
     scenarios,

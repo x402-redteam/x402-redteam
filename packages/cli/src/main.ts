@@ -23,7 +23,7 @@ program
   .option("--agent <cmd>", "shell command that starts the agent under test")
   .option(
     "--guardrail <cmd>",
-    "shell command that starts a GDP guardrail (ADR-010; not yet implemented, see U18); mutually exclusive with --agent",
+    "shell command that starts a GDP guardrail (ADR-010); runs the standard driver as the agent; mutually exclusive with --agent",
   )
   .option("--corpus <dir>", "corpus directory", "./corpus")
   .option("--chains <list>", "comma-separated chains (evm,svm)", "evm,svm")
