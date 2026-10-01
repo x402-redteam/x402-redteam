@@ -45,6 +45,10 @@ export interface GuardrailRow {
   byReachClass: Record<ReachClass, { passed: number; runs: number }>;
   unauthorizedUsd: number;
   harnessCommit: string;
+  /** U18b item 2: `report.summary.guardrail_errors` - always a number here (never
+   * `null`), since every row in this table is already a `track: "guardrail"` entry
+   * (`checkTrack`). */
+  guardrailErrors: number;
 }
 
 /**
@@ -483,6 +487,11 @@ function toGuardrailRow(id: string, report: Report, meta: ResultsMeta): Omit<Gua
     byReachClass: emptyReachClassByReach(report),
     unauthorizedUsd: report.summary.unauthorized_usd,
     harnessCommit: report.config.harness_commit,
+    // Defensive fallback only: `checkTrack`/`checkRescore` already guarantee a
+    // guardrail-track report's `summary.guardrail_errors` is a real, re-scored number
+    // (`scoreSuite` only returns `null` off the guardrail track) by the time a report
+    // reaches this function.
+    guardrailErrors: report.summary.guardrail_errors ?? 0,
   };
 }
 
@@ -553,26 +562,29 @@ function withKindMarker(id: string, kind: EntryKind): string {
 
 /**
  * "Guardrail track — ranked" (ADR-010 §1): `# | guardrail | hooks | safety | attacks
- * passed | controls | crawl | repeat | prose | challenge | unauthorized $ | harness`
- * (functional-design.md §3's literal column list - "repeat"/"crawl"/"prose"/"challenge"
- * here are `ReachClass`es, not `config.repeat`). "harness" is `harness_commit` shortened
- * to 10 chars (ADR-011 provenance, code review round 1 item 4), the one new field this
- * contract makes worth showing next to a ranked entry.
+ * passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail
+ * errors | harness` (functional-design.md §3's literal column list -
+ * "repeat"/"crawl"/"prose"/"challenge" here are `ReachClass`es, not `config.repeat`).
+ * "harness" is `harness_commit` shortened to 10 chars (ADR-011 provenance, code review
+ * round 1 item 4). "guardrail errors" (U18b item 2) is `summary.guardrail_errors` - a
+ * ranked guardrail's own GDP protocol-failure count (timeouts, malformed lines, invalid
+ * decisions, a mid-run exit), so a guardrail that's merely *broken* (not a deliberate,
+ * safe policy) stays visible next to its rank rather than only in `report.json`.
  */
 function renderGuardrailTable(rows: GuardrailRow[]): string[] {
   const header = [
-    "| # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | harness |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail errors | harness |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   if (rows.length === 0) {
     return [
       ...header,
-      "| _no accepted guardrail-track results for the current corpus yet — see CONTRIBUTING.md_ | | | | | | | | | | | |",
+      "| _no accepted guardrail-track results for the current corpus yet — see CONTRIBUTING.md_ | | | | | | | | | | | | |",
     ];
   }
   const body = rows.map((r) => {
     const rc = r.byReachClass;
-    return `| ${r.rank} | ${escapeCell(withKindMarker(r.id, r.kind))} | ${escapeCell(formatHooks(r.hooks))} | ${r.safetyScore.toFixed(1)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`;
+    return `| ${r.rank} | ${escapeCell(withKindMarker(r.id, r.kind))} | ${escapeCell(formatHooks(r.hooks))} | ${r.safetyScore.toFixed(1)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | ${r.guardrailErrors} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`;
   });
   return [...header, ...body];
 }

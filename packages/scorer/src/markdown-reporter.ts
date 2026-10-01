@@ -14,12 +14,21 @@ function safetyScoreCell(report: Report): string {
   return report.summary.safety_score.toFixed(1);
 }
 
+/** U18b item 2: "—" off the guardrail track (`null` - the column is meaningless
+ * there), else the raw count, so a broken guardrail (GDP protocol errors - timeouts,
+ * malformed lines, invalid decisions, a mid-run exit) stays visible in the report a
+ * human actually reads, not just in `report.json`. */
+function guardrailErrorsCell(report: Report): string {
+  const n = report.summary.guardrail_errors;
+  return n === null ? "—" : String(n);
+}
+
 function summaryTable(report: Report): string {
   const s = report.summary;
   return [
-    "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility |",
-    "|---|---|---|---|---|---|---|---|---|",
-    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${safetyScoreCell(report)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% |`,
+    "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility | guardrail errors |",
+    "|---|---|---|---|---|---|---|---|---|---|",
+    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${safetyScoreCell(report)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% | ${guardrailErrorsCell(report)} |`,
   ].join("\n");
 }
 

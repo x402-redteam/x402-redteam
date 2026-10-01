@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdversary } from "@x402-redteam/adversary";
@@ -14,7 +15,13 @@ import {
   SeveritySchema,
 } from "@x402-redteam/schema";
 import { type Report, scoreSuite, toJson, toMarkdown, toSarif } from "@x402-redteam/scorer";
-import { collectGuardrailInfo, hasGdpRecord, readGuardrailErrors } from "./guardrail-track.js";
+import {
+  collectGuardrailInfo,
+  type DriverGdpRecord,
+  hasGdpRecord,
+  readGdpRecordFromDir,
+  readGuardrailErrors,
+} from "./guardrail-track.js";
 import { hostEnv, preflightHostMode } from "./host-env.js";
 import { loadSeason } from "./season.js";
 import { runAgent } from "./spawn.js";
@@ -215,6 +222,11 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
 
   const adversary = await createAdversary({ seed: opts.seed, capture, hostMode });
   const runs: RunRecord[] = [];
+  // U18b item 1 (coordinator revision): one entry per guardrail-track run, in run
+  // order, fed to `collectGuardrailInfo` after the loop - each run's own private record
+  // directory is deleted right after it's read, so nothing is left on disk to re-scan
+  // afterwards (unlike the old `<runsDir>/<run_id>.gdp.json` sidecar scheme).
+  const gdpRecords: Array<DriverGdpRecord | undefined> = [];
 
   try {
     for (const scenario of scenarios) {
@@ -242,12 +254,20 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           const logFile = resolve(logsDir, `${run_id}.log`);
           const isGuardrailTrack = (opts.track ?? "agent") === "guardrail";
 
-          // Code review finding 5 (BLOCK, U18): delete any stale `<run_id>.gdp.json`
-          // sidecar from a previous spawn under this same outDir/run_id *before*
-          // spawning, so a driver that crashes before writing its own fresh record can
-          // never be scored against a leftover file from an earlier attempt.
+          // U18b item 1 (coordinator revision): a fresh, private per-run directory for
+          // the driver's GDP record - `mkdtemp` makes a brand-new, uniquely-named
+          // directory every time, so there is no "stale leftover from an earlier spawn"
+          // to delete first (unlike the old `<runsDir>/<run_id>.gdp.json` sidecar, keyed
+          // by a run id that repeats across invocations of the same `--out`). Named to
+          // the driver only via this `X402_`-prefixed env var, which `scrubGuardrailEnv`
+          // (packages/driver/src/main.ts) strips before the guardrail subprocess ever
+          // sees its env - the guardrail cannot locate, read or race this directory
+          // through its env, and its cwd is left alone (the driver's own, typically the
+          // harness caller's), so a guardrail command written with a relative path
+          // (e.g. `tsx examples/guardrails/x.ts`, this repo's own convention) still
+          // works.
           if (isGuardrailTrack) {
-            rmSync(resolve(runsDir, `${run_id}.gdp.json`), { force: true });
+            env.X402_GDP_RECORD_DIR = mkdtempSync(resolve(tmpdir(), "x402-gdp-"));
           }
 
           const spawnResult = await runAgent({
@@ -262,24 +282,46 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           const drained = adversary.drain();
 
           // Code review finding 5 (BLOCK, U18): a guardrail-track run that exited 0 but
-          // left no `*.gdp.json` record is an integrity failure (the driver crashed or
-          // was killed after reporting success, or some other bug), not a quiet pass -
-          // force a non-zero exit code so scoring treats it as `error`, the same as any
-          // other agent failure. Finding 4: copy the driver's own per-run error count
+          // left no record is an integrity failure (the driver crashed or was killed
+          // after reporting success, or some other bug), not a quiet pass - force a
+          // non-zero exit code so scoring treats it as `error`, the same as any other
+          // agent failure. Finding 4: copy the driver's own per-run error count
           // (timeouts, malformed lines, invalid decisions, mid-run exits) onto the
           // record so a broken guardrail stays visible even when it happens to still
           // score "safely" (every denied payment both from a real policy and from GDP
           // protocol noise looks identical to the scorer otherwise).
+          //
+          // U18b item 1: the record is trusted only when the *driver's own, unmodified*
+          // exit code (`spawnResult.exit_code`, before the `exit_code` override below)
+          // is 0 - a non-zero exit means the driver itself reported failure, so whatever
+          // it may have left behind isn't trustworthy either. `readGdpRecordFromDir` is
+          // simply never called in that case - a non-zero exit already makes this run
+          // `error` on its own (via `agent_ok`/`RunScore.status`), and `guardrail_errors`
+          // stays `undefined`, never a possibly-stale number.
           let exit_code = spawnResult.exit_code;
           let guardrail_errors: number | undefined;
           if (isGuardrailTrack) {
-            if (exit_code === 0 && !hasGdpRecord(runsDir, run_id)) {
+            const recordDir = env.X402_GDP_RECORD_DIR as string;
+            const driverExitedCleanly = spawnResult.exit_code === 0;
+            const record = driverExitedCleanly ? readGdpRecordFromDir(recordDir) : undefined;
+            if (driverExitedCleanly && !hasGdpRecord(record)) {
               console.error(
-                `x402-redteam: guardrail track run ${run_id} exited 0 but left no *.gdp.json record - treating as a harness error, not a pass.`,
+                `x402-redteam: guardrail track run ${run_id} exited 0 but left no GDP record - treating as a harness error, not a pass.`,
               );
               exit_code = 1;
             }
-            guardrail_errors = readGuardrailErrors(runsDir, run_id);
+            guardrail_errors = readGuardrailErrors(record);
+            gdpRecords.push(record);
+            // The harness's own audit copy (U18b item 1): kept for a human to inspect
+            // under `out/runs/`, never read back - `record` itself (in memory) is what
+            // feeds `guardrail_errors` above and `collectGuardrailInfo` after the loop.
+            if (record !== undefined) {
+              writeFileSync(
+                resolve(runsDir, `${run_id}.gdp.json`),
+                `${JSON.stringify(record, null, 2)}\n`,
+              );
+            }
+            rmSync(recordDir, { recursive: true, force: true });
           }
 
           const runRecord: RunRecord = {
@@ -310,17 +352,16 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
     await adversary.close();
   }
 
-  // Code review item 3 / finding 5 (U18 seam): read back whatever the driver recorded
+  // Code review item 3 / finding 5 (U18 seam): aggregate whatever the driver recorded
   // about the guardrail (hooks, nondeterministic) before building the config
-  // fingerprint - only on the guardrail track (finding 5: "read gdp.json only on the
-  // guardrail track"), since the agent track never runs the driver and so never has
-  // `*.gdp.json` files to find.
+  // fingerprint - only on the guardrail track, since the agent track never runs the
+  // driver and so `gdpRecords` is always empty there. U18b item 1 (coordinator
+  // revision): aggregates the in-memory `gdpRecords` collected during the loop above,
+  // not a re-scan of `runsDir` - each run's private record directory is already deleted
+  // by now.
   const guardrailInfo =
     (opts.track ?? "agent") === "guardrail"
-      ? collectGuardrailInfo(
-          runsDir,
-          runs.map((r) => r.run_id),
-        )
+      ? collectGuardrailInfo(gdpRecords)
       : { guardrail_hooks: null, guardrail_nondeterministic: null };
 
   const report = scoreSuite({

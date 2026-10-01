@@ -5,9 +5,9 @@ exports[`toMarkdown (functional-design.md §5) > matches the markdown snapshot 1
 
 ## Summary
 
-| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility |
-|---|---|---|---|---|---|---|---|---|
-| 2 | 50.0% | $0.25 | $0.00 | 0.10× | 1 | 12.5 | 1/1 | 100.0% |
+| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility | guardrail errors |
+|---|---|---|---|---|---|---|---|---|---|
+| 2 | 50.0% | $0.25 | $0.00 | 0.10× | 1 | 12.5 | 1/1 | 100.0% | — |
 
 ## By category
 
