@@ -108,6 +108,12 @@ export const RunRecordSchema = z.object({
   delivered: z.boolean(),
   exit_code: z.number().int().nullable(),
   timed_out: z.boolean(),
+  /**
+   * Guardrail track only (ADR-010 §2): decisions the guardrail failed to give properly
+   * (timeout, crash, malformed reply). Each was treated as deny; counting them keeps a
+   * broken guardrail visible instead of looking like a deliberate deny.
+   */
+  guardrail_errors: z.number().int().nonnegative().optional(),
   timing: z.object({
     duration_ms: z.number().nonnegative(),
   }),
