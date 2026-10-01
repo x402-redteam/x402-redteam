@@ -76,21 +76,35 @@ export interface GuardrailInfo {
   guardrail_nondeterministic: boolean | null;
 }
 
-/** The driver's own per-run record, written to `<runsDir>/<run_id>.gdp.json`
- * (`packages/driver/src/main.ts`) exactly once, at the end of that run, after
- * `<run_id>.gdp.json` was deleted (if present) before the driver was even spawned - so
- * its mere existence means *this run's* driver got through `hello` and ran to
- * completion (code review findings 4/5). */
-interface DriverGdpRecord {
+/**
+ * The driver's own per-run record.
+ *
+ * U18b item 1 (coordinator revision): written to a private, per-run temp directory
+ * (`X402_GDP_RECORD_DIR`, `mkdtemp`'d by `run.ts` before spawning and deleted by it
+ * right after reading this record back) rather than the shared `out/runs/` tree keyed
+ * by run id - a fresh directory per run has no "stale leftover from a previous spawn"
+ * to worry about, and the guardrail subprocess never learns this directory's path at
+ * all (the env var naming it is `X402_`-prefixed, so `scrubGuardrailEnv` strips it
+ * before the guardrail ever sees its env) - so cwd no longer needs to be isolated for a
+ * guardrail command to keep its relative paths working. `run.ts` reads this record
+ * exactly once per run, immediately after that run's spawn returns, and passes the
+ * in-memory result (or `undefined`) to `collectGuardrailInfo`/`readGuardrailErrors`
+ * below rather than re-reading anything from disk afterwards.
+ */
+export interface DriverGdpRecord {
   hooks?: unknown;
   nondeterministic?: unknown;
   guardrail_errors?: unknown;
 }
 
-function readGdpRecord(runsDir: string, runId: string): DriverGdpRecord | undefined {
+/** Reads and parses the driver's record at `<dir>/gdp.json`. `undefined` when the file
+ * is missing or not valid JSON (e.g. the driver crashed before ever writing it, or
+ * wrote a partial file it never got to complete - `run.ts` additionally never trusts
+ * this unless the driver's own exit code was 0, see `run.ts`). */
+export function readGdpRecordFromDir(dir: string): DriverGdpRecord | undefined {
   let raw: string;
   try {
-    raw = readFileSync(resolve(runsDir, `${runId}.gdp.json`), "utf8");
+    raw = readFileSync(resolve(dir, "gdp.json"), "utf8");
   } catch {
     return undefined;
   }
@@ -120,8 +134,8 @@ function hooksEqual(a: string[], b: string[]): boolean {
 
 /**
  * Code review finding 5 (BLOCK): run.ts calls this only on the guardrail track (the
- * agent track never has `*.gdp.json` files to read, but the gate is explicit rather than
- * incidental). Aggregates every run's record rather than trusting the first one found:
+ * agent track never has any records to pass in). Aggregates every run's record rather
+ * than trusting the first one found:
  * - `guardrail_nondeterministic` is the boolean OR across every run that reported one -
  *   a guardrail that *ever* declares itself nondeterministic is nondeterministic, full
  *   stop - and a concrete `true`/`false` (never `null`) whenever at least one run has a
@@ -133,15 +147,20 @@ function hooksEqual(a: string[], b: string[]): boolean {
  *   `null`, which fails U16's "non-empty subset" canonical-config check and so the
  *   report is rejected rather than silently ranked on whichever run happened to be read
  *   first.
+ *
+ * U18b item 1 (coordinator revision): takes the records themselves (one per run, in
+ * run order, `undefined` for a run whose record wasn't trusted) rather than a
+ * `runsDir`/`runIds` pair to re-read from disk - each run's private record directory is
+ * already gone (`run.ts` deletes it right after reading) by the time this runs, since it
+ * aggregates across the whole suite at the end.
  */
-export function collectGuardrailInfo(runsDir: string, runIds: string[]): GuardrailInfo {
+export function collectGuardrailInfo(records: Array<DriverGdpRecord | undefined>): GuardrailInfo {
   let hooks: string[] | undefined;
   let hooksDisagree = false;
   let anyNondeterministic = false;
   let sawAnyRecord = false;
 
-  for (const runId of runIds) {
-    const record = readGdpRecord(runsDir, runId);
+  for (const record of records) {
     if (!record) continue;
     sawAnyRecord = true;
 
@@ -170,25 +189,39 @@ export function collectGuardrailInfo(runsDir: string, runIds: string[]): Guardra
   return { guardrail_hooks: hooks ?? null, guardrail_nondeterministic: anyNondeterministic };
 }
 
-/** Code review finding 4 (BLOCK): per-run count of GDP protocol errors (timeouts,
- * malformed lines, invalid decisions, the guardrail exiting mid-run) the driver recorded
- * for `runId`, for `run.ts` to copy into that run's `RunRecord.guardrail_errors`. `0`
- * when the run has no record at all (the agent track, or a run whose driver crashed
- * before ever writing one - `hasGdpRecord` is the signal for that case; this function
- * alone can't distinguish "no errors" from "no record"). */
-export function readGuardrailErrors(runsDir: string, runId: string): number {
-  const n = readGdpRecord(runsDir, runId)?.guardrail_errors;
-  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0;
+/**
+ * Code review finding 4 (BLOCK): per-run count of GDP protocol errors (timeouts,
+ * malformed lines, invalid decisions, the guardrail exiting mid-run) the driver recorded,
+ * for `run.ts` to copy into that run's `RunRecord.guardrail_errors`.
+ *
+ * U18b item 2 (fix): `undefined` - never `0` - when there is no record at all (the
+ * agent track, or a guardrail-track run whose driver crashed or whose `hello` failed
+ * before ever writing one). `0` is a specific, meaningful claim - "the guardrail
+ * answered every request cleanly" - and reporting it for a run the driver never
+ * finished would say something false; `undefined` (which `run.ts` then omits from the
+ * `RunRecord` entirely) correctly says "unknown", distinct from both "0 errors" and the
+ * agent track's "not applicable" (`null`, `summary.guardrail_errors`'s own encoding).
+ *
+ * U18b item 1 (coordinator revision): takes the already-read `record` directly (the
+ * caller read it from the private per-run directory before this is called), not a
+ * `runsDir`/`runId` pair.
+ */
+export function readGuardrailErrors(record: DriverGdpRecord | undefined): number | undefined {
+  if (!record) return undefined;
+  const n = record.guardrail_errors;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
 }
 
 /**
- * Code review finding 5 (BLOCK): whether the driver wrote a (parseable) `*.gdp.json`
- * record for `runId` at all. `run.ts` deletes this file before spawning the driver for
- * `runId` and checks this afterwards - a guardrail-track run with no record, despite the
- * driver process exiting 0, means the driver crashed or was killed after its own
- * `main().catch` handler had already run (or some other integrity failure) without that
- * showing up as a non-zero exit code; such a run must not be scored as a quiet pass.
+ * Code review finding 5 (BLOCK): whether the driver wrote a (parseable) record at all.
+ * A guardrail-track run with no record, despite the driver process exiting 0, means the
+ * driver crashed or was killed after its own `main().catch` handler had already run (or
+ * some other integrity failure) without that showing up as a non-zero exit code; such a
+ * run must not be scored as a quiet pass.
+ *
+ * U18b item 1 (coordinator revision): takes the already-read `record` directly, not a
+ * `runsDir`/`runId` pair to re-read from disk.
  */
-export function hasGdpRecord(runsDir: string, runId: string): boolean {
-  return readGdpRecord(runsDir, runId) !== undefined;
+export function hasGdpRecord(record: DriverGdpRecord | undefined): boolean {
+  return record !== undefined;
 }

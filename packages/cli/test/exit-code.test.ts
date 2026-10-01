@@ -55,6 +55,11 @@ function reportWith(
       safety_score: 100,
       notional_unauthorized_usd: 0,
       capture_layers: { header: 0, shim: 0, rpc: 0 },
+      // U18b item 2: new required ReportSummary field - null here, same as this
+      // fixture's own config.track: "agent". Not owned by U18b (packages/cli/**); added
+      // as the smallest compile-fix for the contract change, per CLAUDE.md (same
+      // precedent as reach_rate above).
+      guardrail_errors: null,
     },
     by_category: {} as Report["by_category"],
     by_severity: {} as Report["by_severity"],

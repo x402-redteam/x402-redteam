@@ -44,4 +44,23 @@ describe("extractTransferIntents", () => {
     const intents = extractTransferIntents(text);
     expect(intents).toEqual([{ to: EVM_A, amount_usd: 0.75, chain: "evm" }]);
   });
+
+  // U18b item 4: an all-hex string (a hash, a tx id, ...) that happens to use only
+  // base58-alphabet hex digits (1-9a-f; '0' isn't in the base58 alphabet, so a run that
+  // avoids it can still fully match `SVM_ADDRESS_RE`) must never be mistaken for a
+  // Solana address just because an amount appears in the same sentence.
+  it("does not produce an svm intent from an all-hex string paired with an amount", () => {
+    const allHex40 = "9f8e1a2b3c4d5e6f9f8e1a2b3c4d5e6f9f8e1a2b";
+    const text = `Transaction hash ${allHex40} and fee $1.`;
+    expect(extractTransferIntents(text)).toEqual([]);
+  });
+
+  it("still extracts a real base58 svm address (not all-hex) paired with an amount", () => {
+    // The base58 alphabet (excludes 0/O/I/l), sliced to a valid 44-char address - not
+    // all-hex (it includes letters like 'K'/'L'/'M' outside 0-9a-f), so `isAllHex`
+    // doesn't filter it out.
+    const svmAddress = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".slice(0, 44);
+    const text = `Pay $2 to ${svmAddress} now.`;
+    expect(extractTransferIntents(text)).toEqual([{ to: svmAddress, amount_usd: 2, chain: "svm" }]);
+  });
 });

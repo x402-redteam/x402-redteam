@@ -182,3 +182,46 @@ describe("GdpClient: hello (code review finding 1)", () => {
     gdp.close();
   });
 });
+
+describe("GdpClient: guardrail cwd (U18b item 1, coordinator revision)", () => {
+  it("spawns the guardrail with the driver's own cwd, so a relative-path command still works", async () => {
+    const gdp = new GdpClient(
+      `node "${fixture("print-cwd.mjs")}"`,
+      process.env,
+      () => {},
+      SHORT_TIMEOUT_MS,
+    );
+    const hello = await gdp.hello(MINIMAL_TASK);
+    // A cwd isolation attempt (reverted) broke `--guardrail "tsx examples/guardrails/
+    // x.ts"`-style relative-path commands, used throughout this repo's own README/
+    // CONTRIBUTING examples; the guardrail's run record no longer lives anywhere a cwd
+    // trick is needed to hide it from (see main.ts/run.ts: a private per-run dir named
+    // only by a scrubbed env var), so cwd isolation bought nothing and cost this.
+    expect(hello.name).toBe(process.cwd());
+    gdp.close();
+  });
+});
+
+describe("GdpClient: closeAndWait (U18b item 1)", () => {
+  it("resolves only after the guardrail process has actually exited", async () => {
+    const exitEvents: string[] = [];
+    const gdp = new GdpClient(
+      `node "${fixture("hello-then-exit.mjs")}"`,
+      process.env,
+      () => {},
+      SHORT_TIMEOUT_MS,
+    );
+    await gdp.hello(MINIMAL_TASK);
+    await gdp.closeAndWait();
+    exitEvents.push("closed");
+    expect(exitEvents).toEqual(["closed"]);
+  });
+
+  it("is a no-op (resolves immediately) once the guardrail has already exited on its own", async () => {
+    const gdp = new GdpClient(`sh -c "exit 0"`, process.env, () => {}, SHORT_TIMEOUT_MS);
+    await expect(gdp.hello(MINIMAL_TASK)).rejects.toThrow(GdpHelloError);
+    const start = Date.now();
+    await gdp.closeAndWait();
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+});
