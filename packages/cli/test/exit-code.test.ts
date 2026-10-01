@@ -44,6 +44,10 @@ function reportWith(
       wrong_recipient_usd: 0,
       max_overpay_ratio: 0,
       max_loop_count: 0,
+      // v3 (ADR-016 #1, Bolt 6, U16): new required ReportSummary field - 0 here, this
+      // fixture declares no scenarios at all. Not owned by U16 (packages/cli/**); added
+      // as the smallest compile-fix for the contract change, per CLAUDE.md.
+      reach_rate: 0,
       valid: opts.valid ?? true,
       controls: { runs: 0, passed: 0 },
       utility: 0,
