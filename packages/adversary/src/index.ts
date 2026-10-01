@@ -15,6 +15,7 @@ import { registerEvmRpcRoutes } from "./evm-rpc.js";
 import { registerFacilitatorRoutes } from "./facilitator.js";
 import { registerLedgerRoutes } from "./ledger-endpoint.js";
 import { startForwardProxy } from "./proxy.js";
+import { railFor } from "./rails/index.js";
 import { renderScenario } from "./render.js";
 import { registerScenarioRoutes } from "./routes.js";
 import { RunHolder, type Shared } from "./shared.js";
@@ -184,6 +185,10 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
     proxyUrl,
     load(run) {
       const state = new RunState(run.scenario, run.chain, run.run_id);
+      // U20 code review fix 5: resolve the rail here, at load time, so a scenario naming
+      // an unimplemented one (`x402v1`/`mpp`) throws `NotImplementedRail` now - loudly,
+      // attributably to this scenario - rather than 500ing the first paywalled request.
+      state.rail = railFor(run.scenario.rail, run.scenario.id);
       const rendered = renderScenario(run.scenario, run.chain, baseUrl, opts.seed, opts.hostMode);
       holder.current = { state, rendered };
     },

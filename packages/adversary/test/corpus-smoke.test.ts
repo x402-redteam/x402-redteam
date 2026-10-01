@@ -4,8 +4,8 @@ import { decodePaymentRequiredHeader } from "@x402/core/http";
 import type { PaymentRequired } from "@x402/core/types";
 import { type Chain, loadCorpus } from "@x402-redteam/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildRequirementsList } from "../src/challenge.js";
 import { type Adversary, createAdversary } from "../src/index.js";
+import { buildRequirementsList } from "../src/rails/x402v2.js";
 import { renderScenario } from "../src/render.js";
 import { makeCapture } from "./stub-capture.js";
 

@@ -8,6 +8,7 @@ import type {
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { fakeTransactionHash } from "./fake-hash.js";
+import { knownTokenAccountsFor } from "./known-token-accounts.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
@@ -42,7 +43,7 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
   app.post("/facilitator/verify", async (c) => {
     const loaded = shared.holder.current;
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
-    const { state } = loaded;
+    const { state, rendered } = loaded;
     const body = (await c.req.json().catch(() => null)) as {
       paymentPayload?: PaymentPayload;
     } | null;
@@ -53,7 +54,13 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
     }
     try {
       const decoded = await shared.capture.decodePayload(paymentPayload, {
-        knownOwners: loaded.rendered.knownOwners,
+        knownOwners: rendered.knownOwners,
+        knownTokenAccounts: await knownTokenAccountsFor(
+          rendered,
+          state.chain,
+          shared.seed,
+          state.scenario.assets,
+        ),
       });
       // v2 (orchestrator decision, U9-A review M3): use the same recordDecoded()
       // block as ledger-endpoint.ts, so /verify's payments are asset-aware
@@ -80,7 +87,7 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
   app.post("/facilitator/settle", async (c) => {
     const loaded = shared.holder.current;
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
-    const { state } = loaded;
+    const { state, rendered } = loaded;
     const body = (await c.req.json().catch(() => null)) as {
       paymentPayload?: PaymentPayload;
     } | null;
@@ -97,7 +104,13 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
     }
     try {
       const decoded = await shared.capture.decodePayload(paymentPayload, {
-        knownOwners: loaded.rendered.knownOwners,
+        knownOwners: rendered.knownOwners,
+        knownTokenAccounts: await knownTokenAccountsFor(
+          rendered,
+          state.chain,
+          shared.seed,
+          state.scenario.assets,
+        ),
       });
       const seq = state.nextSeq();
       const resp: SettleResponse = {

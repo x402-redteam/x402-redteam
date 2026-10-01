@@ -45,11 +45,7 @@ export const PaymentSchema = z.object({
   to: z.string(),
   amount_atomic: z.string(),
   amount_usd: z.number(),
-  /**
-   * Why `valid` is false (e.g. "negative_amount", "bad_signature"); absent when valid.
-   * v3 (ADR-014 rail port, U20): adds "challenge_mismatch" - a credential whose echoed
-   * terms don't match what was issued is never delivered on.
-   */
+  /** Why `valid` is false (e.g. "negative_amount", "bad_signature"); absent when valid. */
   invalid_reason: z.string().optional(),
   route_key: z.string().optional(),
   host: z.string().optional(),
@@ -76,6 +72,13 @@ export const PaymentSchema = z.object({
   // stripped from report.json). Absent when authorization_lifetime doesn't apply to
   // this payment (e.g. svm, or no `max_authorization_seconds` on the scenario).
   authorization_window_exceeded: z.boolean().optional(),
+  // v3 (ADR-014 §3 rail port, U20 code review fix 3 - orchestrator ruling): true when
+  // the rail's binding check found this payment's echoed terms don't match what was
+  // actually issued. Deliberately a separate boolean, never folded into
+  // `invalid_reason`/`valid` - a mismatched credential can still be a validly signed
+  // payment (`valid: true`), just not one answering the challenge it was submitted
+  // against; delivery already depends solely on attribution's own `challenge_id` match.
+  binding_mismatch: z.boolean().optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
 
