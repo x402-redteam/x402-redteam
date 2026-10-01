@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chownSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,15 @@ import {
   type Severity,
   SeveritySchema,
 } from "@x402-redteam/schema";
-import { type Report, scoreSuite, toJson, toMarkdown, toSarif } from "@x402-redteam/scorer";
+import {
+  type Report,
+  redact,
+  scoreSuite,
+  toJson,
+  toMarkdown,
+  toRedactedJson,
+  toSarif,
+} from "@x402-redteam/scorer";
 import {
   collectGuardrailInfo,
   type DriverGdpRecord,
@@ -91,6 +99,27 @@ export interface RunSuiteOptions {
   hostMode?: HostMode;
   /** v3 (ADR-011 seasons): the env var name holding the season's secret seed, if any. */
   seasonSeedEnv?: string;
+  /** Security review HIGH-12: the guardrail-under-test's own `org/repo@sha`, recorded
+   * into `config.guardrail_repo_ref` - `null`/omitted outside a ranked/verified run. */
+  guardrailRepoRef?: string | null;
+  /** v3 (ADR-011, U19): run the agent (or guardrail-track driver) as this uid/gid -
+   * Linux, root only. `main.ts` calls `validateAgentUid` and exits 2 before this ever
+   * reaches `runSuite`, so a rejected uid never gets here. */
+  agentUid?: number;
+  /** Security review LOW: defaults to `agentUid` when omitted. */
+  agentGid?: number;
+  /** v3 (ADR-011, U19): also write `report.redacted.json` (no `runs[]`, violation
+   * messages blanked - see `@x402-redteam/scorer`'s `redact`). Implies `quiet`
+   * (security review CRITICAL-1): a redacted run must not print anything
+   * scenario-revealing to its own stdout either, since a CI log is visible even when
+   * only the redacted file is uploaded as an artifact. */
+  redact?: boolean;
+  /** v3 (ADR-011, U19, security review CRITICAL-1): suppress the full markdown report
+   * on stdout, printing only the exit code and a handful of summary numbers (no
+   * scenario id/title/description/host/canary ever reaches stdout this way). Always
+   * true when `redact` is true, regardless of this flag's own value. `report.md` is
+   * still written to disk either way - this only changes what reaches the console. */
+  quiet?: boolean;
   /** v3 (ADR-016 #3 config fingerprint): overrides `computeHarnessCommit()` - tests
    * inject a fixed value so report.json stays byte-comparable across runs. */
   harnessCommit?: string;
@@ -176,6 +205,27 @@ export function computeExitCode(report: Report, failOn: Severity): 0 | 1 | 2 {
 }
 
 /**
+ * Security review CRITICAL-1: the only thing `--quiet`/`--redact` print to stdout -
+ * numbers and booleans only, deliberately hand-picked field by field (never a spread
+ * of `report.summary`, so a future summary field can't silently leak through here
+ * without a reviewer having to touch this function). No scenario id, title,
+ * description, host, canary or violation message is reachable from this output.
+ */
+function quietSummaryLine(report: Report, exitCode: number): string {
+  return JSON.stringify({
+    exit_code: exitCode,
+    valid: report.summary.valid,
+    safety_score: report.summary.safety_score,
+    unauthorized_usd: report.summary.unauthorized_usd,
+    pass_rate: report.summary.pass_rate,
+    reach_rate: report.summary.reach_rate,
+    controls: report.summary.controls,
+    scenarios: report.summary.scenarios,
+    scenarios_passed: report.summary.scenarios_passed,
+  });
+}
+
+/**
  * Orchestrates the full suite run, per functional-design.md §2: boots one
  * adversary, drives it sequentially over (scenario, chain, attempt), scores
  * the runs and writes every report artifact. Exported for tests as well as
@@ -192,7 +242,16 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   // that omit it get "path" unchanged. `preflightHostMode` probes *.localhost (a real
   // DNS resolve plus a loopback GET) and falls back to "path" on failure.
   const hostMode = await preflightHostMode(opts.hostMode ?? "path");
-  const season = loadSeason({ seasonSeedEnv: opts.seasonSeedEnv });
+  const season = loadSeason({ seasonSeedEnv: opts.seasonSeedEnv, corpusDir: opts.corpus });
+  // v3 (ADR-011 seasons, U19): the real secret seed is used operationally - wallet and
+  // canary derivation, task rendering, run ids - exactly like any other `--seed`. It
+  // must never be the *reported* seed though: `config.seed` and the top-level
+  // `report.seed` field show `"season:<id>"` instead, so the secret itself never enters
+  // report.json, a log line or `task.json` (season.test.ts / the probe in
+  // functional-design.md §4 grep an out dir for the literal seed string). Outside a
+  // season, both are simply `opts.seed`, so behaviour is byte-identical to before.
+  const effectiveSeed = season.seed ?? opts.seed;
+  const reportedSeed = season.season !== null ? `season:${season.season}` : opts.seed;
 
   // Code review fix 7: --skip-controls silently produces an unrankable report
   // (summary.valid === null); warn loudly every time it's used, not just in the report.
@@ -220,7 +279,7 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   mkdirSync(logsDir, { recursive: true });
   mkdirSync(runsDir, { recursive: true });
 
-  const adversary = await createAdversary({ seed: opts.seed, capture, hostMode });
+  const adversary = await createAdversary({ seed: effectiveSeed, capture, hostMode });
   const runs: RunRecord[] = [];
   // U18b item 1 (coordinator revision): one entry per guardrail-track run, in run
   // order, fed to `collectGuardrailInfo` after the loop - each run's own private record
@@ -234,18 +293,49 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
         if (!chainFilter.includes(chain) || !scenario.chains.includes(chain)) continue;
 
         for (let attempt = 1; attempt <= opts.repeat; attempt++) {
-          const run_id = computeRunId(opts.seed, scenario.id, chain, attempt);
+          const run_id = computeRunId(effectiveSeed, scenario.id, chain, attempt);
 
           adversary.load({ scenario, chain, run_id });
           const task = buildTask({
             scenario,
             chain,
             baseUrl: adversary.baseUrl,
-            seed: opts.seed,
+            seed: effectiveSeed,
             run_id,
             hostMode,
           });
-          const taskPath = writeTaskFile(outDir, task);
+          // Security review HIGH-7: when the spawned process drops to `agentUid`, it
+          // needs a writable $HOME of its own - inheriting the harness's own (root,
+          // typically /root) would make any tool that writes under $HOME (npm/tsx
+          // caches, etc.) fail with EACCES for the unprivileged uid. A fresh per-run
+          // directory, `chown`'d to that uid/gid, is removed again right after the run
+          // the same way the GDP record dir already is. Created *before* the task file
+          // below, since the task file's own chowned location (security review N2)
+          // nests under it.
+          let agentHomeDir: string | undefined;
+          if (opts.agentUid !== undefined) {
+            agentHomeDir = mkdtempSync(resolve(tmpdir(), "x402-agent-home-"));
+            chownSync(agentHomeDir, opts.agentUid, opts.agentGid ?? opts.agentUid);
+          }
+
+          // Security re-review N2: task.json carries the agent's own wallet secret
+          // (private key / base58 secret key) and prompt - the dropped-privilege agent
+          // must actually be able to read it, so it can never live only under the
+          // shared, root-owned `outDir` when `agentUid` is set (the same root-only
+          // directory `--redact`'s reports stay under, per security review HIGH-4).
+          // `writeTaskFile` creates `<base>/tasks/<run_id>.json` as root regardless of
+          // the parent's own ownership, so the new `tasks` subdir and the file itself
+          // are explicitly `chown`'d right after - nested under `agentHomeDir`, so both
+          // are cleaned up together after the run.
+          const taskPath = writeTaskFile(agentHomeDir ?? outDir, task);
+          if (agentHomeDir !== undefined && opts.agentUid !== undefined) {
+            chownSync(
+              resolve(agentHomeDir, "tasks"),
+              opts.agentUid,
+              opts.agentGid ?? opts.agentUid,
+            );
+            chownSync(taskPath, opts.agentUid, opts.agentGid ?? opts.agentUid);
+          }
 
           // Code review item 4 (U17 seam): the adversary's own forward-proxy origin
           // once `host_mode: "proxy"` serves one, else the harness's base_url.
@@ -253,6 +343,10 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           const env = buildAgentEnv(taskPath, task, opts.passEnv ?? [], proxyUrl, opts.env ?? {});
           const logFile = resolve(logsDir, `${run_id}.log`);
           const isGuardrailTrack = (opts.track ?? "agent") === "guardrail";
+
+          if (agentHomeDir !== undefined) {
+            env.HOME = agentHomeDir;
+          }
 
           // U18b item 1 (coordinator revision): a fresh, private per-run directory for
           // the driver's GDP record - `mkdtemp` makes a brand-new, uniquely-named
@@ -266,8 +360,19 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           // harness caller's), so a guardrail command written with a relative path
           // (e.g. `tsx examples/guardrails/x.ts`, this repo's own convention) still
           // works.
+          //
+          // Security review HIGH-7: when `agentUid` is set, the *driver itself* runs
+          // under that dropped uid (it's the process `runAgent` spawns in the
+          // guardrail-track - see `guardrail-track.ts`'s `resolveAgentCommand`), so it
+          // needs write access to this directory too, or it can never write `gdp.json`
+          // in the first place. `chown` it right after creating it, same as the HOME
+          // dir above.
           if (isGuardrailTrack) {
-            env.X402_GDP_RECORD_DIR = mkdtempSync(resolve(tmpdir(), "x402-gdp-"));
+            const recordDir = mkdtempSync(resolve(tmpdir(), "x402-gdp-"));
+            if (opts.agentUid !== undefined) {
+              chownSync(recordDir, opts.agentUid, opts.agentGid ?? opts.agentUid);
+            }
+            env.X402_GDP_RECORD_DIR = recordDir;
           }
 
           const spawnResult = await runAgent({
@@ -277,7 +382,16 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             startupTimeoutMs: opts.startupTimeoutMs ?? 120_000,
             hasStarted: () => adversary.requestCount() > 0,
             logFile,
+            // v3 (ADR-011, U19): main.ts already rejected (exit 2) a uid that
+            // `validateAgentUid` doesn't accept, so any value here is safe to use.
+            agentUid: opts.agentUid,
+            agentGid: opts.agentGid,
           });
+
+          // Security review HIGH-7: the HOME dir's only purpose was this one run.
+          if (agentHomeDir !== undefined) {
+            rmSync(agentHomeDir, { recursive: true, force: true });
+          }
 
           const drained = adversary.drain();
 
@@ -367,13 +481,23 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const report = scoreSuite({
     scenarios,
     runs,
-    ctx: { seed: opts.seed },
+    // v3 (ADR-011 seasons, U19): `ctx.seed` must be the real *operational* seed
+    // (`effectiveSeed`) - scoring re-derives the same canary addresses the run itself
+    // rendered with, and a mismatched seed here would silently break every
+    // canary-based violation check. `scoreSuite` also copies `ctx.seed` verbatim into
+    // the top-level `report.seed` field, so that field is overwritten below (before
+    // `report.json` is ever written) with `reportedSeed` - the one place the real
+    // secret would otherwise leak into a committed artifact.
+    ctx: { seed: effectiveSeed },
     meta: {
       harness_version: opts.harnessVersion ?? "0.0.1",
       agent_id: opts.agentId,
       guardrail_id: opts.guardrailId,
       config: {
-        seed: opts.seed,
+        // v3 (ADR-011 seasons, U19): "season:<id>" outside a season this is simply
+        // `opts.seed` (reportedSeed === opts.seed when no season is active) - never the
+        // real secret.
+        seed: reportedSeed,
         // Code review fix 5 (LOW): record chains in canonical CHAIN_ORDER regardless of
         // the order --chains was given in, and dedupe+sort the scenario filter, so
         // config is a stable, comparable fingerprint of the run.
@@ -393,16 +517,40 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
         harness_commit: opts.harnessCommit ?? computeHarnessCommit(),
         season: season.season,
         seed_commitment: season.seed_commitment,
+        guardrail_repo_ref: opts.guardrailRepoRef ?? null,
       },
     },
   });
 
-  writeFileSync(resolve(outDir, "report.json"), toJson(report));
-  writeFileSync(resolve(outDir, "report.sarif"), toSarif(report));
-  const markdown = toMarkdown(report);
+  // v3 (ADR-011 seasons, U19): overwrite the top-level `seed` field `scoreSuite` set
+  // from `ctx.seed` (the real operational seed, required for correct scoring - see the
+  // comment above) with the same `reportedSeed` already used for `config.seed`, so the
+  // real secret never reaches a written file. A no-op outside a season.
+  const reportToWrite: Report = { ...report, seed: reportedSeed };
+
+  writeFileSync(resolve(outDir, "report.json"), toJson(reportToWrite));
+  writeFileSync(resolve(outDir, "report.sarif"), toSarif(reportToWrite));
+  const markdown = toMarkdown(reportToWrite);
   writeFileSync(resolve(outDir, "report.md"), markdown);
 
-  console.log(markdown);
+  // v3 (ADR-011, U19): `--redact` writes `report.redacted.json` alongside the full
+  // report - the only artifact a Tier 1 ranked run publishes (no `runs[]`, no violation
+  // messages). Built from `reportToWrite`, so it inherits the same seed override.
+  if (opts.redact === true) {
+    writeFileSync(resolve(outDir, "report.redacted.json"), toRedactedJson(redact(reportToWrite)));
+  }
 
-  return { report, exitCode: computeExitCode(report, opts.failOn) };
+  const exitCode = computeExitCode(reportToWrite, opts.failOn);
+
+  // Security review CRITICAL-1: `--redact` implies `quiet` regardless of the flag's own
+  // value - the full markdown (every scenario id/title/description/host/canary) must
+  // never reach stdout on a run whose whole point is that nothing but the redacted
+  // summary leaves the container. `report.md` on disk is unaffected either way.
+  if (opts.quiet === true || opts.redact === true) {
+    console.log(quietSummaryLine(reportToWrite, exitCode));
+  } else {
+    console.log(markdown);
+  }
+
+  return { report: reportToWrite, exitCode };
 }

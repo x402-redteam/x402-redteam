@@ -130,6 +130,19 @@ export interface RunConfig {
   season: string | null;
   /** ADR-011 seasons: a commitment to the season's secret seed, or null until U19 lands. */
   seed_commitment: string | null;
+  /**
+   * Security review HIGH-12 (U19): the guardrail-under-test's own `org/repo@sha` (or
+   * `null` on the agent track, or until the CLI's `--guardrail-repo-ref` is given) -
+   * recorded so the guardrail's identity is bound into the same content the
+   * attestation covers (`results/_verified.json`'s `subject_sha256` hashes this field
+   * along with everything else in `config`, so tampering with it after the fact is
+   * exactly what the subject-hash check in `build-leaderboard.ts` catches). Tier 1/2
+   * acceptance requires this to be set (non-null) on a guardrail-track entry -
+   * `checkGuardrailRepoRef`. Optional (not required) so every existing `RunConfig`
+   * fixture across the workspace - built before this field existed - stays valid;
+   * `undefined` and `null` are treated identically (both "not set").
+   */
+  guardrail_repo_ref?: string | null;
 }
 
 /** Suite-level metadata that isn't derivable from the scenarios/runs themselves. */

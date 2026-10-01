@@ -1,74 +1,110 @@
 # Contributing
 
-## Submit a guardrail result to the leaderboard
+## Submit a guardrail result to the leaderboard (provenance tiers, ADR-011)
 
-**LEADERBOARD.md is currently unranked / experimental** (ADR-010): the guardrail-track standard
-driver that would let scores be compared fairly across different guardrails hasn't shipped yet, so
-pass/fail today still depends partly on crawl and retry behaviour, not only on the guardrail under
-test. Submissions are still welcome and still checked — see below — but treat the numbers as
-"passed the harness's own acceptance checks", not as a certified ranking.
+The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** See
+[`docs/seasons.md`](docs/seasons.md) for the full season lifecycle.
 
-The [leaderboard](LEADERBOARD.md) is generated from committed `results/*.json` report files. To
-add (or update) yours:
+| Tier | Table | How | Who can produce one |
+|---|---|---|---|
+| 1 | **Ranked (held-out)** | a maintainer runs `.github/workflows/ranked-run.yml` against the current season's held-out corpus | maintainers only (the `ranked` environment's required reviewers) |
+| 2 | **Verified (public corpus)** | your own public repo calls the reusable `.github/workflows/rank.yml@<release tag>` against the public corpus | anyone, via a PR that adds the workflow call |
+| 3 | Self-reported | a committed `results/<id>.json` with no attestation | **rejected by default** — shown in the Rejected section, not displayed (user decision; may change at G8) |
 
-1. Run the harness against your agent, against the full bundled corpus with the **canonical
-   configuration** (default seed, both chains, controls included, no `--scenario` filter), giving
-   it a stable `--guardrail-id` (this becomes both the committed filename and the name shown on
-   the leaderboard). An LLM agent should also pass `--repeat 5`, since a single attempt doesn't
-   say much about a non-deterministic agent:
+### Getting a Tier 2 "Verified (public corpus)" result
 
-   ```bash
-   pnpm x402-redteam run --agent "<your agent command>" \
-     --agent-id <your-agent-name> \
-     --guardrail-id <your-guardrail-id> \
-     --out /tmp/x402-out
+1. In your own public repo, add a workflow that calls this one:
+
+   ```yaml
+   jobs:
+     rank:
+       uses: ORG_PLACEHOLDER/x402-redteam/.github/workflows/rank.yml@v1 # pin a real release tag
+       with:
+         harness-ref: v1 # the same release tag
+         guardrail-cmd: "node my-guardrail.js" # your GDP guardrail (ADR-010)
+         guardrail-id: your-guardrail-id
    ```
 
-2. Commit the result under that id:
+   (`ORG_PLACEHOLDER` — the harness's own org/repo isn't decided yet; see
+   [`docs/seasons.md`](docs/seasons.md#the-org-placeholder) for the one place this gets
+   updated once it is.)
+
+2. That workflow runs the canonical guardrail-track config against the public corpus and
+   attests `report.json` under GitHub's own build provenance. Download the attestation
+   bundle from the run and the `report.json` artifact.
+3. Commit all of this into this repo:
 
    ```bash
-   cp /tmp/x402-out/report.json results/<your-guardrail-id>.json
+   cp report.json results/<your-guardrail-id>.json
+   cp attestation.jsonl results/<your-guardrail-id>.attestation.jsonl
    ```
 
-3. Regenerate the leaderboard and commit both files:
+   Add your GitHub login/org to `results/_meta.json` as this entry's `owner` — the
+   `gh attestation verify --owner` check (security review HIGH-6) needs it, since the
+   signer-workflow path alone only names this harness's own `rank.yml`, not *your*
+   repo:
 
-   ```bash
-   pnpm leaderboard
-   git add results/<your-guardrail-id>.json LEADERBOARD.md
-   git commit -m "leaderboard: add <your-guardrail-id> result"
+   ```json
+   { "<your-guardrail-id>": { "owner": "your-github-login" } }
    ```
 
-4. Open a PR. CI re-runs `pnpm leaderboard`, which checks your submission against every
-   acceptance rule before it's ranked:
-   - `report.json`'s `schema` is `x402-redteam/report@2`.
-   - Its `corpus_hash` matches the current corpus. A **mismatch** (the corpus changed since you
-     ran) doesn't reject the result — it's listed separately under "Stale corpus" in
-     `LEADERBOARD.md`, not ranked. Rerun step 1 against the current corpus and update your PR.
-   - `config` is the canonical configuration above (default seed, both chains, no `--scenario`
-     filter, controls included).
-   - `summary.valid` is `true` (every control passed — see ADR-009).
-   - **Re-scoring `runs[]`** — stripping the stored scores and re-running the scorer against the
-     current corpus — reproduces the stored summary and per-scenario results exactly. This is
-     what actually catches a hand-edited summary.
-   - The filename matches `guardrail_id`, and no other committed file claims the same id.
+4. Open a PR (`results/_verified.json`, `_harness.json` and `_seasons.json` are
+   [`CODEOWNERS`](.github/CODEOWNERS)-protected, so this always needs a maintainer
+   review). A maintainer runs `pnpm leaderboard -- --verify-attestations` (the only
+   step that calls `gh attestation verify`, and only this step — `pnpm leaderboard`'s own
+   default path never makes a network call; `verify-results.yml` also runs this
+   automatically as a CI check on any PR touching `results/**`), which writes
+   `results/_verified.json` and regenerates `LEADERBOARD.md`. Your result then appears
+   under "Verified (public corpus)" — never merged into the ranked table above it —
+   once it also passes every other acceptance check:
+   - `report.json`'s `schema` is `x402-redteam/report@3`.
+   - Its `corpus_hash` matches the current corpus (a mismatch lands it under "Stale
+     corpus" instead, not rejected — rerun against the current corpus and update your
+     PR).
+   - `config` is the canonical configuration (default seed, both chains, no `--scenario`
+     filter, controls included, `host_mode: localhost`, `driver: driver@1`).
+   - `config.guardrail_repo_ref` is set (security review HIGH-12) — `rank.yml` sets this
+     for you to `${{ github.repository }}@${{ github.sha }}`.
+   - `summary.valid` is `true` (every control passed — ADR-009).
+   - **Re-scoring `runs[]`** reproduces the stored summary and per-scenario results
+     exactly.
+   - The filename matches `guardrail_id`, and no other committed file claims the same
+     id.
+   - `harness_commit` is on the release allowlist (`results/_harness.json`) — **and
+     that allowlist must itself be concrete**: an absent file, or one that still says
+     `{"allow": ["*"]}`, rejects every Tier 1/2 submission outright (security review
+     condition #14 — there is nothing permissive about "not configured yet").
+   - `results/_verified.json`'s `subject_sha256` for your entry matches the content
+     hash of what's actually committed today (security review HIGH-5) — editing
+     `results/<id>.json` after it was attested, without re-attesting, is caught here.
 
-   Any of these failing lands your submission in `LEADERBOARD.md`'s "Rejected" section with the
-   specific reason, not silently dropped — fix it and update your PR.
+   Any of these failing (including a missing/invalid attestation) lands your submission
+   in `LEADERBOARD.md`'s "Rejected" section with the specific reason, not silently
+   dropped.
 
-**What this does and doesn't prove.** The checks above run in CI and are not a rubber stamp: a
-result that only hand-edits its own summary, or that was run with a non-canonical configuration,
-is caught and rejected. But results are still **self-submitted** — nothing here proves *who* ran
-the harness, or that `runs[]` itself wasn't edited before the scores were computed from it.
-Provenance (a public-CI attestation, or a maintainer re-run) and a held-out, seasonal ranked
-corpus are planned (ADR-011) but not built yet; maintainers may re-run any submission by hand, and
-a result that can't be reproduced is removed. `reference`-kind entries (`naive`, `guarded`, and
-similar) are harness-authored oracles used to sanity-check the harness itself, not evidence that
-any real guardrail is safe (ADR-008 amendment) — they're never the only "passing" evidence for a
-claim about the corpus.
+### Getting a Tier 1 "Ranked (held-out)" result
 
-Only commit `results/<id>.json` — not your agent's own source, unless you're also contributing it
-as a reference/example agent (see below). Never commit anything under `results/internal/` — that
-directory holds harness-internal baselines the leaderboard deliberately never reads.
+Tier 1 is maintainer-initiated only — open an issue asking for a ranked run of your
+open-source guardrail, pinned to a commit SHA. A maintainer runs
+`.github/workflows/ranked-run.yml` (requires the `ranked` environment's approval) against
+the current season's held-out corpus, inside a `--network none` container, and publishes
+only `report.redacted.json` (no `runs[]`, no violation messages) plus its attestation.
+
+**What this does and doesn't prove.** Tier 2's checks (above) catch a hand-edited summary
+or a non-canonical run, and its attestation proves *which workflow* produced the file —
+but a submitter's own job still controls the guardrail's code in the same job that
+attests the result, so same-job tampering is a known residual (disclosed on the
+leaderboard page). Tier 1 closes that gap: the job is maintainer-controlled, the corpus
+is unknown to the submitter until the season ends, and nothing about the run is visible
+to the submitter beforehand. `reference`-kind entries (`naive`, `guarded`, `allow-all`,
+`reference-policy`, ...) are harness-authored oracles used to sanity-check the harness
+itself, never evidence that any real guardrail is safe (ADR-008 amendment), and never
+carry an attestation — they don't appear in either tiered table.
+
+Only commit `results/<id>.json` (and, once attested, `results/<id>.attestation.jsonl`) —
+not your agent's own source, unless you're also contributing it as a reference/example
+agent (see below). Never commit anything under `results/internal/` — that directory
+holds harness-internal baselines the leaderboard deliberately never reads.
 
 ## Add a scenario
 
@@ -101,7 +137,8 @@ pnpm install
 pnpm lint       # biome check .
 pnpm typecheck  # tsc --noEmit, per package
 pnpm test       # vitest run, all packages
-pnpm leaderboard
+pnpm leaderboard                          # offline; reads results/_verified.json as-is
+pnpm leaderboard -- --verify-attestations # maintainer-only: calls `gh attestation verify`
 ```
 
 Node ≥ 20, pnpm 10 (pinned via `packageManager` + corepack). Dependencies are pinned to exact

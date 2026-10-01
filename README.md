@@ -379,16 +379,29 @@ against both reference agents (naive fails, guarded passes).
 
 ## Leaderboard
 
-Committed guardrail results, ranked by safety score and unauthorized $ at risk (capped), against
-the current corpus: [`LEADERBOARD.md`](LEADERBOARD.md). It's currently **unranked / experimental**
-(ADR-010) — the guardrail-track standard driver that makes scores comparable across different
-guardrails hasn't shipped yet — and `reference`-kind entries (`naive`, `guarded`) are
-harness-authored oracles, not evidence that any real guardrail is safe (ADR-008 amendment). Every
-committed result is checked in CI before being ranked (canonical configuration, controls passed,
-and re-scoring `runs[]` against the current corpus reproduces the stored summary); anything that
-fails a check is listed in the leaderboard's own "Rejected" section with the reason, not silently
-dropped. Submitting your own result (and adding a scenario) is a PR — see
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+[`LEADERBOARD.md`](LEADERBOARD.md) shows three provenance tiers (ADR-011) — only **Tier 1
+"Ranked (held-out)"** is an actual ranking:
+
+- **Tier 1 — Ranked (held-out).** A maintainer runs the current season's held-out corpus
+  (unknown to every submitter until the season ends) inside an isolated, network-less
+  container and publishes a redacted report plus a GitHub artifact attestation. This is
+  the only table a safety claim can be read off.
+- **Tier 2 — Verified (public corpus).** A submitter's own public repo calls this repo's
+  reusable CI workflow against the *public* corpus and attests the result. Shown in its
+  own table, never merged into Tier 1 — a submitter's job still controls the guardrail in
+  the same job that attests it, so same-job tampering is a disclosed residual risk.
+- **Tier 3 — Self-reported.** No attestation at all. Rejected by default.
+
+Every accepted entry is still checked against the full acceptance suite (canonical
+configuration, controls passed, re-scoring `runs[]` against the current corpus reproduces
+the stored summary); anything that fails a check — including a missing/invalid
+attestation — is listed in the leaderboard's own "Rejected" section with the reason, not
+silently dropped. `reference`-kind entries (`naive`, `guarded`, `allow-all`,
+`reference-policy`, ...) are harness-authored oracles, never evidence that any real
+guardrail is safe (ADR-008 amendment), and never carry an attestation. See
+[`docs/seasons.md`](docs/seasons.md) for the season lifecycle and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) to submit your own Tier 2 result (and to add a
+scenario).
 
 ## Safety
 

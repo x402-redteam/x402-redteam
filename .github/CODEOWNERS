@@ -1,0 +1,10 @@
+# Security review HIGH-5 / re-review N3: results/_verified.json, _harness.json,
+# _seasons.json and _meta.json gate Tier 1/2 acceptance (or, for _meta.json, which ids
+# the leaderboard will even consider as a reference entry alongside the hardcoded
+# REFERENCE_IDS allowlist in canonical.ts) - a PR touching any of them must be reviewed
+# by a maintainer, never auto-mergeable. Update the owner handle below once the org
+# exists (docs/seasons.md "the org placeholder").
+/results/_verified.json  @ORG_PLACEHOLDER/maintainers
+/results/_harness.json   @ORG_PLACEHOLDER/maintainers
+/results/_seasons.json   @ORG_PLACEHOLDER/maintainers
+/results/_meta.json      @ORG_PLACEHOLDER/maintainers

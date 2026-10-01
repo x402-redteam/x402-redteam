@@ -1,8 +1,34 @@
+import { execFileSync, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runAgent } from "../src/spawn.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_RESERVED_AGENT_UIDS,
+  killAgentUidProcesses,
+  runAgent,
+  validateAgentUid,
+} from "../src/spawn.js";
+
+/** Security review HIGH-4: `execFileSync` (what `killAgentUidProcesses` calls) and
+ * `spawn` are mocked file-wide (both default to the real implementation) so
+ * `runAgent`'s own post-run sweep can be observed without a real `pkill` call, and
+ * without actually needing root to exercise the `agentUid` code path (a real
+ * `spawn({uid})` on a non-root dev machine throws EPERM before `finish()` ever runs). */
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync), spawn: vi.fn(actual.spawn) };
+});
+
+/** A minimal stand-in child process: no real OS process, just an `EventEmitter` that
+ * emits a successful `close` shortly after creation - enough for `runAgent` to reach
+ * its normal completion path (`finish()`) without ever calling the real `spawn`. */
+class FakeChild extends EventEmitter {
+  pid = 424242;
+  stdout = null;
+  stderr = null;
+}
 
 describe("runAgent", () => {
   let outDir: string;
@@ -92,5 +118,118 @@ describe("runAgent", () => {
       logFile: join(outDir, "started-hung.log"),
     });
     expect(result.timed_out).toBe(true);
+  });
+});
+
+describe("validateAgentUid (ADR-011, U19: --agent-uid, Linux + root only)", () => {
+  it("is a no-op when uid is undefined", () => {
+    expect(validateAgentUid(undefined)).toBeUndefined();
+  });
+
+  it("security review HIGH-4/LOW: rejects uid 0 unconditionally, before any platform/root check", () => {
+    const message = validateAgentUid(0);
+    expect(message).toBeDefined();
+    expect(message).toMatch(/0 is refused/);
+  });
+
+  it("security review HIGH-4: rejects every default-reserved uid (1000, 1001), before any platform/root check", () => {
+    for (const uid of DEFAULT_RESERVED_AGENT_UIDS) {
+      const message = validateAgentUid(uid);
+      expect(message).toBeDefined();
+      expect(message).toMatch(/reserved/);
+    }
+  });
+
+  it("a caller-supplied reservedUids set is honored instead of the default", () => {
+    expect(validateAgentUid(1001, new Set())).not.toMatch(/reserved/);
+    const message = validateAgentUid(9999, new Set([9999]));
+    expect(message).toMatch(/reserved/);
+  });
+
+  it("rejects on a non-Linux platform (e.g. macOS, where this suite normally runs)", () => {
+    if (process.platform === "linux") return; // covered by the root-check test instead
+    const message = validateAgentUid(2001);
+    expect(message).toBeDefined();
+    expect(message).toMatch(/Linux/);
+  });
+
+  it("on Linux, rejects when the harness itself isn't running as root", () => {
+    if (process.platform !== "linux") return;
+    if (typeof process.getuid === "function" && process.getuid() === 0) return; // covered elsewhere
+    const message = validateAgentUid(2001);
+    expect(message).toBeDefined();
+    expect(message).toMatch(/root/);
+  });
+});
+
+describe("killAgentUidProcesses (security review HIGH-4)", () => {
+  it("never throws, even when no process matches (the common case on this dev machine)", () => {
+    expect(() => killAgentUidProcesses(999999)).not.toThrow();
+  });
+
+  it("calls pkill -9 -u <uid>, never touching any other uid", () => {
+    const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
+    execFileSyncMock.mockClear();
+    killAgentUidProcesses(2001);
+    expect(execFileSyncMock).toHaveBeenCalledWith("pkill", ["-9", "-u", "2001"], expect.anything());
+  });
+
+  it("security re-review 4-residual: fails loudly (throws) when pkill itself is missing (ENOENT), never silently skipping the sweep", () => {
+    const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
+    const enoent = Object.assign(new Error("spawnSync pkill ENOENT"), { code: "ENOENT" });
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw enoent;
+    });
+    expect(() => killAgentUidProcesses(2001)).toThrow(/pkill is not installed/);
+  });
+
+  it("still swallows pkill's own exit 1 (no matching process - the common, harmless case)", () => {
+    const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
+    const exitError = Object.assign(new Error("Command failed"), { status: 1 });
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw exitError;
+    });
+    expect(() => killAgentUidProcesses(2001)).not.toThrow();
+  });
+});
+
+describe("runAgent sweeps agentUid processes after every run, not only on timeout (security review HIGH-4)", () => {
+  it("calls killAgentUidProcesses after a normal (non-timeout) exit when agentUid is set", async () => {
+    const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
+    const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+    execFileSyncMock.mockClear();
+    spawnMock.mockImplementationOnce(() => {
+      const fake = new FakeChild();
+      setTimeout(() => fake.emit("close", 0), 5);
+      return fake;
+    });
+
+    const outDirLocal = mkdtempSync(join(tmpdir(), "x402-redteam-spawn-sweep-"));
+    await runAgent({
+      cmd: "true",
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMs: 5000,
+      agentUid: 2001,
+      logFile: join(outDirLocal, "run.log"),
+    });
+
+    const pkillCalls = execFileSyncMock.mock.calls.filter((args) => args[0] === "pkill");
+    expect(pkillCalls).toEqual([["pkill", ["-9", "-u", "2001"], expect.anything()]]);
+    rmSync(outDirLocal, { recursive: true, force: true });
+  });
+
+  it("never sweeps when agentUid is not set", async () => {
+    const execFileSyncMock = execFileSync as unknown as ReturnType<typeof vi.fn>;
+    execFileSyncMock.mockClear();
+    const outDirLocal = mkdtempSync(join(tmpdir(), "x402-redteam-spawn-nosweep-"));
+    await runAgent({
+      cmd: "true",
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMs: 5000,
+      logFile: join(outDirLocal, "run.log"),
+    });
+    const pkillCalls = execFileSyncMock.mock.calls.filter((args) => args[0] === "pkill");
+    expect(pkillCalls).toEqual([]);
+    rmSync(outDirLocal, { recursive: true, force: true });
   });
 });

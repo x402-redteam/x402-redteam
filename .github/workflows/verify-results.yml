@@ -1,0 +1,59 @@
+name: verify-results
+
+# Security review HIGH-5 / re-review N1: a job that re-derives results/_verified.json
+# by actually calling `gh attestation verify` (via `pnpm leaderboard -- --verify-
+# attestations`) whenever a PR touches results/** - so a reviewer sees the *current*
+# verification state as a CI check, not just whatever the PR author claims
+# results/_verified.json says.
+#
+# Runs on the safer `pull_request` trigger (re-review N1) - never the base-ref/secret-
+# bearing alternative trigger some other workflows in this repo use for privileged
+# work. `gh attestation verify` against a public repo's attestations needs no secret, only a
+# read-only token - the automatic, PR-scoped `GITHUB_TOKEN` `pull_request` already
+# provides is enough, and `pull_request` runs entirely with the PR's own (already
+# reduced, read-only-by-default for a fork) permissions, never the base branch's. No
+# `environment: ranked` here either - that gate exists for jobs holding real secrets or
+# attestation-signing permissions; this job only reads, verifies and diffs, and
+# CODEOWNERS (.github/CODEOWNERS) already requires a maintainer review for any PR
+# touching results/**. `actions/setup-node`'s `cache: pnpm` is deliberately omitted -
+# `pull_request` already can't poison the base-ref's cache scope, but this job doesn't
+# need the cache's write path at all, so it's left out entirely rather than relied on.
+#
+# STATIC ONLY — not executed, not dry-run (CLAUDE.md: no network from this worktree,
+# and no org/repo exists yet to run this against). Written and YAML-checked only;
+# review again once Phase C's org exists and a real `_verified.json` is in play.
+on:
+  pull_request:
+    paths:
+      - "results/**"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # TODO pin by commit SHA before first real run
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4 # TODO pin by commit SHA before first real run
+      - uses: actions/setup-node@v4 # TODO pin by commit SHA before first real run
+        with:
+          node-version: 20
+
+      - run: pnpm install --frozen-lockfile
+
+      # Re-derives results/_verified.json from the PR's own results/*.attestation.jsonl
+      # bundles (never trusting whatever the PR author already committed there) and
+      # fails the check if the PR's committed _verified.json doesn't match. GH_TOKEN is
+      # the automatic, read-only, PR-scoped token `pull_request` provides - no repo
+      # secret is referenced here.
+      - name: Re-verify every attestation and diff against the committed file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp results/_verified.json /tmp/_verified.committed.json 2>/dev/null || echo '{}' >/tmp/_verified.committed.json
+          pnpm leaderboard -- --verify-attestations
+          diff -u /tmp/_verified.committed.json results/_verified.json

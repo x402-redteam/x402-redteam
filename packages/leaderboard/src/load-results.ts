@@ -6,20 +6,61 @@
  * `results/internal/` (U13 functional-design.md §2/§6, user decision at G5), without
  * needing an explicit exclusion rule that could later be loosened by accident.
  */
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
+import type { VerifiedEntry, VerifiedMap } from "./provenance.js";
+
+/**
+ * Security review HIGH-5: a deterministic content hash of a parsed report, independent
+ * of key order or whitespace - the same hash `buildLeaderboard` recomputes to check
+ * against `VerifiedEntry.subject_sha256`, and what `--verify-attestations` records into
+ * that field when it verifies an attestation. Deliberately hashes the *canonicalized*
+ * value, not the raw file bytes: a submitter's own `report.json` and this repo's
+ * freshly-read copy of it can differ in incidental formatting (trailing newline, key
+ * order) without differing in content, and this hash must agree on both.
+ */
+function canonicalizeForHash(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeForHash);
+  if (typeof value === "object" && value !== null) {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = canonicalizeForHash((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Security review HIGH-5: sha256 of `data`'s canonicalized JSON - see
+ * `canonicalizeForHash`'s doc comment for why this isn't a raw-byte hash. */
+export function contentHash(data: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalizeForHash(data)))
+    .digest("hex");
+}
 
 /** One committed `results/<id>.json`, parsed but not yet validated. */
 export interface RawResultEntry {
   /** The filename stem, e.g. `results/naive-baseline.json` -> `"naive-baseline"`. */
   id: string;
   data: unknown;
+  /** Security review HIGH-5: `contentHash(data)` - what a `VerifiedEntry.subject_sha256`
+   * must match for this entry to be accepted at Tier 1/2. */
+  sha256: string;
 }
 
 export type EntryKind = "reference" | "submitted";
 
-/** `results/_meta.json`: `{ "<id>": { "kind": "reference" } }` (functional-design.md §2). */
-export type ResultsMeta = Record<string, { kind: EntryKind }>;
+/**
+ * `results/_meta.json`: `{ "<id>": { "kind": "reference", "owner"?: "submitter-login" } }`
+ * (functional-design.md §2). Security review HIGH-6: `owner` is the submitter's GitHub
+ * login/org - required to verify a Tier 2 attestation's `--owner` (a Tier 2 report is
+ * attested by the submitter's own repo, which the signer-workflow path alone doesn't
+ * name). Absent for reference entries and for any entry that hasn't gone through the
+ * `--verify-attestations` step yet.
+ */
+export type ResultsMeta = Record<string, { kind: EntryKind; owner?: string }>;
 
 const META_FILENAME = "_meta.json";
 
@@ -46,10 +87,10 @@ export function loadResultsDir(dir: string): RawResultEntry[] {
   return files
     .filter((f) => extname(f) === ".json" && !isSidecarFile(f))
     .sort()
-    .map((file) => ({
-      id: file.slice(0, -".json".length),
-      data: JSON.parse(readFileSync(join(dir, file), "utf8")) as unknown,
-    }));
+    .map((file) => {
+      const data = JSON.parse(readFileSync(join(dir, file), "utf8")) as unknown;
+      return { id: file.slice(0, -".json".length), data, sha256: contentHash(data) };
+    });
 }
 
 /** `results/_meta.json`, or `{}` when absent. */
@@ -123,4 +164,138 @@ export function loadHarnessAllowlist(dir: string): string[] {
     throw new Error(`${HARNESS_ALLOWLIST_FILENAME} must be shaped like {"allow": string[]}`);
   }
   return (parsed as { allow: string[] }).allow;
+}
+
+const VERIFIED_FILENAME = "_verified.json";
+
+function isVerifiedEntry(value: unknown): value is VerifiedEntry {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    ((value as { tier?: unknown }).tier === 1 || (value as { tier?: unknown }).tier === 2) &&
+    typeof (value as { signer?: unknown }).signer === "string" &&
+    typeof (value as { subject_sha256?: unknown }).subject_sha256 === "string"
+  );
+}
+
+/**
+ * `results/_verified.json`'s `{"<id>": {tier, signer, run_url?}}` map (ADR-011
+ * provenance tiers, U19) - written ahead of time by the separate `--verify-attestations`
+ * step (`provenance.ts`'s `verifyEntries`), never by `pnpm leaderboard`'s own offline
+ * default path. A *missing* file defaults to `{}` (no entry is verified - every
+ * guardrail-track result is Tier 3/self-reported until proven otherwise, ADR-011's own
+ * default). A file that *exists* but is malformed throws, for the same reason
+ * `loadHarnessAllowlist` does: silently treating a corrupted/tampered verification map
+ * as "nothing is verified" is safe, but silently treating it as "{} means verify
+ * nothing is wrong" either way - either way a throw surfaces the problem instead of
+ * either silently under- or over-trusting a broken file.
+ */
+export function loadVerifiedMap(dir: string): VerifiedMap {
+  let raw: string;
+  try {
+    raw = readFileSync(join(dir, VERIFIED_FILENAME), "utf8");
+  } catch (err) {
+    if (isErrnoException(err) && err.code === "ENOENT") return {};
+    throw new Error(
+      `failed to read ${VERIFIED_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `${VERIFIED_FILENAME} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `${VERIFIED_FILENAME} must be shaped like {"<id>": {tier, signer, subject_sha256}}`,
+    );
+  }
+  const out: VerifiedMap = {};
+  for (const [id, entry] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!isVerifiedEntry(entry)) {
+      throw new Error(
+        `${VERIFIED_FILENAME}: entry "${id}" must be shaped like {tier, signer, subject_sha256}`,
+      );
+    }
+    out[id] = entry;
+  }
+  return out;
+}
+
+const SEASONS_FILENAME = "_seasons.json";
+
+/**
+ * Security review MEDIUM-11: one committed season record - the *public* commitment
+ * published at season start (docs/seasons.md), never the real seed. `corpus_hash` is
+ * the held-out corpus's own hash (not the public `corpus/` dir's), so a Tier 1 report's
+ * `corpus_hash`/`seed_commitment` can be checked against a fixed, independently
+ * published record instead of trusting whatever the report itself claims.
+ */
+export interface SeasonRecord {
+  seed_commitment: string;
+  corpus_hash: string;
+  starts: string;
+  ends: string;
+}
+
+/** `results/_seasons.json`: `{"<season id>": SeasonRecord}`. */
+export type SeasonRecords = Record<string, SeasonRecord>;
+
+function isSeasonRecord(value: unknown): value is SeasonRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { seed_commitment?: unknown }).seed_commitment === "string" &&
+    typeof (value as { corpus_hash?: unknown }).corpus_hash === "string" &&
+    typeof (value as { starts?: unknown }).starts === "string" &&
+    typeof (value as { ends?: unknown }).ends === "string"
+  );
+}
+
+/**
+ * `results/_seasons.json` (security review MEDIUM-11) - this package doesn't own
+ * `results/**` (units-of-work.md: U19 does), so this only reads whatever is (or isn't
+ * yet) there. A *missing* file defaults to `{}` (no season has been committed yet, so
+ * every Tier 1 entry is rejected - condition #14's spirit applies here too: nothing is
+ * ranked until the record it must match actually exists). A *present but malformed*
+ * file throws, same reasoning as `loadHarnessAllowlist`/`loadVerifiedMap`.
+ */
+export function loadSeasonRecords(dir: string): SeasonRecords {
+  let raw: string;
+  try {
+    raw = readFileSync(join(dir, SEASONS_FILENAME), "utf8");
+  } catch (err) {
+    if (isErrnoException(err) && err.code === "ENOENT") return {};
+    throw new Error(
+      `failed to read ${SEASONS_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `${SEASONS_FILENAME} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${SEASONS_FILENAME} must be shaped like {"<season id>": SeasonRecord}`);
+  }
+  const out: SeasonRecords = {};
+  for (const [id, record] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!isSeasonRecord(record)) {
+      throw new Error(
+        `${SEASONS_FILENAME}: entry "${id}" must be shaped like {seed_commitment, corpus_hash, starts, ends}`,
+      );
+    }
+    out[id] = record;
+  }
+  return out;
 }

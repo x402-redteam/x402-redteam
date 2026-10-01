@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  contentHash,
   kindOf,
   loadHarnessAllowlist,
   loadResultsDir,
   loadResultsMeta,
+  loadSeasonRecords,
+  loadVerifiedMap,
 } from "../src/load-results.js";
 
 describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () => {
@@ -106,6 +109,114 @@ describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () =
     it("parses a well-formed allowlist (the file U19 eventually populates)", () => {
       writeFileSync(join(dir, "_harness.json"), JSON.stringify({ allow: ["abc123", "def456"] }));
       expect(loadHarnessAllowlist(dir)).toEqual(["abc123", "def456"]);
+    });
+  });
+
+  describe("loadVerifiedMap (ADR-011 provenance tiers, U19)", () => {
+    it("defaults to {} (every entry is Tier 3) when results/_verified.json is absent", () => {
+      expect(loadVerifiedMap(dir)).toEqual({});
+    });
+
+    it("throws when the file exists but is malformed JSON", () => {
+      writeFileSync(join(dir, "_verified.json"), "not json");
+      expect(() => loadVerifiedMap(dir)).toThrow(/not valid JSON/);
+    });
+
+    it("throws when an entry isn't shaped like {tier, signer, subject_sha256}", () => {
+      writeFileSync(join(dir, "_verified.json"), JSON.stringify({ a: { tier: 3, signer: "x" } }));
+      expect(() => loadVerifiedMap(dir)).toThrow(/must be shaped like/);
+      writeFileSync(join(dir, "_verified.json"), JSON.stringify({ a: { tier: 1 } }));
+      expect(() => loadVerifiedMap(dir)).toThrow(/must be shaped like/);
+      // Security review HIGH-5: subject_sha256 is now required, not optional.
+      writeFileSync(join(dir, "_verified.json"), JSON.stringify({ a: { tier: 1, signer: "x" } }));
+      expect(() => loadVerifiedMap(dir)).toThrow(/must be shaped like/);
+    });
+
+    it("parses a well-formed verified map", () => {
+      writeFileSync(
+        join(dir, "_verified.json"),
+        JSON.stringify({
+          "guard-one": {
+            tier: 1,
+            signer: ".github/workflows/ranked-run.yml",
+            subject_sha256: "a".repeat(64),
+          },
+          "guard-two": {
+            tier: 2,
+            signer: ".github/workflows/rank.yml",
+            subject_sha256: "b".repeat(64),
+            run_url: "https://x",
+          },
+        }),
+      );
+      expect(loadVerifiedMap(dir)).toEqual({
+        "guard-one": {
+          tier: 1,
+          signer: ".github/workflows/ranked-run.yml",
+          subject_sha256: "a".repeat(64),
+        },
+        "guard-two": {
+          tier: 2,
+          signer: ".github/workflows/rank.yml",
+          subject_sha256: "b".repeat(64),
+          run_url: "https://x",
+        },
+      });
+    });
+
+    it("is never loaded as a report by loadResultsDir (underscore-prefixed sidecar)", () => {
+      writeFileSync(join(dir, "_verified.json"), JSON.stringify({}));
+      writeFileSync(join(dir, "naive-baseline.json"), JSON.stringify({ v: 1 }));
+      expect(loadResultsDir(dir).map((e) => e.id)).toEqual(["naive-baseline"]);
+    });
+  });
+
+  describe("loadSeasonRecords (security review MEDIUM-11)", () => {
+    it("defaults to {} when results/_seasons.json is absent", () => {
+      expect(loadSeasonRecords(dir)).toEqual({});
+    });
+
+    it("throws when the file exists but is malformed JSON", () => {
+      writeFileSync(join(dir, "_seasons.json"), "not json");
+      expect(() => loadSeasonRecords(dir)).toThrow(/not valid JSON/);
+    });
+
+    it("throws when an entry isn't shaped like a SeasonRecord", () => {
+      writeFileSync(join(dir, "_seasons.json"), JSON.stringify({ s1: { seed_commitment: "x" } }));
+      expect(() => loadSeasonRecords(dir)).toThrow(/must be shaped like/);
+    });
+
+    it("parses a well-formed season record map", () => {
+      const record = {
+        seed_commitment: "a".repeat(64),
+        corpus_hash: "b".repeat(64),
+        starts: "2026-01-01",
+        ends: "2026-03-31",
+      };
+      writeFileSync(join(dir, "_seasons.json"), JSON.stringify({ s1: record }));
+      expect(loadSeasonRecords(dir)).toEqual({ s1: record });
+    });
+
+    it("is never loaded as a report by loadResultsDir (underscore-prefixed sidecar)", () => {
+      writeFileSync(join(dir, "_seasons.json"), JSON.stringify({}));
+      writeFileSync(join(dir, "naive-baseline.json"), JSON.stringify({ v: 1 }));
+      expect(loadResultsDir(dir).map((e) => e.id)).toEqual(["naive-baseline"]);
+    });
+  });
+
+  describe("contentHash (security review HIGH-5)", () => {
+    it("is independent of key order and whitespace", () => {
+      expect(contentHash({ a: 1, b: 2 })).toBe(contentHash({ b: 2, a: 1 }));
+    });
+
+    it("changes when content changes", () => {
+      expect(contentHash({ a: 1 })).not.toBe(contentHash({ a: 2 }));
+    });
+
+    it("loadResultsDir attaches a matching sha256 to every entry", () => {
+      writeFileSync(join(dir, "a.json"), JSON.stringify({ v: 1 }));
+      const entries = loadResultsDir(dir);
+      expect(entries[0]?.sha256).toBe(contentHash({ v: 1 }));
     });
   });
 });

@@ -5,17 +5,26 @@ import {
   RunRecordSchema,
   type Scenario,
 } from "@x402-redteam/schema";
-import { corpusHash, formatUsd, type Report, scoreSuite, wilson95 } from "@x402-redteam/scorer";
+import {
+  corpusHash,
+  formatUsd,
+  type RedactedReport,
+  type Report,
+  scoreSuite,
+  wilson95,
+} from "@x402-redteam/scorer";
 import {
   CANONICAL,
   GUARDRAIL_REPEAT_DETERMINISTIC,
   HARNESS_COMMIT_FORMAT,
   MIN_REPEAT_AGENT,
   MIN_REPEAT_GUARDRAIL_NONDETERMINISTIC,
+  REFERENCE_IDS,
   VALID_GUARDRAIL_HOOKS,
 } from "./canonical.js";
-import type { EntryKind, ResultsMeta } from "./load-results.js";
+import type { EntryKind, ResultsMeta, SeasonRecords } from "./load-results.js";
 import { kindOf } from "./load-results.js";
+import { RANK_SIGNER, RANKED_RUN_SIGNER, type VerifiedMap } from "./provenance.js";
 
 /** One committed `results/<id>.json`, parsed but not yet validated (U13
  * functional-design.md §3 / U16's: acceptance is checked here, not at load time, so
@@ -24,6 +33,15 @@ export interface LeaderboardEntry {
   /** The filename stem (e.g. `results/naive-baseline.json` -> `"naive-baseline"`). */
   id: string;
   data: unknown;
+  /**
+   * Security review HIGH-5: `load-results.ts`'s `contentHash(data)` - optional only so
+   * every existing test fixture (built before this field existed) still type-checks;
+   * a Tier 1/2 entry with no `sha256` (or one that doesn't match
+   * `results/_verified.json`'s `subject_sha256`) is rejected exactly the same as a
+   * mismatch - see `checkSubjectHash`. Production entries (`loadResultsDir`) always
+   * set this.
+   */
+  sha256?: string;
 }
 
 /** One ranked row of the "Guardrail track — ranked" table (ADR-010 §1, the only ranked
@@ -49,6 +67,10 @@ export interface GuardrailRow {
    * `null`), since every row in this table is already a `track: "guardrail"` entry
    * (`checkTrack`). */
   guardrailErrors: number;
+  /** Security review MEDIUM-11: `config.season` - only ever set on a `ranked` (Tier 1)
+   * row, so the ranked table can render one sub-table per season id. `undefined` on
+   * every Tier 2/reference row (neither carries a season). */
+  seasonId?: string;
 }
 
 /**
@@ -91,8 +113,20 @@ export interface RejectedRow {
 }
 
 export interface LeaderboardResult {
+  /** ADR-011 Tier 1 "Ranked (held-out)" - the only genuinely ranked table. Empty until
+   * a season has actually run and been attested (`results/_verified.json`). */
+  ranked: GuardrailRow[];
+  /** ADR-011 Tier 2 "Verified (public corpus)" - same row shape as `ranked`, but never
+   * merged into it (a different corpus, a different attestation workflow). */
   guardrails: GuardrailRow[];
   agents: AgentScenarioRow[];
+  /**
+   * ORCHESTRATOR RULING (security review): harness-authored reference entries
+   * (`naive`, `guarded`, `allow-all`, ...), any track, exempt from tier gating entirely
+   * (they carry no attestation and need none) and never shown in `ranked`/`guardrails`/
+   * `agents` - sorted by id only (`rank` is a display ordinal, not a ranking).
+   */
+  reference: GuardrailRow[];
   stale: StaleRow[];
   rejected: RejectedRow[];
   markdown: string;
@@ -180,18 +214,138 @@ function requireReportAtV3(data: unknown): asserts data is Report {
   }
 }
 
-/** The v2 part of check 3 (functional-design.md §3.3): seed, chains, scenario subset,
- * controls, and the repeat floor every track shares. */
-function checkCanonicalConfig(report: Report): void {
-  const config = report.config;
-  if (!isRecord(config)) {
-    throw new RejectedError("non-canonical config: report.config is missing");
+/** ADR-011 (U19): `schema === "x402-redteam/report@3-redacted"` - the only shape a Tier
+ * 1 ranked-season entry is ever allowed to be (a full `report@3` never qualifies for
+ * Tier 1, since Tier 1's whole point is that no `runs[]`/prompts/hosts are published). */
+function requireReportAtV3Redacted(data: unknown): asserts data is RedactedReport {
+  if (!isRecord(data) || data.schema !== "x402-redteam/report@3-redacted") {
+    throw new RejectedError('schema is not "x402-redteam/report@3-redacted"');
   }
-  if (config.seed !== CANONICAL.seed) {
+}
+
+/**
+ * ADR-011 (U19): the fields every acceptance check below actually needs, shared by both
+ * a full `Report` and a `RedactedReport` (which is a `Report` minus `runs[]` and with
+ * violation messages blanked - `config`/`summary`/`guardrail_id`/`by_reach_class` are
+ * identical in shape either way). Lets `checkHostAndTiming`, `checkHarnessCommit`,
+ * `checkTrack`, `checkValid`, `checkHasAttackWeight`, `checkFilenameMatchesId` and
+ * `toGuardrailRow` run unchanged against a Tier 1 entry's redacted report.
+ */
+type GuardrailLikeReport = Pick<Report, "config" | "summary" | "guardrail_id" | "by_reach_class">;
+
+/** ADR-011 "Seasons" (U19): a Tier 1 ranked entry must be a season run - a redacted
+ * report with no season would mean a submitter redacted an ordinary public-corpus run,
+ * which proves nothing a held-out season doesn't already have to prove. */
+function checkSeasonActive(report: GuardrailLikeReport): void {
+  if (report.config.season === null) {
     throw new RejectedError(
-      `non-canonical config: seed "${String(config.seed)}" is not "${CANONICAL.seed}"`,
+      "not a season run: config.season is null (ADR-011 Tier 1 requires one)",
     );
   }
+}
+
+/**
+ * ADR-011 (U19): `id` must have a `results/_verified.json` entry at exactly the
+ * requested tier - the out-of-band attestation check's own result (`buildLeaderboard`
+ * never calls a `ProvenanceVerifier` itself, see provenance.ts). No entry (or an entry
+ * at the other tier) is Tier 3 by definition: self-reported, rejected by default.
+ */
+function checkVerifiedTier(id: string, tier: 1 | 2, verified: VerifiedMap): void {
+  const entry = verified[id];
+  if (entry !== undefined && entry.tier === tier) return;
+  const signer = tier === 1 ? RANKED_RUN_SIGNER : RANK_SIGNER;
+  throw new RejectedError(
+    `Tier 3 (self-reported): no verified Tier ${tier} attestation in results/_verified.json ` +
+      `(expected signer "${signer}") - see CONTRIBUTING.md`,
+  );
+}
+
+/**
+ * Security review condition #14: a Tier 1/2 entry is rejected outright while
+ * `results/_harness.json` is absent or still `["*"]` - the permissive wildcard is only
+ * ever acceptable as "nothing is ranked yet" (today's true state), never as "anything
+ * goes" once real entries exist. Applied only to Tier 1/2-gated checks, never to a
+ * reference entry (ORCHESTRATOR RULING: exempt from tier gating) or the agent track
+ * (never gated at all, ADR-010 §4).
+ */
+function checkHarnessAllowlistConcrete(allowlist: string[]): void {
+  if (allowlist.length === 0 || allowlist.includes("*")) {
+    throw new RejectedError(
+      "Tier 1/2 requires a concrete results/_harness.json release allowlist " +
+        '(absent or "*" is rejected, not permissively allowed, until a real release ' +
+        "commit is on it)",
+    );
+  }
+}
+
+/** Security review HIGH-12: a Tier 1/2 guardrail-track entry must record which
+ * guardrail repo@ref it ran - `null`/missing means this report was never run through
+ * either ranking workflow in the first place (both set `--guardrail-repo-ref`). */
+function checkGuardrailRepoRef(config: Record<string, unknown>): void {
+  const ref = config.guardrail_repo_ref;
+  if (typeof ref !== "string" || ref.length === 0) {
+    throw new RejectedError(
+      "Tier 1/2 requires config.guardrail_repo_ref to be set (the guardrail's own " +
+        "org/repo@sha) - got " +
+        JSON.stringify(ref),
+    );
+  }
+}
+
+/**
+ * Security review HIGH-5: `entrySha256` (from `LeaderboardEntry.sha256`, set by
+ * `load-results.ts`'s `contentHash`) must match the attestation's own recorded
+ * `subject_sha256` exactly - this is what binds `results/_verified.json`'s entry to
+ * *this* file's current content, not merely to an id someone once attested something
+ * for. A missing `entrySha256` (a test fixture that never set one) is rejected the
+ * same as a mismatch, never silently skipped.
+ */
+function checkSubjectHash(entrySha256: string | undefined, subjectSha256: string): void {
+  if (entrySha256 === undefined || entrySha256 !== subjectSha256) {
+    throw new RejectedError(
+      "subject hash mismatch: this file's content hash does not match " +
+        "results/_verified.json's attested subject_sha256 (security review HIGH-5)",
+    );
+  }
+}
+
+/**
+ * Security review MEDIUM-11: a Tier 1 report's `config.season`/`seed_commitment` and
+ * `corpus_hash` must match a *committed, independently published* season record
+ * (`results/_seasons.json`) - never merely "whatever this report itself claims".
+ * Reused by nothing else: Tier 2/public-corpus reports are checked against the live
+ * `corpus/` hash instead (`currentHash`, in `buildLeaderboard`).
+ */
+function checkSeasonRecord(report: RedactedReport, seasonRecords: SeasonRecords): void {
+  const seasonId = report.config.season;
+  if (typeof seasonId !== "string") {
+    throw new RejectedError("not a season run: config.season is not a string");
+  }
+  const record = seasonRecords[seasonId];
+  if (record === undefined) {
+    throw new RejectedError(
+      `no committed season record for "${seasonId}" in results/_seasons.json`,
+    );
+  }
+  if (record.seed_commitment !== report.config.seed_commitment) {
+    throw new RejectedError(
+      `seed_commitment mismatch: report's does not match the committed record for season "${seasonId}"`,
+    );
+  }
+  if (record.corpus_hash !== report.corpus_hash) {
+    throw new RejectedError(
+      `corpus_hash mismatch: report's does not match the committed record for season "${seasonId}"`,
+    );
+  }
+}
+
+/**
+ * Security review MEDIUM-11: the part of check 3 that's shared by *every* tier -
+ * chains, scenario subset, controls, and the repeat floor - split out from the seed
+ * check below so a Tier 1 season report (whose `config.seed` is `"season:<id>"`, never
+ * the canonical public seed) can still be held to everything else here.
+ */
+function checkCanonicalConfigShared(config: Record<string, unknown>): void {
   const chains = Array.isArray(config.chains) ? [...config.chains].sort() : undefined;
   const canonicalChains = [...CANONICAL.chains].sort();
   if (chains === undefined || chains.join(",") !== canonicalChains.join(",")) {
@@ -214,9 +368,32 @@ function checkCanonicalConfig(report: Report): void {
   }
 }
 
+/** The seed half of check 3 - canonical for the public corpus (Tier 2 and every
+ * unattested submission); a Tier 1 season report never reaches this (its seed is
+ * `"season:<id>"` by design, see `checkSeasonRecord`/`checkSeasonActive` instead). */
+function checkCanonicalSeed(config: Record<string, unknown>): void {
+  if (config.seed !== CANONICAL.seed) {
+    throw new RejectedError(
+      `non-canonical config: seed "${String(config.seed)}" is not "${CANONICAL.seed}"`,
+    );
+  }
+}
+
+/** The v2 part of check 3 (functional-design.md §3.3): seed, chains, scenario subset,
+ * controls, and the repeat floor every track shares - the full, public-corpus version
+ * (Tier 2 and unattested submissions). */
+function checkCanonicalConfig(report: Report): void {
+  const config = report.config;
+  if (!isRecord(config)) {
+    throw new RejectedError("non-canonical config: report.config is missing");
+  }
+  checkCanonicalSeed(config);
+  checkCanonicalConfigShared(config);
+}
+
 /** v3 (ADR-016 §3): the full config fingerprint's host/timing fields, canonical for
  * every track. */
-function checkHostAndTiming(report: Report): void {
+function checkHostAndTiming(report: GuardrailLikeReport): void {
   const config = report.config;
   if (config.timeout_s !== CANONICAL.timeout_s) {
     throw new RejectedError(
@@ -241,7 +418,7 @@ function checkHostAndTiming(report: Report): void {
  * review round 1, item 4) and be on the release allowlist. `["*"]` (the default until
  * U19 populates `results/_harness.json`) matches anything.
  */
-function checkHarnessCommit(report: Report, allowlist: string[]): void {
+function checkHarnessCommit(report: GuardrailLikeReport, allowlist: string[]): void {
   const commit = report.config.harness_commit;
   if (typeof commit !== "string" || !HARNESS_COMMIT_FORMAT.test(commit)) {
     throw new RejectedError(
@@ -266,7 +443,7 @@ function checkHarnessCommit(report: Report, allowlist: string[]): void {
  *   guardrail more than once can't produce new information, so a higher `repeat` is
  *   itself non-canonical, not just wasteful.
  */
-function checkTrack(report: Report): void {
+function checkTrack(report: GuardrailLikeReport): void {
   const config = report.config;
   const track = config.track;
   if (track === "guardrail") {
@@ -319,7 +496,7 @@ function checkTrack(report: Report): void {
 }
 
 /** Check 4 (functional-design.md §3.4). */
-function checkValid(report: Report): void {
+function checkValid(report: GuardrailLikeReport): void {
   if (report.summary?.valid !== true) {
     throw new RejectedError(
       `invalid run: summary.valid is ${JSON.stringify(report.summary?.valid)}, not true`,
@@ -334,7 +511,7 @@ function checkValid(report: Report): void {
  * report with nothing measured used to get. Neither track can rank or observe a report
  * that measured nothing.
  */
-function checkHasAttackWeight(report: Report): void {
+function checkHasAttackWeight(report: GuardrailLikeReport): void {
   if (report.summary.safety_score === null) {
     throw new RejectedError(
       "report has zero total attack-scenario severity weight (no attack scenarios were scored) and cannot be ranked or observed",
@@ -454,7 +631,7 @@ function checkRescore(report: Report, scenarios: Scenario[]): void {
 
 /** Check 6 (functional-design.md §3.6), the id half; uniqueness is checked once across
  * every tentatively-accepted entry (both tracks), in `buildLeaderboard`. */
-function checkFilenameMatchesId(entryId: string, report: Report): void {
+function checkFilenameMatchesId(entryId: string, report: GuardrailLikeReport): void {
   if (entryId !== report.guardrail_id) {
     throw new RejectedError(
       `filename "${entryId}" does not match guardrail_id "${report.guardrail_id}"`,
@@ -463,7 +640,7 @@ function checkFilenameMatchesId(entryId: string, report: Report): void {
 }
 
 function emptyReachClassByReach(
-  report: Report,
+  report: GuardrailLikeReport,
 ): Record<ReachClass, { passed: number; runs: number }> {
   const out = {} as Record<ReachClass, { passed: number; runs: number }>;
   for (const reachClass of ReachClassSchema.options) {
@@ -473,7 +650,11 @@ function emptyReachClassByReach(
   return out;
 }
 
-function toGuardrailRow(id: string, report: Report, meta: ResultsMeta): Omit<GuardrailRow, "rank"> {
+function toGuardrailRow(
+  id: string,
+  report: GuardrailLikeReport,
+  meta: ResultsMeta,
+): Omit<GuardrailRow, "rank"> {
   return {
     id,
     kind: kindOf(meta, id),
@@ -571,16 +752,13 @@ function withKindMarker(id: string, kind: EntryKind): string {
  * decisions, a mid-run exit), so a guardrail that's merely *broken* (not a deliberate,
  * safe policy) stays visible next to its rank rather than only in `report.json`.
  */
-function renderGuardrailTable(rows: GuardrailRow[]): string[] {
+function renderGuardrailTable(rows: GuardrailRow[], emptyMessage: string): string[] {
   const header = [
     "| # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail errors | harness |",
     "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   if (rows.length === 0) {
-    return [
-      ...header,
-      "| _no accepted guardrail-track results for the current corpus yet — see CONTRIBUTING.md_ | | | | | | | | | | | | |",
-    ];
+    return [...header, `| _${emptyMessage}_ | | | | | | | | | | | | |`];
   }
   const body = rows.map((r) => {
     const rc = r.byReachClass;
@@ -645,35 +823,100 @@ function renderRejectedSection(rejected: RejectedRow[]): string[] {
   ];
 }
 
+/**
+ * Security review MEDIUM-11: one sub-table per season id, each re-ranked (rank 1..N)
+ * within its own season - a guardrail ranked in season "s1" is never compared
+ * positionally against one ranked in season "s2" (different held-out corpora, not a
+ * meaningful ranking against each other).
+ */
+function renderRankedSection(rows: GuardrailRow[]): string[] {
+  const header = [
+    "## Ranked (held-out season)",
+    "",
+    "One sub-table per season - a guardrail's rank is only meaningful within its own " +
+      "season's held-out corpus, never across seasons.",
+    "",
+  ];
+  if (rows.length === 0) {
+    return [
+      ...header,
+      ...renderGuardrailTable(
+        [],
+        "no Tier 1 ranked result yet — a season hasn't run, see docs/seasons.md",
+      ),
+      "",
+    ];
+  }
+  const bySeasonId = new Map<string, GuardrailRow[]>();
+  for (const row of rows) {
+    const seasonId = row.seasonId ?? "unknown";
+    const list = bySeasonId.get(seasonId) ?? [];
+    list.push(row);
+    bySeasonId.set(seasonId, list);
+  }
+  const sections: string[] = [...header];
+  for (const seasonId of [...bySeasonId.keys()].sort((a, b) => a.localeCompare(b, "en"))) {
+    // biome-ignore lint/style/noNonNullAssertion: seasonId came from bySeasonId's own keys.
+    const seasonRows = bySeasonId.get(seasonId)!.map((row, i) => ({ ...row, rank: i + 1 }));
+    sections.push(
+      `### Season ${escapeCell(seasonId)}`,
+      "",
+      ...renderGuardrailTable(seasonRows, ""),
+    );
+    sections.push("");
+  }
+  return sections;
+}
+
+function renderReferenceSection(rows: GuardrailRow[]): string[] {
+  return [
+    "## Reference (harness oracles — exempt from tier gating, never ranked)",
+    "",
+    "Harness-authored fixtures (`naive`, `guarded`, `allow-all`, `deny-all`, " +
+      "`reference-policy`, `sdk-defaults`, ...) used to sanity-check the harness " +
+      "itself (ADR-008 amendment) - never evidence that any real guardrail is safe, " +
+      "and never requiring (or eligible for) a Tier 1/2 attestation. Sorted by id, " +
+      "not ranked - the `#` column here is a display ordinal only.",
+    "",
+    ...renderGuardrailTable(rows, "no reference entries"),
+  ];
+}
+
 function renderMarkdown(
+  ranked: GuardrailRow[],
   guardrails: GuardrailRow[],
   agents: AgentScenarioRow[],
+  reference: GuardrailRow[],
   stale: StaleRow[],
   rejected: RejectedRow[],
 ): string {
   const lines = [
     "# Leaderboard",
     "",
-    "> **Unranked / experimental: scores are not yet comparable across guardrails (see ADR-010).**",
+    '> **Provenance tiers (ADR-011): only Tier 1 "Ranked (held-out)" below is a ranked ' +
+      'result. Tier 2 "Verified (public corpus)" runs the same canonical guardrail-track ' +
+      "config on the public corpus under an attested CI workflow, but is never merged " +
+      "into the ranked table. Tier 3 (self-reported, no attestation) is not accepted by " +
+      "default — see the Rejected section and CONTRIBUTING.md.**",
     "",
-    "The **guardrail track** runs every guardrail behind the same frozen, maximally " +
-      "attempting standard driver (`driver@1`, ADR-010 §1) against the current " +
-      "`corpus/`, so only the guardrail varies — ranked by safety score (descending), " +
-      "then unauthorized $ at risk, capped to each task's modelled wallet balance " +
-      "(ADR-015), (ascending). A `(reference)` suffix marks a harness-authored oracle " +
-      "(`naive`, `guarded`, `allow-all`, ...) used to sanity-check the harness itself, " +
-      "not evidence that any real guardrail is safe (ADR-008 amendment). The **agent " +
-      "track** runs real agents end to end and is never ranked against the guardrail " +
-      "track (ADR-010 §4): one row per agent per attack scenario, never pooled across " +
-      "scenarios, because a guardrail that's fine on average and unsafe on the one " +
-      "scenario that matters is exactly what pooling would hide.",
+    "Both tables run every guardrail behind the same frozen, maximally attempting " +
+      "standard driver (`driver@1`, ADR-010 §1), so only the guardrail varies — ranked " +
+      "by safety score (descending), then unauthorized $ at risk, capped to each task's " +
+      "modelled wallet balance (ADR-015), (ascending). Harness-authored reference " +
+      "oracles never appear in either table - see the dedicated Reference section " +
+      "below. The **agent track** runs real agents end to end and is never ranked " +
+      "against either guardrail-track table (ADR-010 §4): one row per agent per " +
+      "attack scenario, never pooled across scenarios, because a guardrail that's " +
+      "fine on average and unsafe on the one scenario that matters is exactly what " +
+      "pooling would hide.",
     "",
     "Regenerate with `pnpm leaderboard`. See [`CONTRIBUTING.md`](CONTRIBUTING.md) to " +
       "submit your own result.",
     "",
-    "## Guardrail track — ranked",
+    ...renderRankedSection(ranked),
+    "## Verified (public corpus)",
     "",
-    ...renderGuardrailTable(guardrails),
+    ...renderGuardrailTable(guardrails, "no Tier 2 verified result yet — see CONTRIBUTING.md"),
     "",
     "## Agent track — observations (unranked)",
     "",
@@ -683,6 +926,8 @@ function renderMarkdown(
     "",
     ...renderAgentTable(agents),
     "",
+    ...renderReferenceSection(reference),
+    "",
     ...renderRejectedSection(rejected),
     "",
     ...renderStaleSection(stale),
@@ -690,37 +935,76 @@ function renderMarkdown(
   return `${lines.join("\n")}\n`;
 }
 
+/** One accepted entry, tagged with where it ends up - the single list every accepted
+ * report (any tier, any track, reference or not) lives in before the ORCHESTRATOR
+ * RULING's combined duplicate-`guardrail_id` pass, below. */
+type AcceptedItem =
+  | { bucket: "ranked"; id: string; report: RedactedReport }
+  | { bucket: "verified"; id: string; report: Report }
+  | { bucket: "agent"; id: string; report: Report }
+  | { bucket: "reference"; id: string; report: Report };
+
 /**
  * Builds the leaderboard from committed `results/*.json` reports, per U13/U16
- * functional-design.md §3-4: each entry is either accepted into its track's table
- * (guardrail rows ranked by `safety_score` desc, then capped `unauthorized_usd` asc,
- * then id; agent rows, one per attack scenario, ordered by agent id then scenario id,
- * never ranked), set aside as `stale` (its `corpus_hash` doesn't match the current
- * corpus — kept distinct from rejection), or `rejected` with its specific reason (never
- * shown in either table). Pure and deterministic: the same input always produces
- * byte-identical markdown (sorts use a fixed `"en"` locale - code review round 1, item
- * 8 - so the result doesn't depend on the host's default locale).
+ * functional-design.md §3-4 and the ADR-011 provenance tiers (U19, security review):
+ * each entry is either accepted into its bucket (`ranked` Tier 1, `guardrails` Tier 2
+ * "Verified", `agents` unranked observations, or `reference` - harness-authored
+ * oracles, exempt from tier gating, never ranked, ORCHESTRATOR RULING), set aside as
+ * `stale` (its `corpus_hash` doesn't match the current corpus — kept distinct from
+ * rejection; Tier 1 entries are never "stale" this way, since they're checked against
+ * `results/_seasons.json` instead, not the live public corpus), or `rejected` with its
+ * specific reason. Pure and deterministic: the same input always produces
+ * byte-identical markdown (sorts use a fixed `"en"` locale).
  *
- * `harnessAllowlist` defaults to `["*"]` (ADR-011: "the file starts with
- * `{"allow":["*"]}` until U19 fills it") - callers read the real
- * `results/_harness.json` via `loadHarnessAllowlist` and pass it in; tests that don't
- * care about harness-commit provenance can omit it.
+ * `harnessAllowlist` defaults to `["*"]`; `verified` defaults to `{}`; `seasonRecords`
+ * defaults to `{}` - callers read the real `results/_harness.json`/`_verified.json`/
+ * `_seasons.json` via `load-results.ts`'s loaders and pass them in. With every default
+ * left in place, no Tier 1/2 entry can ever be accepted (`checkHarnessAllowlistConcrete`
+ * rejects the wildcard allowlist outright, security review condition #14) - only
+ * `reference` entries and the never-gated agent track can appear at all. Only the
+ * guardrail track is tier-gated; the agent track stays unranked/experimental
+ * regardless of provenance (ADR-010 §4), and a `reference`-kind entry (either track) is
+ * exempt from tier gating entirely (ORCHESTRATOR RULING).
  */
 export function buildLeaderboard(
   entries: LeaderboardEntry[],
   scenarios: Scenario[],
   meta: ResultsMeta,
   harnessAllowlist: string[] = ["*"],
+  verified: VerifiedMap = {},
+  seasonRecords: SeasonRecords = {},
 ): LeaderboardResult {
   const currentHash = corpusHash(scenarios);
   const reachClassByScenario = new Map(scenarios.map((s) => [s.id, s.reach_class]));
 
   const staleEntries: Array<{ id: string; report: Report }> = [];
   const rejected: RejectedRow[] = [];
-  const accepted: Array<{ id: string; report: Report }> = [];
+  const acceptedItems: AcceptedItem[] = [];
 
   for (const entry of entries) {
     try {
+      if (isRecord(entry.data) && entry.data.schema === "x402-redteam/report@3-redacted") {
+        requireReportAtV3Redacted(entry.data);
+        const report = entry.data;
+
+        checkSeasonActive(report);
+        checkCanonicalConfigShared(report.config as unknown as Record<string, unknown>);
+        checkHostAndTiming(report);
+        checkHarnessCommit(report, harnessAllowlist);
+        checkHarnessAllowlistConcrete(harnessAllowlist); // condition #14
+        checkTrack(report);
+        checkValid(report);
+        checkHasAttackWeight(report);
+        checkGuardrailRepoRef(report.config as unknown as Record<string, unknown>); // HIGH-12
+        checkFilenameMatchesId(entry.id, report);
+        checkSeasonRecord(report, seasonRecords); // MEDIUM-11
+        checkVerifiedTier(entry.id, 1, verified);
+        checkSubjectHash(entry.sha256, verified[entry.id]?.subject_sha256 ?? ""); // HIGH-5
+
+        acceptedItems.push({ bucket: "ranked", id: entry.id, report });
+        continue;
+      }
+
       requireReportAtV3(entry.data);
       const report = entry.data;
 
@@ -741,7 +1025,35 @@ export function buildLeaderboard(
       checkRescore(report, scenarios);
       checkFilenameMatchesId(entry.id, report);
 
-      accepted.push({ id: entry.id, report });
+      // ORCHESTRATOR RULING (security review) / security re-review N3: a
+      // reference-kind entry (naive, guarded, allow-all, ...) is exempt from tier
+      // gating entirely, on either track - it needs no attestation and gets its own
+      // dedicated, never-ranked section. Requires BOTH results/_meta.json's own
+      // `kind: "reference"` AND the id being one of the hardcoded REFERENCE_IDS - a
+      // compromised/accidental _meta.json edit marking some arbitrary id "reference"
+      // can't, by itself, exempt an id that isn't also in this code-reviewed allowlist.
+      const isReference = kindOf(meta, entry.id) === "reference" && REFERENCE_IDS.has(entry.id);
+
+      if (report.config.track === "guardrail" && !isReference) {
+        // ADR-011 Tier 2 "Verified (public corpus)": a guardrail-track entry needs a
+        // verified attestation, a concrete harness allowlist, a bound guardrail
+        // repo@ref, and a matching content hash - any missing piece makes it Tier 3
+        // (self-reported), rejected by default.
+        checkHarnessAllowlistConcrete(harnessAllowlist); // condition #14
+        checkGuardrailRepoRef(report.config as unknown as Record<string, unknown>); // HIGH-12
+        checkVerifiedTier(entry.id, 2, verified);
+        checkSubjectHash(entry.sha256, verified[entry.id]?.subject_sha256 ?? ""); // HIGH-5
+      }
+
+      acceptedItems.push({
+        bucket: isReference
+          ? "reference"
+          : report.config.track === "guardrail"
+            ? "verified"
+            : "agent",
+        id: entry.id,
+        report,
+      });
     } catch (err) {
       const reason =
         err instanceof RejectedError
@@ -751,49 +1063,81 @@ export function buildLeaderboard(
     }
   }
 
-  // Check 6's other half: ids must be unique across every entry that otherwise would be
-  // ranked or observed - a collision can't be resolved in favour of either file, so both
-  // are rejected. Checked across both tracks together: `guardrail_id` is the one shared
-  // identity field (U15's `SuiteMeta`).
-  const byGuardrailId = new Map<string, Array<{ id: string; report: Report }>>();
-  for (const a of accepted) {
-    const list = byGuardrailId.get(a.report.guardrail_id) ?? [];
-    list.push(a);
-    byGuardrailId.set(a.report.guardrail_id, list);
+  // ORCHESTRATOR RULING (security review): one combined duplicate-`guardrail_id` pass
+  // across every bucket (ranked/verified/agent/reference) together, not one pass per
+  // bucket - `guardrail_id` is the one shared identity field (U15's `SuiteMeta`)
+  // regardless of tier or track, so a collision between e.g. a Tier 1 entry and a
+  // Tier 2 entry claiming the same `guardrail_id` must be caught too.
+  const byGuardrailId = new Map<string, AcceptedItem[]>();
+  for (const item of acceptedItems) {
+    const list = byGuardrailId.get(item.report.guardrail_id) ?? [];
+    list.push(item);
+    byGuardrailId.set(item.report.guardrail_id, list);
   }
-  const unique: Array<{ id: string; report: Report }> = [];
+  const uniqueItems: AcceptedItem[] = [];
   for (const list of byGuardrailId.values()) {
     if (list.length === 1) {
       // biome-ignore lint/style/noNonNullAssertion: list.length === 1 was just checked.
-      unique.push(list[0]!);
+      uniqueItems.push(list[0]!);
     } else {
-      for (const a of list) {
+      for (const item of list) {
         rejected.push({
-          id: a.id,
-          reason: `duplicate guardrail_id "${a.report.guardrail_id}" across multiple result files`,
+          id: item.id,
+          reason: `duplicate guardrail_id "${item.report.guardrail_id}" across multiple result files`,
         });
       }
     }
   }
 
-  const guardrailEntries = unique.filter(({ report }) => report.config.track === "guardrail");
-  const agentEntries = unique.filter(({ report }) => report.config.track === "agent");
+  const rankedItems = uniqueItems.filter(
+    (i): i is Extract<AcceptedItem, { bucket: "ranked" }> => i.bucket === "ranked",
+  );
+  const verifiedItems = uniqueItems.filter(
+    (i): i is Extract<AcceptedItem, { bucket: "verified" }> => i.bucket === "verified",
+  );
+  const agentItems = uniqueItems.filter(
+    (i): i is Extract<AcceptedItem, { bucket: "agent" }> => i.bucket === "agent",
+  );
+  const referenceItems = uniqueItems.filter(
+    (i): i is Extract<AcceptedItem, { bucket: "reference" }> => i.bucket === "reference",
+  );
 
-  const guardrails = guardrailEntries
-    .map(({ id, report }) => toGuardrailRow(id, report, meta))
-    .sort((a, b) => {
-      if (b.safetyScore !== a.safetyScore) return b.safetyScore - a.safetyScore;
-      if (a.unauthorizedUsd !== b.unauthorizedUsd) return a.unauthorizedUsd - b.unauthorizedUsd;
-      return a.id.localeCompare(b.id, "en");
-    })
+  const bySafetyThenId = (
+    a: { safetyScore: number; unauthorizedUsd: number; id: string },
+    b: typeof a,
+  ) => {
+    if (b.safetyScore !== a.safetyScore) return b.safetyScore - a.safetyScore;
+    if (a.unauthorizedUsd !== b.unauthorizedUsd) return a.unauthorizedUsd - b.unauthorizedUsd;
+    return a.id.localeCompare(b.id, "en");
+  };
+
+  const ranked = rankedItems
+    .map(({ id, report }) => ({
+      ...toGuardrailRow(id, report, meta),
+      // biome-ignore lint/style/noNonNullAssertion: checkSeasonActive already rejected a null season.
+      seasonId: report.config.season!,
+    }))
+    .sort(bySafetyThenId)
     .map((row, i) => ({ rank: i + 1, ...row }));
 
-  const agents = agentEntries
+  const guardrails = verifiedItems
+    .map(({ id, report }) => toGuardrailRow(id, report, meta))
+    .sort(bySafetyThenId)
+    .map((row, i) => ({ rank: i + 1, ...row }));
+
+  const agents = agentItems
     .flatMap(({ id, report }) => toAgentScenarioRows(id, report, meta, reachClassByScenario))
     .sort(
       (a, b) =>
         a.agentId.localeCompare(b.agentId, "en") || a.scenarioId.localeCompare(b.scenarioId, "en"),
     );
+
+  // ORCHESTRATOR RULING: reference rows are sorted by id only - `rank` is a display
+  // ordinal, not a ranking (they're never ranked, regardless of safety score).
+  const reference = referenceItems
+    .map(({ id, report }) => toGuardrailRow(id, report, meta))
+    .sort((a, b) => a.id.localeCompare(b.id, "en"))
+    .map((row, i) => ({ rank: i + 1, ...row }));
 
   const stale = staleEntries
     .map(({ id, report }) => ({
@@ -809,10 +1153,12 @@ export function buildLeaderboard(
   rejected.sort((a, b) => a.id.localeCompare(b.id, "en"));
 
   return {
+    ranked,
     guardrails,
     agents,
+    reference,
     stale,
     rejected,
-    markdown: renderMarkdown(guardrails, agents, stale, rejected),
+    markdown: renderMarkdown(ranked, guardrails, agents, reference, stale, rejected),
   };
 }

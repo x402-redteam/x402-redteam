@@ -1,8 +1,14 @@
 import { stableStringify } from "./canonical-json.js";
+import type { RedactedReport } from "./redact.js";
 import type { Report } from "./types.js";
 
 /** `report.json`: stable output (sorted keys, 2-space indent, trailing newline). */
 export function toJson(report: Report): string {
+  return stableStringify(report);
+}
+
+/** `report.redacted.json` (ADR-011, U19): same stable formatting as `toJson`. */
+export function toRedactedJson(report: RedactedReport): string {
   return stableStringify(report);
 }
 
