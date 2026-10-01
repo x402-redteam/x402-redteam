@@ -100,3 +100,7 @@
 - Orchestrator decision (contract): in scenario templates `{{base_url}}` = hostUrl(mode, baseUrl, "provider.test"); task.base_url stays harness origin (path mode byte-identical). Fixes 1–8 sent to U15.
 - U15 fix round (862de24) merged: 470 unit tests; path mode unchanged; v3 seams for U16–U21 in place. Phase A done (E2E pending).
 - Phase A E2E: 18/18 (283 s, load ~6). Launching Phase B1: U16, U17, U18.
+- U16 built (f4842e0): N1 closed (persisted authorization_window_exceeded; leaderboard re-score is plain deep-equal). Code review: DO NOT MERGE YET — CRITICAL: runs[] coverage not checked → controls-only report ranks #1 at 100; dropping a failing scenario lifts 50→85; repeat/chain under-reporting accepted. Also _harness.json loaded as an entry; malformed allowlist allows all; hooks/harness_commit unvalidated + table-cell injection; null nondeterminism accepted.
+- Orchestrator rulings: ADR-016 §3 repeat rule (=1, or ≥3 if nondeterministic); ADR-010 §4 per-scenario Wilson interval on agent track. Fixes 1–8 sent to U16.
+- CI note: the LEADERBOARD.md diff-check has been RED on main since U15 (committed results are report@2, now rejected). Orchestrator will regenerate reference results at the end of Phase B (U19 redoes them with provenance in Phase C).
+- U17 built (9ddbfb0): *.localhost virtual hosting + proxy mode; default host mode flipped to localhost; hostname-allowlist passes lookalike-domain only in localhost mode (M1 validity proof). Node 20 global fetch ignores HTTP_PROXY (README says use undici EnvHttpProxyAgent). In code review.
