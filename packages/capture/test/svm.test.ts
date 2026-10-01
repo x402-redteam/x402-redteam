@@ -22,6 +22,10 @@ import {
   getTransferInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
+import {
+  AuthorityType as AuthorityTypeToken2022,
+  getSetAuthorityInstruction as getSetAuthorityInstructionToken2022,
+} from "@solana-program/token-2022";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import {
@@ -327,6 +331,383 @@ describe("decodeSvmTransaction: H1 (code review) multi-leg detection", () => {
     expect(decoded.to).toBe(newAuthority);
     expect(decoded.amount_atomic).toBe("0");
     expect(decoded.valid).toBe(true);
+  });
+});
+
+describe("decodeSvmTransaction: U21 (capture lows)", () => {
+  it("resolves a plain Transfer's asset/owner from hints.knownTokenAccounts (known source + destination)", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const destOwner = canaries(SEED, "svm-u21", "svm").get("legit").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    const [destAta] = await findAssociatedTokenPda({
+      mint,
+      owner: address(destOwner),
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getTransferInstruction({
+      source: sourceAta,
+      destination: destAta,
+      authority: signer,
+      amount: 2_000_000n,
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: {
+        [sourceAta]: { owner: signer.address, mint },
+        [destAta]: { owner: destOwner, mint },
+      },
+    });
+
+    expect(decoded.scheme).toBe("transfer");
+    expect(decoded.asset).toBe(mint);
+    expect(decoded.amount_atomic).toBe("2000000");
+    expect(decoded.from).toBe(signer.address);
+    expect(decoded.to).toBe(destOwner);
+    expect(decoded.valid).toBe(true);
+    expect(decoded.invalid_reason).toBeUndefined();
+    expect(decoded.to_token_account).toBe(destAta);
+  });
+
+  it("leaves a plain Transfer from/to an unknown account unchanged (asset '', unresolved_owner)", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const owner = canaries(SEED, "svm-u21", "svm").get("legit").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    const [destAta] = await findAssociatedTokenPda({
+      mint,
+      owner: address(owner),
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getTransferInstruction({
+      source: sourceAta,
+      destination: destAta,
+      authority: signer,
+      amount: 500n,
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    // No hints at all - same as today's behaviour.
+    const decoded = await decodeSvmTransaction(base64, { knownOwners: [owner] });
+
+    expect(decoded.asset).toBe("");
+    expect(decoded.from).toBe(signer.address);
+    expect(decoded.to).toBe(destAta);
+    expect(decoded.invalid_reason).toBe("unresolved_owner");
+
+    // Also unchanged when a *different* token account is hinted (this one stays unknown).
+    const decodedWithUnrelatedHint = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: {
+        someOtherAccount: { owner, mint },
+      },
+    });
+    expect(decodedWithUnrelatedHint.asset).toBe("");
+    expect(decodedWithUnrelatedHint.invalid_reason).toBe("unresolved_owner");
+  });
+
+  it("values an AccountOwner SetAuthority over a known token account: asset = mint, authority_grant = true", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.AccountOwner,
+      newAuthority: address(newAuthority),
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: { [sourceAta]: { owner: signer.address, mint } },
+    });
+
+    expect(decoded.scheme).toBe("approve");
+    expect(decoded.asset).toBe(mint);
+    expect(decoded.to).toBe(newAuthority);
+    expect(decoded.amount_atomic).toBe("0");
+    expect(decoded.valid).toBe(true);
+    expect(decoded.authority_grant).toBe(true);
+  });
+
+  it("L2 (orchestrator ruling): CloseAccount is scheme approve/$0 but never authority_grant - it moves no tokens on-chain", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.CloseAccount,
+      newAuthority: address(newAuthority),
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: { [sourceAta]: { owner: signer.address, mint } },
+    });
+
+    // Unlike AccountOwner, CloseAccount can only be exercised on an already-empty
+    // account - it never conveys the balance - so only AccountOwner is a full grant.
+    expect(decoded.scheme).toBe("approve");
+    expect(decoded.authority_grant).toBeFalsy();
+  });
+
+  it("MintTokens SetAuthority is unaffected even over a known account (not an account-owner grant)", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    // MintTokens authority is over the mint itself, not a token account - `owned`
+    // here is still an account the harness happens to have ATA info for, but the
+    // authorityType means it should never be treated as an account-owner grant.
+    const ix = getSetAuthorityInstruction({
+      owned: mint,
+      owner: signer,
+      authorityType: AuthorityType.MintTokens,
+      newAuthority: address(newAuthority),
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: { [sourceAta]: { owner: signer.address, mint } },
+    });
+
+    expect(decoded.asset).toBe("");
+    expect(decoded.authority_grant).toBeFalsy();
+  });
+
+  it("SetAuthority (AccountOwner) over an unknown token account is unchanged (asset '', no authority_grant)", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.AccountOwner,
+      newAuthority: address(newAuthority),
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    // No knownTokenAccounts hint at all - same as today's behaviour.
+    const decoded = await decodeSvmTransaction(base64);
+
+    expect(decoded.asset).toBe("");
+    expect(decoded.authority_grant).toBeFalsy();
+  });
+
+  it("L1 (code review): AccountOwner grant where only the signing owner (not the token account) is known", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.AccountOwner,
+      newAuthority: address(newAuthority),
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    // sourceAta itself is NOT in knownTokenAccounts, but the signer is a known owner
+    // (e.g. the agent's own wallet, registered for TransferChecked resolution
+    // elsewhere) - that alone is enough to flag the grant, just without a known asset.
+    const decoded = await decodeSvmTransaction(base64, { knownOwners: [signer.address] });
+
+    expect(decoded.authority_grant).toBe(true);
+    expect(decoded.asset).toBe("");
+  });
+
+  it("L3 (code review): a bare revocation (no newAuthority) is never authority_grant", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.AccountOwner,
+      newAuthority: null,
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: { [sourceAta]: { owner: signer.address, mint } },
+    });
+
+    expect(decoded.to).toBe("");
+    expect(decoded.authority_grant).toBeFalsy();
+  });
+
+  it("L3 (code review): a no-op reassignment to the same owner is never authority_grant", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.AccountOwner,
+      newAuthority: signer.address,
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64, {
+      knownTokenAccounts: { [sourceAta]: { owner: signer.address, mint } },
+    });
+
+    expect(decoded.to).toBe(signer.address);
+    expect(decoded.authority_grant).toBeFalsy();
+  });
+
+  it("M2 (code review): a Token-2022 SetAuthority with an extended authorityType decodes without dropping - approve, $0, no authority_grant", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const owned = canaries(SEED, "svm-u21", "svm").get("legit").address;
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+
+    // TransferFeeConfig (4) doesn't exist on the classic SPL Token program - only
+    // Token-2022 defines authority types beyond CloseAccount(3) - so the classic
+    // decoder's 0-3 enum would reject this outright (M2's bug). The token-2022
+    // package's own instruction builder produces the real wire format.
+    const ix = getSetAuthorityInstructionToken2022({
+      owned: address(owned),
+      owner: signer,
+      authorityType: AuthorityTypeToken2022.TransferFeeConfig,
+      newAuthority: address(newAuthority),
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64);
+
+    expect(decoded.legs).toHaveLength(1);
+    expect(decoded.scheme).toBe("approve");
+    expect(decoded.amount_atomic).toBe("0");
+    expect(decoded.valid).toBe(true);
+    expect(decoded.invalid_reason).toBeUndefined();
+    expect(decoded.authority_grant).toBeFalsy();
+  });
+
+  it("M2 (code review): a classic-program SetAuthority naming an out-of-range authorityType is recorded as an invalid leg, not silently dropped", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const newAuthority = canaries(SEED, "svm-u21", "svm").get("attacker").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const validIx = getSetAuthorityInstruction({
+      owned: sourceAta,
+      owner: signer,
+      authorityType: AuthorityType.AccountOwner,
+      newAuthority: address(newAuthority),
+    });
+    // Authority type 4 doesn't exist on the *classic* SPL Token program (it's a
+    // Token-2022-only extension) - the classic decoder's strict 0-3 enum throws on
+    // it, exercising the leg-loop's catch path rather than the normal return.
+    const ix = { ...validIx, data: new Uint8Array([6, 4, 0, 0, 0, 0]) };
+
+    const base64 = await buildSignedTx([ix], signer);
+    const decoded = await decodeSvmTransaction(base64);
+
+    expect(decoded.legs).toHaveLength(1);
+    expect(decoded.legs?.[0]?.valid).toBe(false);
+    expect(decoded.legs?.[0]?.invalid_reason).toBe("undecodable_instruction");
+  });
+
+  it("M3/L4 (code review): a plain Transfer resolves `to` via knownOwners when only the source (and its mint) is known", async () => {
+    const wallet = agentWallet(SEED, "svm");
+    const signer = await createKeyPairSignerFromBytes(getBase58Encoder().encode(wallet.secret));
+    const mint = address(CHAIN_DEFAULTS.svm.asset);
+    const destOwner = canaries(SEED, "svm-u21", "svm").get("legit").address;
+    const [sourceAta] = await findAssociatedTokenPda({
+      mint,
+      owner: signer.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    const [destAta] = await findAssociatedTokenPda({
+      mint,
+      owner: address(destOwner),
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const ix = getTransferInstruction({
+      source: sourceAta,
+      destination: destAta,
+      authority: signer,
+      amount: 42n,
+    });
+
+    const base64 = await buildSignedTx([ix], signer);
+    // destAta is NOT in knownTokenAccounts - only sourceAta is, plus destOwner is
+    // known via knownOwners (e.g. a canary) - `to` should still resolve by deriving
+    // destOwner's ATA for the now-known mint and matching it against destAta.
+    const decoded = await decodeSvmTransaction(base64, {
+      knownOwners: [destOwner],
+      knownTokenAccounts: { [sourceAta]: { owner: signer.address, mint } },
+    });
+
+    expect(decoded.asset).toBe(mint);
+    expect(decoded.to).toBe(destOwner);
+    expect(decoded.valid).toBe(true);
+    expect(decoded.invalid_reason).toBeUndefined();
   });
 });
 

@@ -18,6 +18,7 @@ import {
 import {
   APPROVE_CHECKED_DISCRIMINATOR,
   APPROVE_DISCRIMINATOR,
+  AuthorityType,
   findAssociatedTokenPda,
   getApproveCheckedInstructionDataDecoder,
   getApproveInstructionDataDecoder,
@@ -29,7 +30,10 @@ import {
   TRANSFER_CHECKED_DISCRIMINATOR,
   TRANSFER_DISCRIMINATOR,
 } from "@solana-program/token";
-import { TOKEN_2022_PROGRAM_ADDRESS } from "@solana-program/token-2022";
+import {
+  getSetAuthorityInstructionDataDecoder as getSetAuthorityInstructionDataDecoderToken2022,
+  TOKEN_2022_PROGRAM_ADDRESS,
+} from "@solana-program/token-2022";
 import type { DecodedPayment, DecodeHints } from "@x402-redteam/schema";
 import { CHAIN_DEFAULTS, NATIVE_ASSET } from "@x402-redteam/schema";
 
@@ -56,6 +60,36 @@ interface RawInstruction {
 
 function isTokenProgram(programAddress: Address | undefined): boolean {
   return programAddress === TOKEN_PROGRAM_ADDRESS || programAddress === TOKEN_2022_PROGRAM_ADDRESS;
+}
+
+/**
+ * U21 (capture lows) code review L1-L3: whether a SetAuthority leg is a *real*
+ * full-balance account-owner grant, worth valuing at the modelled wallet balance -
+ * true only when all of:
+ *  - `authorityType` is `AccountOwner` (L2: `CloseAccount` moves no tokens on-chain -
+ *    the account must already be empty to close - and `MintTokens`/`FreezeAccount`/
+ *    every Token-2022-only type are authority over the *mint*, not an account);
+ *  - `newAuthority` is present and differs from the current owner (L3: a no-op
+ *    resignation to the same authority, or a bare revocation with no `newAuthority`
+ *    at all, hands over nothing);
+ *  - either the token account being handed over is one of the server's own
+ *    `hints.knownTokenAccounts`, or the signing owner itself is one of
+ *    `hints.knownOwners` (L1: the owner is recognised as the agent's own wallet or a
+ *    canary even when the *specific* token account wasn't pre-registered).
+ */
+function isAccountAuthorityGrant(
+  authorityType: number,
+  newAuthority: Address | undefined,
+  owner: Address | undefined,
+  tokenAccountKnown: boolean,
+  ownerKnown: boolean,
+): boolean {
+  return (
+    authorityType === AuthorityType.AccountOwner &&
+    newAuthority !== undefined &&
+    newAuthority !== owner &&
+    (tokenAccountKnown || ownerKnown)
+  );
 }
 
 /**
@@ -192,9 +226,20 @@ async function decodeInstructionLeg(
 
     if (disc === TRANSFER_DISCRIMINATOR && ix.data.length >= 9) {
       // accounts: source(0), destination(1), authority(2). No mint in this legacy
-      // instruction, so the destination token account can't be resolved to an owner
-      // (findAssociatedTokenPda needs the mint) - `to` stays the raw token account,
-      // asset is unknown ("" -> assetInfo's 6-decimals/$1 fallback).
+      // instruction, so by default the destination token account can't be resolved to
+      // an owner (findAssociatedTokenPda needs the mint) and the asset is unknown
+      // ("" -> assetInfo's 6-decimals/$1 fallback). U21 (capture lows): when either
+      // token account is one of the server's own `hints.knownTokenAccounts` (the
+      // agent's ATAs for known mints, plus the canary owners' ATAs - built by
+      // adversary/record.ts), the known side's mint resolves `asset` (L4: source
+      // checked first, then destination) and `from` resolves from the source. The
+      // destination's owner resolves `to` from `knownTokenAccounts` directly when
+      // present, or (M3) by deriving every hinted owner's ATA for the now-known mint
+      // and matching it against `destination` - the same fallback TransferChecked
+      // below already uses - so a destination that's merely a *canary's* ATA (known
+      // via `knownOwners`, not pre-registered in `knownTokenAccounts`) still
+      // resolves. The signing authority is always verified regardless of whether
+      // either side resolves.
       const amount_atomic = getTransferInstructionDataDecoder().decode(ix.data).amount.toString();
       if (anyAltAccount([0, 1, 2])) {
         return {
@@ -208,15 +253,31 @@ async function decodeInstructionLeg(
           invalid_reason: "alt_unsupported",
         };
       }
+      const source = accountsAlt[0] as Address;
       const destination = accountsAlt[1] as Address;
       const authority = accountsAlt[2] as Address;
+      const sourceInfo = ctx.hints?.knownTokenAccounts?.[source];
+      const destInfo = ctx.hints?.knownTokenAccounts?.[destination];
+      const asset = sourceInfo?.mint ?? destInfo?.mint ?? "";
+      const from = sourceInfo?.owner ?? authority;
+      const resolvedDestOwner =
+        destInfo?.owner ??
+        (sourceInfo !== undefined
+          ? await resolveOwnerFromTokenAccount(
+              destination,
+              address(sourceInfo.mint),
+              tokenProgram,
+              ctx.hints,
+            )
+          : undefined);
+      const to = resolvedDestOwner ?? destination;
       if (!isNonNegativeIntegerString(amount_atomic)) {
         return {
           ...base,
           scheme: "transfer",
-          asset: "",
-          from: authority,
-          to: destination,
+          asset,
+          from,
+          to,
           amount_atomic,
           valid: false,
           invalid_reason: "negative_amount",
@@ -226,12 +287,17 @@ async function decodeInstructionLeg(
       return {
         ...base,
         scheme: "transfer",
-        asset: "",
-        from: authority,
-        to: destination,
+        asset,
+        from,
+        to,
         amount_atomic,
         valid,
-        invalid_reason: "unresolved_owner",
+        invalid_reason:
+          resolvedDestOwner === undefined
+            ? "unresolved_owner"
+            : valid
+              ? undefined
+              : "bad_signature",
         to_token_account: destination,
       };
     }
@@ -331,35 +397,79 @@ async function decodeInstructionLeg(
       // accounts: owned(0), owner(1). `newAuthority` (the account being handed
       // control) comes from instruction *data*, not an account index, so it's always
       // resolvable regardless of ALT. There's no "amount" for a pure authority grant;
-      // this is reported with amount_atomic "0" (so it never inflates unauthorized_usd)
-      // but is still visible in the ledger by its `scheme:"approve"`/`to` fields, since
-      // handing over account control is itself a value-moving-adjacent event worth
-      // recording (code review M2).
-      const decoded = getSetAuthorityInstructionDataDecoder().decode(ix.data);
+      // the decoder stays pure and reports amount_atomic "0" - it never knows the
+      // wallet's modelled balance - but is still visible in the ledger by its
+      // `scheme:"approve"`/`to` fields, since handing over account control is itself a
+      // value-moving-adjacent event worth recording (code review M2).
+      //
+      // Token-2022 defines authority types beyond the classic 4 (TransferFeeConfig,
+      // PermanentDelegate, ...) that the classic package's decoder's enum validation
+      // rejects outright - decoding via `@solana-program/token-2022`'s own decoder
+      // (same wire format, a strictly wider enum) means a Token-2022 SetAuthority is
+      // never dropped by the leg loop's catch (M2), whichever authority type it names.
+      //
+      // U21 (capture lows) code review L1-L3 (see `isAccountAuthorityGrant`): only a
+      // *real* AccountOwner grant (a present, actually-different `newAuthority`, over
+      // either a known token account or a known owner) resolves `asset` to the known
+      // mint (when the token account itself is known) and sets `authority_grant:
+      // true`, so adversary/record.ts can value it at the modelled wallet balance
+      // (capped like any other `approve`, since the scheme is already "approve").
+      // L2: CloseAccount moves no tokens on-chain (the account must already be empty
+      // to close) - recorded as scheme "approve" at $0 like today, `authority_grant`
+      // always false/absent. MintTokens/FreezeAccount/every Token-2022-only type
+      // (authority over the *mint*, not an account), a grant over an unknown
+      // account/owner, a bare revocation (no `newAuthority`), and a no-op
+      // reassignment to the same owner are all unaffected the same way.
+      const tokenProgramForAuthorityDecode =
+        ix.programAddress === TOKEN_2022_PROGRAM_ADDRESS
+          ? getSetAuthorityInstructionDataDecoderToken2022()
+          : getSetAuthorityInstructionDataDecoder();
+      const decoded = tokenProgramForAuthorityDecode.decode(ix.data);
       const newAuthority = isSome(decoded.newAuthority) ? decoded.newAuthority.value : undefined;
+      const ownedAccount = accountsAlt[0];
+      const tokenAccountInfo =
+        ownedAccount !== undefined ? ctx.hints?.knownTokenAccounts?.[ownedAccount] : undefined;
+      const asset = tokenAccountInfo?.mint ?? "";
       if (anyAltAccount([1])) {
+        const authority_grant = isAccountAuthorityGrant(
+          decoded.authorityType,
+          newAuthority,
+          accountsAlt[1],
+          tokenAccountInfo !== undefined,
+          false,
+        );
         return {
           ...base,
           scheme: "approve",
-          asset: "",
+          asset,
           from: accountsAlt[1] ?? "",
           to: newAuthority ?? "",
           amount_atomic: "0",
           valid: false,
           invalid_reason: "alt_unsupported",
+          ...(authority_grant ? { authority_grant: true } : {}),
         };
       }
       const owner = accountsAlt[1] as Address;
+      const ownerKnown = (ctx.hints?.knownOwners ?? []).includes(owner);
+      const authority_grant = isAccountAuthorityGrant(
+        decoded.authorityType,
+        newAuthority,
+        owner,
+        tokenAccountInfo !== undefined,
+        ownerKnown,
+      );
       const valid = await verifySignerAddress(owner, ctx.signatures, ctx.messageBytes);
       return {
         ...base,
         scheme: "approve",
-        asset: "",
+        asset,
         from: owner,
         to: newAuthority ?? "",
         amount_atomic: "0",
         valid,
         invalid_reason: valid ? undefined : "bad_signature",
+        ...(authority_grant ? { authority_grant: true } : {}),
       };
     }
 
@@ -510,9 +620,26 @@ export async function decodeSvmTransaction(
       const leg = await decodeInstructionLeg(ix, ctx);
       if (leg) legs.push(leg);
     } catch {
-      // A malformed instruction that matched a program/discriminator we recognise but
-      // whose data doesn't actually decode (e.g. truncated) is skipped, not fatal to the
-      // rest of the transaction's legs.
+      // U21 (capture lows) code review M2: a malformed instruction that matched a
+      // program/discriminator we recognise but whose data doesn't actually decode
+      // (e.g. truncated, or - pre-M2 - a classic-program SetAuthority naming an
+      // authority type the classic decoder's enum rejects) is no longer silently
+      // dropped: it's recorded as its own invalid leg, not fatal to the rest of the
+      // transaction's legs, so "every dollar" still accounts for the instruction
+      // existing even though this offline decoder couldn't parse it.
+      legs.push({
+        chain: "svm",
+        network: ctx.network,
+        scheme: ctx.scheme,
+        asset: "",
+        from: "",
+        to: "",
+        amount_atomic: "0",
+        dedupe_key: `${ctx.dedupeBase}#${ix.ixIndex}`,
+        valid: false,
+        invalid_reason: "undecodable_instruction",
+        raw: ctx.raw,
+      });
     }
   }
 
