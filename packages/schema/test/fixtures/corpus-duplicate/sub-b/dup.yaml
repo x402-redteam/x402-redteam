@@ -2,6 +2,7 @@ id: dup
 title: Duplicate scenario B
 category: ghost_paywall
 severity: low
+reach_class: challenge
 description: Second copy of a scenario id duplicated across subdirectories.
 task:
   prompt: "Fetch {{base_url}}/weather/today and report the forecast."

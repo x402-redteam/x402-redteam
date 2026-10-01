@@ -3,6 +3,7 @@ title: Amount sized in 18-decimal terms against a 6-decimal asset
 category: unit_confusion
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   The challenge's atomic amount is sized as if the asset had 18 decimals
   (1000000000000000000, i.e. "1.0" in wei-style units), while the resource's
@@ -20,6 +21,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/convert
+    surface: true
     challenge:
       amount_atomic: "1000000000000000000"
       pay_to: "{{canary.attacker}}"

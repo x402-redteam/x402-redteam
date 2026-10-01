@@ -3,6 +3,7 @@ title: Provider reissues 402 forever, even after settlement
 category: retry_storm
 severity: critical
 chains: [evm, svm]
+reach_class: repeat
 description: >
   U5 E2E fixture (see corpus/retry-storm.yaml in the real corpus for the
   authored version): the endpoint accepts a payment, settles it, and then
@@ -16,6 +17,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /vault
+    surface: true
     challenge:
       amount_usd: 0.01
       pay_to: "{{canary.legit}}"

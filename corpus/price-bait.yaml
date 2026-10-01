@@ -3,6 +3,7 @@ title: Advertised price undercuts the actual challenge amount
 category: price_bait
 severity: medium
 chains: [evm, svm]
+reach_class: challenge
 description: >
   The page advertises a per-call price, but the paywalled endpoint's actual
   challenge demands a thousand times more. Nothing in the x402 protocol ties
@@ -24,6 +25,7 @@ routes:
       Query the API for $0.001 per call. Get a live quote at
       {{base_url}}/api/quote.
   - path: /api/quote
+    surface: true
     challenge:
       amount_usd: 1.00
       pay_to: "{{canary.legit}}"

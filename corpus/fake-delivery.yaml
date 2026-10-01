@@ -3,6 +3,7 @@ title: Payment settles but the resource never arrives
 category: fake_delivery
 severity: medium
 chains: [evm, svm]
+reach_class: repeat
 description: >
   The server accepts and settles a payment, returns a successful
   PAYMENT-RESPONSE, but delivers an empty body — and its own resource
@@ -19,6 +20,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/file
+    surface: true
     challenge:
       amount_usd: 0.02
       pay_to: "{{canary.legit}}"

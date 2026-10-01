@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Chain, Severity } from "@x402-redteam/schema";
+import { type Chain, HostModeSchema, type Severity } from "@x402-redteam/schema";
 import { type Report, toMarkdown, toSarif } from "@x402-redteam/scorer";
 import { Command } from "commander";
+import { resolveAgentCommand } from "./guardrail-track.js";
 import { runSuite } from "./run.js";
 import { validate } from "./validate.js";
 
@@ -19,7 +20,11 @@ program.name("x402-redteam").description("x402 red-team harness");
 
 program
   .command("run")
-  .requiredOption("--agent <cmd>", "shell command that starts the agent under test")
+  .option("--agent <cmd>", "shell command that starts the agent under test")
+  .option(
+    "--guardrail <cmd>",
+    "shell command that starts a GDP guardrail (ADR-010; not yet implemented, see U18); mutually exclusive with --agent",
+  )
   .option("--corpus <dir>", "corpus directory", "./corpus")
   .option("--chains <list>", "comma-separated chains (evm,svm)", "evm,svm")
   .option("--scenario <ids>", "comma-separated scenario ids to run (default: all)")
@@ -48,10 +53,53 @@ program
     "--skip-controls",
     "skip control scenarios (debug only; invalidates the report per ADR-009)",
   )
+  .option(
+    "--host-mode <mode>",
+    "how virtual hosts are rendered: localhost|path|proxy (ADR-012)",
+    "path",
+  )
+  .option(
+    "--season-seed-env <name>",
+    "env var name holding the season's secret seed (ADR-011; not yet implemented, see U19)",
+  )
+  .option(
+    "--agent-uid <n>",
+    "run the agent as this uid (Linux, root only; not yet implemented, see U19)",
+  )
+  .option("--redact", "also write report.redacted.json (ADR-011; not yet implemented, see U19)")
   .action(async (opts) => {
     try {
+      if (opts.agent !== undefined && opts.guardrail !== undefined) {
+        throw new Error("--agent and --guardrail are mutually exclusive");
+      }
+      const resolved = resolveAgentCommand({ agent: opts.agent, guardrail: opts.guardrail });
+
+      const hostModeResult = HostModeSchema.safeParse(opts.hostMode);
+      if (!hostModeResult.success) {
+        throw new Error(
+          `--host-mode "${opts.hostMode}" is invalid (expected localhost|path|proxy)`,
+        );
+      }
+      // Code review item 6: a stub flag must fail loudly, not be silently accepted and
+      // ignored - "path" is the only host_mode actually implemented until U17 lands
+      // *.localhost routing and the forward proxy.
+      if (hostModeResult.data !== "path") {
+        throw new Error(
+          `--host-mode "${hostModeResult.data}" is not implemented yet (ADR-012, owner U17)`,
+        );
+      }
+      if (opts.agentUid !== undefined) {
+        throw new Error("--agent-uid is not implemented yet (owner U19)");
+      }
+      if (opts.redact === true) {
+        throw new Error("--redact is not implemented yet (ADR-011, owner U19)");
+      }
+      if (opts.seasonSeedEnv !== undefined) {
+        throw new Error("--season-seed-env is not implemented yet (ADR-011, owner U19)");
+      }
+
       const { exitCode } = await runSuite({
-        agentCmd: opts.agent,
+        ...resolved,
         corpus: resolve(opts.corpus),
         chains: splitList(opts.chains) as Chain[],
         scenarioIds: opts.scenario ? splitList(opts.scenario) : undefined,
@@ -65,6 +113,7 @@ program
         failOn: opts.failOn as Severity,
         passEnv: splitList(opts.passEnv),
         skipControls: opts.skipControls === true,
+        hostMode: hostModeResult.data,
       });
       process.exit(exitCode);
     } catch (err) {

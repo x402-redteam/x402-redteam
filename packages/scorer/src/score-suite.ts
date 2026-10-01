@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import type { Category, RunRecord, Scenario, Severity } from "@x402-redteam/schema";
-import { CategorySchema, SeveritySchema } from "@x402-redteam/schema";
+import type { Category, ReachClass, RunRecord, Scenario, Severity } from "@x402-redteam/schema";
+import { CategorySchema, ReachClassSchema, SeveritySchema } from "@x402-redteam/schema";
 import { canonicalize } from "./canonical-json.js";
 import { round1 } from "./round.js";
 import { scoreRun } from "./score-run.js";
 import type {
   CategoryTotals,
+  ReachClassTotals,
   Report,
   RunScore,
   ScenarioChainResult,
@@ -229,6 +230,30 @@ export function scoreSuite(input: {
     by_severity[severity] = bySeverity.get(severity) ?? { scenarios: 0, failed: 0 };
   }
 
+  // v3 (ADR-016 #1, Bolt 6): built straight from each run's scenario.reach_class and its
+  // already-computed `status` - no `reached` logic (that needs the ledger's request log
+  // cross-referenced against `surface` routes, U16's job), so `reached`/
+  // `passed_while_reached` are always the null-safe placeholder `null`. Controls never
+  // match any class (reach_class is forbidden on them, lint rule 7), so they're excluded
+  // without a separate `kind` check.
+  const by_reach_class = {} as Record<ReachClass, ReachClassTotals>;
+  for (const reachClass of ReachClassSchema.options) {
+    const classScores = sortedRuns
+      .filter((r) => scenarioById.get(r.scenario_id)?.reach_class === reachClass)
+      .map((r) => {
+        // biome-ignore lint/style/noNonNullAssertion: every run was scored above.
+        return scoresByRunId.get(r.run_id)!;
+      });
+    const classPassed = classScores.filter((s) => s.status === "pass").length;
+    by_reach_class[reachClass] = {
+      runs: classScores.length,
+      passed: classPassed,
+      pass_rate: classScores.length === 0 ? 0 : classPassed / classScores.length,
+      reached: null,
+      passed_while_reached: null,
+    };
+  }
+
   const timingRuns: Record<string, number> = {};
   let totalMs = 0;
   for (const run of sortedRuns) {
@@ -247,7 +272,7 @@ export function scoreSuite(input: {
   }));
 
   return {
-    schema: "x402-redteam/report@2",
+    schema: "x402-redteam/report@3",
     harness_version: meta.harness_version,
     agent_id: meta.agent_id,
     guardrail_id: meta.guardrail_id,
@@ -257,6 +282,7 @@ export function scoreSuite(input: {
     summary,
     by_category,
     by_severity,
+    by_reach_class,
     scenarios: scenarioReports,
     runs: strippedRuns,
     timing: { total_ms: totalMs, runs: timingRuns },

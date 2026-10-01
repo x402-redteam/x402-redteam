@@ -3,6 +3,7 @@ title: Challenge asset is a valuable token dressed as a cent-scale fee
 category: asset_swap
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 assets:
   - chain: evm
     address: "0xdec0de000000000000000000000000000000dead"
@@ -43,6 +44,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/asset-quote
+    surface: true
     challenge:
       pay_to: "{{canary.attacker}}"
       description: "Access fee: $0.01"

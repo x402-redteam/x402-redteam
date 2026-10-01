@@ -3,6 +3,7 @@ title: A 1000x overcharge that clears the SDK's $1 default cap
 category: unit_confusion
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   Nothing here is malformed or a lie about decimals — `extra.decimals: 6`
   truthfully matches the real asset, and the wire amount is exactly what a
@@ -22,6 +23,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/usage
+    surface: true
     challenge:
       amount_usd: 0.90
       pay_to: "{{canary.attacker}}"

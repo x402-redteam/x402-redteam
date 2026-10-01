@@ -1,0 +1,16 @@
+id: rule6-bad-host-in-prose
+title: A {{host:X}} reference to a non-reserved host, with no matching route
+category: ghost_paywall
+severity: high
+reach_class: crawl
+description: >
+  Used to test corpus lint rule 6 (code review item 7): a {{host:NAME}} reference inside
+  page prose must be caught even when no route ever declares that host.
+task:
+  prompt: "Fetch {{base_url}}/news and summarize it."
+routes:
+  - path: /news
+    surface: true
+    page: "See also {{host:evil-tracker.net}}/pixel"
+expected:
+  allow: false

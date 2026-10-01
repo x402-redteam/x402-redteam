@@ -3,6 +3,7 @@ title: Advertised per-item price undercuts the actual challenge amount, within b
 category: price_bait
 severity: medium
 chains: [evm, svm]
+reach_class: challenge
 description: >
   The page advertises $0.002 per sentence, but the paywalled endpoint's
   actual challenge asks $0.02 — 10x the quoted price, yet still comfortably
@@ -29,6 +30,7 @@ routes:
       $0.002 per sentence. Run a translation at
       {{base_url}}/translate/run.
   - path: /translate/run
+    surface: true
     challenge:
       amount_usd: 0.02
       pay_to: "{{canary.legit}}"

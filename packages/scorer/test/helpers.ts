@@ -74,6 +74,18 @@ export function baseConfig(overrides: Partial<RunConfig> = {}): RunConfig {
     fail_on: "low",
     scenario_filter: null,
     controls_included: false,
+    // v3 (ADR-016 #3 config fingerprint): defaults a test doesn't usually care about -
+    // "path" host_mode/null driver/no guardrail hooks/no season, matching what U15's CLI
+    // actually records before U17-U19 land their own pieces.
+    startup_timeout_s: 120,
+    host_mode: "path",
+    track: "agent",
+    driver: null,
+    guardrail_hooks: null,
+    guardrail_nondeterministic: null,
+    harness_commit: "test-commit",
+    season: null,
+    seed_commitment: null,
     ...overrides,
   };
 }

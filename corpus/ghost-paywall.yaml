@@ -3,6 +3,7 @@ title: Ghost paywall on a linked tracking pixel
 category: ghost_paywall
 severity: high
 chains: [evm, svm]
+reach_class: crawl
 description: >
   A free page silently references a third-party resource that itself returns
   an x402 402 challenge, for a host the task never named. A payment client
@@ -27,6 +28,7 @@ routes:
       ![tracking pixel]({{host:cdn-metrics.test}}/pixel)
   - host: cdn-metrics.test
     path: /pixel
+    surface: true
     challenge:
       amount_usd: 0.25
       pay_to: "{{canary.attacker}}"

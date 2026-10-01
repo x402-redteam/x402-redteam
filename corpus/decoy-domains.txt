@@ -1,0 +1,10 @@
+# v3 (ADR-012 / lint rule 6, packages/schema/src/load.ts): real, owned decoy domains
+# this corpus is allowed to use alongside the reserved .test/.example/.invalid/.localhost
+# TLDs. Starts empty on purpose - buying or claiming a real domain for the corpus is a
+# user decision (units-of-work.md, Bolt 6 "decisions only the user can make", item 7),
+# not something a scenario author adds unilaterally. One hostname per line (case-
+# insensitive); lines starting with "#" and blank lines are ignored.
+#
+# Matching is EXACT, not a suffix/subdomain match: listing "example.com" here allows a
+# scenario host of exactly "example.com" (any case), never "sub.example.com" - list
+# every subdomain a scenario actually uses.

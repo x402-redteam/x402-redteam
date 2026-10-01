@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Chain } from "@x402-redteam/schema";
+import type { Chain, ReachClass } from "@x402-redteam/schema";
 import { loadCorpus } from "@x402-redteam/schema";
 import type { Report } from "@x402-redteam/scorer";
 import { stripTiming, toJson } from "@x402-redteam/scorer";
@@ -31,6 +31,9 @@ function baseOptions(outDir: string) {
     seed: SEED,
     outDir,
     failOn: "low" as const,
+    // Code review item 5: fixed rather than the real `git rev-parse HEAD` - keeps
+    // report.json byte-comparable across runs independent of the ambient git state.
+    harnessCommit: "test-harness-commit",
   };
 }
 
@@ -67,41 +70,21 @@ function baseOptions(outDir: string) {
  *   `promptonly` must be scored failing every one of these, or the corpus is measuring
  *   its own no-guardrail-ness rather than the attack.
  */
-type ProbeClass = "crawl" | "repeat" | "prose" | "challenge";
+type ProbeClass = ReachClass;
 
-const SCENARIO_CLASS: Record<string, ProbeClass> = {
-  // crawl: the malicious resource is a link discovered in fetched content, not the prompt.
-  "ghost-paywall": "crawl",
-  "ghost-paywall-2": "crawl",
-  "lookalike-domain": "crawl",
-  "lookalike-domain-2": "crawl",
-  "budget-split": "crawl",
-  // repeat: passable by any agent that pays a route at most once (the M3 fix).
-  replay: "repeat",
-  "replay-2": "repeat",
-  "retry-storm": "repeat",
-  "retry-storm-2": "repeat",
-  "fake-delivery": "repeat",
-  "fake-delivery-2": "repeat",
-  // prose: the payload is text only a language-model-capable reader could act on.
-  "prose-payment": "prose",
-  "prose-payment-2": "prose",
-  "challenge-injection": "prose",
-  // challenge: a real, directly-reachable 402 challenge is the entire attack surface.
-  "recipient-redirect": "challenge",
-  "recipient-redirect-2": "challenge",
-  "price-bait": "challenge",
-  "price-bait-2": "challenge",
-  "unit-confusion": "challenge",
-  "unit-confusion-2": "challenge",
-  "unit-confusion-3": "challenge",
-  "rail-switch": "challenge",
-  "rail-switch-2": "challenge",
-  "resource-url-spoof": "challenge",
-  "authorization-lifetime": "challenge",
-  "asset-swap": "challenge",
-  "accepts-ordering": "challenge",
-};
+/**
+ * U15 (Bolt 6, ADR-016 contract landing): this used to be a 27-entry map hand-maintained
+ * in this file (the exact mapping ADR-016 cites as corpus v2's "initial mapping" - crawl
+ * 5, repeat 6, prose 3, challenge 13, see the exhaustiveness test right below). It now
+ * lives in the corpus YAML itself as `reach_class` (lint rule 7 requires it on every
+ * attack scenario), so this reads it straight off the loaded corpus instead of
+ * duplicating it here - the two can no longer drift.
+ */
+const SCENARIO_CLASS: Record<string, ProbeClass> = Object.fromEntries(
+  loadCorpus(REAL_CORPUS)
+    .filter((s) => s.category !== "control")
+    .map((s) => [s.id, s.reach_class as ProbeClass]),
+);
 
 /**
  * `naive` (pays every 402 it meets, unlimited per-payment spend, scans prose, no

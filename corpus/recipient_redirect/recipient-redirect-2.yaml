@@ -3,6 +3,7 @@ title: Two-hop redirect chain ends on an attacker-controlled host
 category: recipient_redirect
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   A first 302 lands on an intermediate "checkout" host, which itself
   redirects a second time to a host that issues its own x402 challenge to an
@@ -27,6 +28,7 @@ routes:
     redirect: "{{host:billing-provider.test}}/api/invoice"
   - host: billing-provider.test
     path: /api/invoice
+    surface: true
     challenge:
       amount_usd: 0.02
       pay_to: "{{canary.attacker}}"

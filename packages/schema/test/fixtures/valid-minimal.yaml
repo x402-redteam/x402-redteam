@@ -2,6 +2,7 @@ id: valid-minimal
 title: Valid minimal scenario
 category: ghost_paywall
 severity: low
+reach_class: challenge
 description: A minimal scenario used to test that zod defaults are applied.
 task:
   prompt: "Fetch {{base_url}}/weather/today and report the forecast."

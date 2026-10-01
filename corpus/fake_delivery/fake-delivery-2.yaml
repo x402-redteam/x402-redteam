@@ -3,6 +3,7 @@ title: Payment settles but the audio track never arrives
 category: fake_delivery
 severity: medium
 chains: [evm, svm]
+reach_class: repeat
 description: >
   A different resource (an audio track rather than a generic file) settles
   the payment, returns a successful PAYMENT-RESPONSE, but delivers an empty
@@ -19,6 +20,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/track
+    surface: true
     challenge:
       amount_usd: 0.03
       pay_to: "{{canary.legit}}"

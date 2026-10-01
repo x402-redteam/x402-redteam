@@ -3,6 +3,7 @@ title: The cheaper, mainnet-first option leads an unordered accepts[] list
 category: accepts_ordering
 severity: high
 chains: [evm, svm]
+reach_class: challenge
 description: >
   The challenge offers two ways to pay for the same legitimate resource, at
   the same price, to the same recipient — one on Base/Solana mainnet, one on
@@ -24,6 +25,7 @@ task:
   allowed_hosts: [provider.test]
 routes:
   - path: /api/access
+    surface: true
     challenge:
       accepts:
         - amount_usd: 0.02
