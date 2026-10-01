@@ -1,11 +1,34 @@
 name: "x402-redteam"
-description: "Red-team an x402-paying agent against a corpus of hostile payment scenarios, and upload the findings as SARIF."
+description: "Red-team an x402-paying agent (or a GDP guardrail, ADR-010) against a corpus of hostile payment scenarios, and upload the findings as SARIF."
 author: "x402-redteam contributors"
 
+# Permissions this action needs from the *caller's* job or workflow (a composite action
+# can't grant its own - it only uses what the caller's GITHUB_TOKEN already has):
+#   security-events: write   - only if `upload-sarif: true` (default). Without it the
+#                               "Upload SARIF" step is skipped quietly if there's no
+#                               report.sarif to upload, but if there IS one and this
+#                               permission is missing, the step fails - harmlessly to
+#                               this run's own pass/fail result (continue-on-error: true,
+#                               and every later step runs with `if: always()`, so the
+#                               job's final status always comes from the harness's own
+#                               exit code, never from this upload) but you lose
+#                               code-scanning annotations. Expected on a private repo, a
+#                               restrictive org default, or a pull_request from a fork.
+#   id-token: write,
+#   attestations: write       - NOT needed by this action. Those are `rank.yml`'s
+#                               permissions (ADR-011, U19, a separate workflow that
+#                               produces a signed provenance attestation for a ranked
+#                               leaderboard submission) - never required just to run the
+#                               harness via this action. See README "GitHub Action".
 inputs:
   agent:
-    description: "Shell command that starts the agent under test (run with the workspace as its working directory)."
-    required: true
+    description: "Shell command that starts the agent under test (run with the workspace as its working directory). Mutually exclusive with `guardrail`; exactly one is required."
+    required: false
+    default: ""
+  guardrail:
+    description: "Shell command that starts a GDP guardrail (ADR-010); the standard driver runs as the agent and drives this guardrail over stdio. Mutually exclusive with `agent`; exactly one is required."
+    required: false
+    default: ""
   chains:
     description: "Comma-separated chains to run."
     required: false
@@ -26,6 +49,10 @@ inputs:
     description: "Seconds an agent may take to make its first request before the run is killed."
     required: false
     default: "120"
+  host-mode:
+    description: "How virtual hosts are rendered: localhost|path|proxy (ADR-012). Defaults to localhost; the CLI falls back to path on this runner if *.localhost doesn't actually resolve (preflightHostMode), and the fallback is recorded in report.json's config.host_mode either way."
+    required: false
+    default: "localhost"
   fail-on:
     description: "Minimum severity that fails the run (low|medium|high|critical)."
     required: false
@@ -38,29 +65,61 @@ inputs:
     description: "Guardrail id recorded in the report."
     required: false
     default: "unknown"
+  redact:
+    description: "Also write report.redacted.json (ADR-011 seasons). Not implemented yet (owner: U19) - the CLI rejects this with exit code 2 until then, so leave this false/unset."
+    required: false
+    default: "false"
   upload-sarif:
-    description: "Upload report.sarif to GitHub code scanning."
+    description: "Upload report.sarif to GitHub code scanning. Skipped quietly if report.sarif was never written (e.g. a usage error before any run); if it was written but the upload itself fails (missing security-events: write), that failure is swallowed (continue-on-error) and never affects the job's pass/fail result."
     required: false
     default: "true"
+  upload-artifact:
+    description: "Upload the run's output directory (report.json/.md/.sarif, tasks/, runs/, and logs/ unless excluded - see include-agent-logs) as a build artifact."
+    required: false
+    default: "true"
+  artifact-name:
+    description: "Name for the uploaded report artifact (actions/upload-artifact). Override this when a workflow runs the action more than once (e.g. a matrix) so each leg's artifact doesn't collide with the others - every artifact name in a run must be unique."
+    required: false
+    default: "x402-redteam-report"
+  include-agent-logs:
+    description: "Include logs/*.log (the agent's/guardrail's own stdout+stderr, one file per run) in the uploaded artifact. Defaults to false: agent output can echo back whatever you passed it, including a --pass-env secret's *value* - the harness scrubs known pass-env secret values out of these logs before this action ever reads them (packages/cli), but that scrub is a best-effort literal-value match, not a guarantee, so logs stay out of the uploaded, more-widely-visible artifact unless you opt in. report.json/.md/.sarif (always uploaded) never contain agent output - only the harness's own decoded ledger of what the agent tried to pay, to whom, and whether it was authorized, over TEST-ONLY keys (see README Safety)."
+    required: false
+    default: "false"
   out:
     description: "Output directory, relative to the workspace."
     required: false
     default: "x402-redteam-out"
   pass-env:
-    description: "Comma-separated extra env var names to pass through to the agent, forwarded as --pass-env. Never put a secret's *value* here - name the env var instead (e.g. ANTHROPIC_API_KEY) and set it on the job/step as usual; this input only controls which names the harness lets through its otherwise-clean agent environment."
+    description: "Comma-separated extra env var names to pass through to the agent, forwarded as --pass-env. Never put a secret's *value* here - name the env var instead (e.g. ANTHROPIC_API_KEY) and set it on the job/step as usual; this input only controls which names the harness lets through its otherwise-clean agent environment. WARNING: an agent that echoes its own env (deliberately or by accident, e.g. in an error message) can still leak that value into logs/*.log - the harness scrubs known pass-env values out of those logs, and they're excluded from the uploaded artifact by default (include-agent-logs: false), but set --pass-env names deliberately, not reflexively."
     required: false
     default: ""
+  exit-on-result:
+    description: "When true (default), the final step exits with the harness's own exit code, failing the job on exit 1 or 2. Set to false to keep this action's own step green regardless of the harness result - e.g. a workflow that runs several legs (matrix) and wants to inspect every leg's exit-code/valid/safety-score output before deciding pass/fail itself, rather than having the first failing leg's exit code become this job's own failure immediately."
+    required: false
+    default: "true"
 
 outputs:
   report-json:
     description: "Path (relative to the workspace) to the generated report.json."
     value: ${{ steps.run.outputs.report-json }}
   pass-rate:
-    description: "Overall run pass rate, 0-1."
+    description: "report.json summary.pass_rate, 0-1; empty string when no report was produced at all (not 0 - 0 would wrongly read as \"ran, 0% passed\")."
     value: ${{ steps.run.outputs.pass-rate }}
   unauthorized-usd:
-    description: "Total unauthorized USD across the run."
+    description: "report.json summary.unauthorized_usd; empty string when no report was produced at all (not 0, for the same reason as pass-rate)."
     value: ${{ steps.run.outputs.unauthorized-usd }}
+  exit-code:
+    description: "The harness's own exit code: 0 pass, 1 an attack scenario at/above fail-on wasn't blocked, 2 invalid (a control failed) or a harness/agent error. Read this, not the step's `outcome` - `outcome` only distinguishes success/failure/skipped and can't tell exit 1 apart from exit 2. Always populated (0/1/2), even when exit-on-result: false keeps the job itself green, and even when the composite action's own steps show a failure (e.g. a SARIF upload permissions error) - this output comes from the harness subprocess's own exit code, captured before any later step runs."
+    value: ${{ steps.run.outputs.exit-code }}
+  valid:
+    description: "report.json summary.valid: the literal string \"true\"/\"false\" once controls ran, or empty string - never the string \"null\" - when summary.valid is null (--skip-controls) or no report was produced at all (e.g. --agent/--guardrail both given or both missing)."
+    value: ${{ steps.run.outputs.valid }}
+  safety-score:
+    description: "report.json summary.safety_score, 0-100; empty string - never the string \"null\" - when unscoreable (no attack scenarios ran) or no report was produced."
+    value: ${{ steps.run.outputs.safety-score }}
+  reach-rate:
+    description: "report.json summary.reach_rate, 0-1 (ADR-016 #1): share of measurable attack runs that actually reached the attack surface; empty string when no report was produced."
+    value: ${{ steps.run.outputs.reach-rate }}
 
 runs:
   using: "composite"
@@ -95,9 +154,17 @@ runs:
     # unquoted-at-that-point `inputs.agent` (or any other input) containing a `"` or a
     # backtick would splice arbitrary shell into this step rather than merely becoming
     # one (quoted) argument - env vars close that hole because the shell only ever
-    # substitutes them as data, after the script text is fixed. The report-path values
-    # handed to `node -e` are passed the same way (`process.env.REPORT_PATH`, not string
-    # concatenation into the `-e` source), for the same reason one level down.
+    # substitutes them as data, after the script text is fixed. This file now carries
+    # that same discipline one step further (U22 review round 2): the Node snippet below
+    # that parses report.json is written to a *file* via a quoted heredoc
+    # (`<<'NODE_EOF'`, which the shell never expands) rather than passed as `node -e`
+    # text built from concatenated values, and it reads every dynamic value through
+    # `process.env.*` once the script is already running - at no point does any `${{ }}`
+    # expression or shell-expanded value become part of a string that's then
+    # interpreted as code. The result: this file contains zero `${{ }}` expressions
+    # anywhere inside a `run:` block (verified by
+    # packages/cli/test/action-yaml.test.ts's M7-regression guard, which fails the build
+    # on any future edit that reintroduces one).
     - name: Run x402-redteam
       id: run
       shell: bash
@@ -105,14 +172,17 @@ runs:
       env:
         ACTION_PATH: ${{ github.action_path }}
         AGENT_CMD: ${{ inputs.agent }}
+        GUARDRAIL_CMD: ${{ inputs.guardrail }}
         CHAINS: ${{ inputs.chains }}
         CORPUS: ${{ inputs.corpus }}
         REPEAT: ${{ inputs.repeat }}
         TIMEOUT: ${{ inputs.timeout }}
         STARTUP_TIMEOUT: ${{ inputs.startup-timeout }}
+        HOST_MODE: ${{ inputs.host-mode }}
         FAIL_ON: ${{ inputs.fail-on }}
         AGENT_ID: ${{ inputs.agent-id }}
         GUARDRAIL_ID: ${{ inputs.guardrail-id }}
+        REDACT: ${{ inputs.redact }}
         OUT_DIR: ${{ inputs.out }}
         PASS_ENV: ${{ inputs.pass-env }}
       run: |
@@ -122,60 +192,162 @@ runs:
         if [ -n "$PASS_ENV" ]; then
           pass_env_args=(--pass-env "$PASS_ENV")
         fi
+        # Build --agent/--guardrail from whichever input(s) are non-empty and let the
+        # CLI's own `main.ts` validation (not this script) decide what to do when both
+        # or neither are set - it already exits 2 with a clear message either way, so
+        # there is exactly one place that owns "agent and guardrail are mutually
+        # exclusive, and one of them is required".
+        track_args=()
+        if [ -n "$AGENT_CMD" ]; then
+          track_args+=(--agent "$AGENT_CMD")
+        fi
+        if [ -n "$GUARDRAIL_CMD" ]; then
+          track_args+=(--guardrail "$GUARDRAIL_CMD")
+        fi
+        redact_args=()
+        if [ "$REDACT" = "true" ]; then
+          redact_args+=(--redact)
+        fi
+
+        mkdir -p "$OUT_DIR"
+        # `2>&1 | tee` (not a plain redirect) so the run's own stdout/stderr still show
+        # up live in this step's own log, same as before - "$OUT_DIR/harness-run.log" is
+        # purely an extra copy, read by "Append report to step summary" below if
+        # report.md never got written. `PIPESTATUS[0]` (not `$?`, which after a pipeline
+        # is `tee`'s own exit code) is the harness's real exit code - this step's `shell:
+        # bash` (not `sh`) is what makes PIPESTATUS available.
         node "$ACTION_PATH/packages/cli/bin/x402-redteam.mjs" run \
-          --agent "$AGENT_CMD" \
+          "${track_args[@]}" \
           --chains "$CHAINS" \
           --corpus "$CORPUS" \
           --repeat "$REPEAT" \
           --timeout "$TIMEOUT" \
           --startup-timeout "$STARTUP_TIMEOUT" \
+          --host-mode "$HOST_MODE" \
           --fail-on "$FAIL_ON" \
           --agent-id "$AGENT_ID" \
           --guardrail-id "$GUARDRAIL_ID" \
           --out "$OUT_DIR" \
-          "${pass_env_args[@]}"
-        code=$?
+          "${redact_args[@]}" \
+          "${pass_env_args[@]}" 2>&1 | tee "$OUT_DIR/harness-run.log"
+        code="${PIPESTATUS[0]}"
 
         report="$OUT_DIR/report.json"
         echo "report-json=$report" >> "$GITHUB_OUTPUT"
-        if [ -f "$report" ]; then
-          pass_rate=$(REPORT_PATH="$report" node -e "console.log(JSON.parse(require('node:fs').readFileSync(process.env.REPORT_PATH,'utf8')).summary.pass_rate)")
-          unauthorized=$(REPORT_PATH="$report" node -e "console.log(JSON.parse(require('node:fs').readFileSync(process.env.REPORT_PATH,'utf8')).summary.unauthorized_usd)")
-        else
-          pass_rate=0
-          unauthorized=0
-        fi
-        echo "pass-rate=$pass_rate" >> "$GITHUB_OUTPUT"
-        echo "unauthorized-usd=$unauthorized" >> "$GITHUB_OUTPUT"
+
+        cat > "$RUNNER_TEMP/x402-redteam-outputs.mjs" <<'NODE_EOF'
+        import { appendFileSync, readFileSync } from "node:fs";
+
+        const val = (v) => (v === undefined || v === null ? "" : String(v));
+        let summary;
+        try {
+          summary = JSON.parse(readFileSync(process.env.REPORT_PATH, "utf8")).summary;
+        } catch {
+          summary = undefined;
+        }
+        const lines = [
+          `pass-rate=${summary ? val(summary.pass_rate) : ""}`,
+          `unauthorized-usd=${summary ? val(summary.unauthorized_usd) : ""}`,
+          `valid=${summary ? val(summary.valid) : ""}`,
+          `safety-score=${summary ? val(summary.safety_score) : ""}`,
+          `reach-rate=${summary ? val(summary.reach_rate) : ""}`,
+        ];
+        appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join("\n")}\n`);
+        NODE_EOF
+        REPORT_PATH="$report" node "$RUNNER_TEMP/x402-redteam-outputs.mjs"
+        rm -f "$RUNNER_TEMP/x402-redteam-outputs.mjs"
+
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         exit 0
 
+    # Copies $OUT_DIR into a $RUNNER_TEMP staging dir (never the caller's own workspace
+    # copy) so logs/ can be dropped from what gets *uploaded* without touching what a
+    # human or a later step in the caller's own job might still want to read from
+    # inputs.out on disk. `if: always()`: runs even if an earlier step in this composite
+    # somehow failed outright, so the artifact upload below reflects whatever did get
+    # written, not nothing.
+    - name: Prepare artifact contents (exclude agent logs unless opted in)
+      if: always()
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        OUT_DIR: ${{ inputs.out }}
+        INCLUDE_AGENT_LOGS: ${{ inputs.include-agent-logs }}
+      run: |
+        staging="$RUNNER_TEMP/x402-redteam-artifact"
+        rm -rf "$staging"
+        mkdir -p "$staging"
+        if [ -d "$OUT_DIR" ]; then
+          cp -r "$OUT_DIR" "$staging/out"
+          if [ "$INCLUDE_AGENT_LOGS" != "true" ]; then
+            rm -rf "$staging/out/logs"
+          fi
+        fi
+        echo "X402_REDTEAM_ARTIFACT_DIR=$staging/out" >> "$GITHUB_ENV"
+
     # Needs `permissions: security-events: write` on the *caller's* job or workflow -
     # a composite action (this file) cannot grant its own permissions, only use what the
-    # caller's GITHUB_TOKEN already has. Without it, this step fails on a private repo or
-    # a restrictive org default (README "Integration contract" documents this).
+    # caller's GITHUB_TOKEN already has. Gated on report.sarif actually existing
+    # (`hashFiles` - empty string when the glob matches nothing) so a run that errored
+    # before ever writing one (e.g. a usage error, exit 2) doesn't even attempt this
+    # step; `continue-on-error: true` on top means that even when the file *does* exist
+    # but the upload itself fails for lack of that permission (private repo, restrictive
+    # org default, or a pull_request from a fork with no write access), this step's own
+    # failure never fails the job - only the harness's real exit code does, via the
+    # "Exit with the harness result" step below, which (like every step from here on)
+    # runs with `if: always()` regardless of this step's outcome.
     - name: Upload SARIF
-      if: ${{ inputs.upload-sarif == 'true' }}
+      if: ${{ always() && inputs.upload-sarif == 'true' && hashFiles(format('{0}/report.sarif', inputs.out)) != '' }}
+      continue-on-error: true
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ inputs.out }}/report.sarif
         category: x402-redteam
 
     - name: Upload report artifact
+      if: ${{ always() && inputs.upload-artifact == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: x402-redteam-report
-        path: ${{ inputs.out }}
+        name: ${{ inputs.artifact-name }}
+        path: ${{ env.X402_REDTEAM_ARTIFACT_DIR }}
 
     - name: Append report to step summary
+      if: always()
       shell: bash
       working-directory: ${{ github.workspace }}
       env:
         OUT_DIR: ${{ inputs.out }}
-      run: cat "$OUT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+        EXIT_CODE: ${{ steps.run.outputs.exit-code }}
+      run: |
+        if [ -f "$OUT_DIR/report.md" ]; then
+          cat "$OUT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+        else
+          {
+            echo "**x402-redteam: no report was produced (exit code ${EXIT_CODE}).**"
+            echo
+            echo '```'
+            if [ -f "$OUT_DIR/harness-run.log" ]; then
+              tail -n 20 "$OUT_DIR/harness-run.log"
+            else
+              echo "(no harness output was captured)"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
 
+    # `if: always()`: this step (and the two above it) must run - and the job's final
+    # status must come from here, from the harness's own exit code - regardless of
+    # whether an earlier step in this composite (e.g. the SARIF upload, on a permissions
+    # error) reported a failure of its own.
     - name: Exit with the harness result
+      if: always()
       shell: bash
       env:
         EXIT_CODE: ${{ steps.run.outputs.exit-code }}
-      run: exit "$EXIT_CODE"
+        EXIT_ON_RESULT: ${{ inputs.exit-on-result }}
+      run: |
+        if [ "$EXIT_ON_RESULT" != "true" ]; then
+          echo "exit-on-result=false: not failing this job - the harness exit code ($EXIT_CODE) is available from this action's own exit-code output instead."
+          exit 0
+        fi
+        exit "$EXIT_CODE"

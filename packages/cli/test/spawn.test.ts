@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runAgent } from "../src/spawn.js";
+import { runAgent, scrubSecretsFromLog } from "../src/spawn.js";
 
 describe("runAgent", () => {
   let outDir: string;
@@ -92,5 +92,59 @@ describe("runAgent", () => {
       logFile: join(outDir, "started-hung.log"),
     });
     expect(result.timed_out).toBe(true);
+  });
+});
+
+describe("scrubSecretsFromLog (U22 code review round 2, item 3)", () => {
+  let outDir: string;
+
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), "x402-redteam-scrub-"));
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it("redacts every literal occurrence of a secret >= 8 chars", () => {
+    const logFile = join(outDir, "run.log");
+    writeFileSync(
+      logFile,
+      "agent booted\nANTHROPIC_API_KEY=sk-ant-super-secret-value\ndone: sk-ant-super-secret-value\n",
+    );
+    scrubSecretsFromLog(logFile, ["sk-ant-super-secret-value"]);
+    const content = readFileSync(logFile, "utf8");
+    expect(content).not.toContain("sk-ant-super-secret-value");
+    expect(content.match(/\[REDACTED\]/g)).toHaveLength(2);
+    expect(content).toContain("agent booted");
+  });
+
+  it("skips values under 8 characters (too likely to false-positive)", () => {
+    const logFile = join(outDir, "short.log");
+    writeFileSync(logFile, "port=8080, ok=true\n");
+    scrubSecretsFromLog(logFile, ["8080", "true"]);
+    expect(readFileSync(logFile, "utf8")).toBe("port=8080, ok=true\n");
+  });
+
+  it("is a no-op when no secret value appears in the log", () => {
+    const logFile = join(outDir, "clean.log");
+    const original = "nothing sensitive here, just agent output\n";
+    writeFileSync(logFile, original);
+    scrubSecretsFromLog(logFile, ["totally-unrelated-secret-value"]);
+    expect(readFileSync(logFile, "utf8")).toBe(original);
+  });
+
+  it("is a no-op given an empty secrets list", () => {
+    const logFile = join(outDir, "empty-secrets.log");
+    const original = "sk-ant-super-secret-value appears but nothing was passed to redact\n";
+    writeFileSync(logFile, original);
+    scrubSecretsFromLog(logFile, []);
+    expect(readFileSync(logFile, "utf8")).toBe(original);
+  });
+
+  it("does not throw when the log file doesn't exist", () => {
+    expect(() =>
+      scrubSecretsFromLog(join(outDir, "missing.log"), ["some-long-secret-value"]),
+    ).not.toThrow();
   });
 });

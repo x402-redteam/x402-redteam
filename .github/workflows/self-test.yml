@@ -1,47 +1,100 @@
 name: Self-test
 
-# Runs the composite action (action.yml) from this checkout against both
-# reference agents, per U7 functional-design.md §1: naive must fail the
-# harness, guarded must pass it.
+# Exact-exit-code self-test for the composite action (action.yml), per
+# aidlc-docs/construction/U22-action-launch-ci/functional-design.md §4 and
+# real-runner-checklist.md item 4: asserts the ACTION's own `exit-code` output
+# (packages/cli/src/run.ts `computeExitCode`) against six commands spanning both
+# tracks and all three harness exit codes. This checks `steps.<id>.outputs.exit-code`,
+# never `steps.<id>.outcome` - `outcome` only ever says "success"/"failure"/"skipped"
+# and can't distinguish exit 1 (an attack wasn't blocked) from exit 2 (invalid run or
+# harness/agent error), which is exactly the distinction this self-test exists to prove.
 on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  naive-must-fail:
+  exact-exit-codes:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Agent track (ADR-015 exit semantics, packages/cli/src/run.ts computeExitCode):
+          # 0 pass; 1 iff some attack scenario x chain at/above --fail-on isn't passing;
+          # 2 when the run is invalid (summary.valid === false, a control failed) or a
+          # harness/agent error.
+          - case: naive-agent
+            agent: "tsx examples/agents/src/naive.ts"
+            guardrail: ""
+            expect: "1"
+          - case: guarded-agent
+            agent: "tsx examples/agents/src/guarded.ts"
+            guardrail: ""
+            expect: "0"
+          # "true" exits 0 immediately without making a single request to the harness,
+          # so every control fails for lack of a payment - summary.valid === false, exit 2.
+          - case: crashing-agent
+            agent: "true"
+            guardrail: ""
+            expect: "2"
+          # Guardrail track (ADR-010): the standard driver runs each guardrail against the
+          # same corpus. allow-all pays everything - every attack fails (unauthorized
+          # payment), but controls still pass - exit 1. deny-all pays nothing - every
+          # attack passes, but every control fails (a control requires >=1 payment) -
+          # summary.valid === false, exit 2. reference-policy is the calibrated "good"
+          # guardrail (examples/guardrails/reference-policy.ts) - exit 0.
+          - case: guardrail-allow-all
+            agent: ""
+            guardrail: "tsx examples/guardrails/allow-all.ts"
+            expect: "1"
+          - case: guardrail-deny-all
+            agent: ""
+            guardrail: "tsx examples/guardrails/deny-all.ts"
+            expect: "2"
+          - case: guardrail-reference-policy
+            agent: ""
+            guardrail: "tsx examples/guardrails/reference-policy.ts"
+            expect: "0"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run the harness against the naive reference agent (expected to fail)
-        id: naive
+      - name: Run x402-redteam (${{ matrix.case }}, expect exit ${{ matrix.expect }})
+        id: run
         uses: ./
         continue-on-error: true
         with:
-          agent: "tsx examples/agents/src/naive.ts"
+          agent: ${{ matrix.agent }}
+          guardrail: ${{ matrix.guardrail }}
           agent-id: "self-test"
-          guardrail-id: "naive"
+          guardrail-id: ${{ matrix.case }}
           fail-on: "low"
-          out: "out-naive"
+          # No security-events: write permission on this job (self-test doesn't need
+          # code-scanning annotations for a throwaway matrix run), so skip the SARIF
+          # upload rather than let an unrelated permissions failure mask the exit-code
+          # assertion below.
+          upload-sarif: "false"
+          # Each matrix leg's artifact needs its own name - actions/upload-artifact
+          # fails the job if two legs in the same run try to upload under the same
+          # name.
+          artifact-name: "x402-redteam-report-${{ matrix.case }}"
+          out: "out-${{ matrix.case }}"
 
-      - name: Assert the naive agent failed the harness
+      # M7 guard (packages/cli/test/action-yaml.test.ts): every `${{ }}` reference
+      # inside a `run:` block must either be `matrix.*` or be resolved through `env:`
+      # first - `steps.run.outcome` is neither, so it's read here via `OUTCOME`, not
+      # spliced into the script text directly.
+      - name: Assert the exact exit-code output (not `outcome`)
+        env:
+          ACTUAL: ${{ steps.run.outputs.exit-code }}
+          EXPECTED: ${{ matrix.expect }}
+          CASE: ${{ matrix.case }}
+          OUTCOME: ${{ steps.run.outcome }}
         run: |
-          if [ "${{ steps.naive.outcome }}" != "failure" ]; then
-            echo "expected the naive agent to fail the harness (outcome=failure), got outcome=${{ steps.naive.outcome }}"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::${CASE}: expected exit-code ${EXPECTED}, got ${ACTUAL} (outcome was ${OUTCOME})"
             exit 1
           fi
-          echo "OK: naive failed as expected"
-
-  guarded-must-pass:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run the harness against the guarded reference agent (expected to pass)
-        uses: ./
-        with:
-          agent: "tsx examples/agents/src/guarded.ts"
-          agent-id: "self-test"
-          guardrail-id: "guarded"
-          fail-on: "low"
-          out: "out-guarded"
+          echo "OK: ${CASE} exited ${ACTUAL} as expected"
