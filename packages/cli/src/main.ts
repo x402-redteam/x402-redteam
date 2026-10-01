@@ -56,7 +56,7 @@ program
   .option(
     "--host-mode <mode>",
     "how virtual hosts are rendered: localhost|path|proxy (ADR-012)",
-    "path",
+    "localhost",
   )
   .option(
     "--season-seed-env <name>",
@@ -78,14 +78,6 @@ program
       if (!hostModeResult.success) {
         throw new Error(
           `--host-mode "${opts.hostMode}" is invalid (expected localhost|path|proxy)`,
-        );
-      }
-      // Code review item 6: a stub flag must fail loudly, not be silently accepted and
-      // ignored - "path" is the only host_mode actually implemented until U17 lands
-      // *.localhost routing and the forward proxy.
-      if (hostModeResult.data !== "path") {
-        throw new Error(
-          `--host-mode "${hostModeResult.data}" is not implemented yet (ADR-012, owner U17)`,
         );
       }
       if (opts.agentUid !== undefined) {

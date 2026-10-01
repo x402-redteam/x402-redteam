@@ -128,28 +128,100 @@ writing it anywhere.
 > that step fails (harmlessly to the run's own pass/fail result, but you lose code-scanning
 > annotations) on a private repo or under a restrictive org default.
 
-`task.json` (version 2 — additive; an agent that ignores unknown fields keeps working against a
-version-1 task unchanged):
+`task.json` (version 3 — additive over v1/v2 except `allowed_hosts`' own *values*, see
+[Host modes](#host-modes) below; an agent that ignores unknown fields keeps working against an
+older task unchanged):
 
 ```jsonc
 {
-  "version": 2,
+  "version": 3,
   "run_id": "opaque-hex",
   "prompt": "rendered task prompt — the job, in plain English, budget stated in words",
   "base_url": "http://127.0.0.1:43021",
   "chain": "evm",
   "network": "eip155:84532",
   "budget_usd": 0.05,
-  "allowed_hosts": ["provider.test"],
+  "allowed_hosts": ["provider.test.localhost"],            // v3: rendered through host_mode, see below
   "wallet": { "address": "0x…", "private_key": "0x…" },   // svm: { address, secret_key_base58 }
   "facilitator_url": "http://127.0.0.1:43021/facilitator",
   "solana_rpc_url": "http://127.0.0.1:43021/solana-rpc",
   "ledger_url": "http://127.0.0.1:43021/__harness/ledger",
   "notice": "TEST KEYS ONLY — no funds",
   "wallet_balance_usd": 100,                               // v2: the agent's modelled wallet balance
-  "evm_rpc_url": "http://127.0.0.1:43021/evm-rpc"          // v2
+  "evm_rpc_url": "http://127.0.0.1:43021/evm-rpc",         // v2
+  "host_mode": "localhost",                                // v3: "localhost" | "path" | "proxy"
+  "hosts": { "provider.test": "http://provider.test.localhost:43021" } // v3: every named host, rendered
 }
 ```
+
+### Host modes
+
+A scenario can name more than one virtual host (a trusted partner, a look-alike domain, a redirect
+target). `--host-mode` controls how those hosts actually show up on the wire, per ADR-012:
+
+| mode | default? | what the agent sees | ranked? |
+|---|---|---|---|
+| `localhost` | **yes** | real DNS names under `*.localhost` (RFC 6761), routed by the `Host` header — `new URL(requestedUrl).hostname` is exactly the scenario's host name, e.g. `weather-rep0rt.test.localhost` | yes |
+| `path` | fallback only | one origin (`task.base_url`); a second "host" is a path prefix, `/_host/<name>/…` | unranked |
+| `proxy` | opt-in | bare origins (`http://provider.test/…`) through a plain-HTTP forward proxy — closest to a real deployment, but not yet part of the ranked track | unranked |
+
+**`localhost` mode is the default and the only ranked mode.** A guardrail written with no
+knowledge of this harness at all — just `new URL(requestedUrl).hostname` checked against
+`task.allowed_hosts` — works correctly, including across the cross-origin redirect
+`recipient_redirect` produces. Before the first run, the CLI resolves `x402rt-probe.localhost` and
+does a real loopback GET; if either fails (some containers, and older/unusual DNS setups, don't
+wire up `*.localhost`), it falls back to `--host-mode path` automatically and warns — this is
+recorded in `report.json`'s `config.host_mode`, so a silent fallback is never hidden. **Verified on
+macOS + Node 20.19.5** (this repo's own dev/CI host): `dns.lookup()` resolves a `*.localhost` name
+to both `127.0.0.1` and `::1`, and a real HTTP round trip through it reaches a 127.0.0.1-bound
+server. **Not verified**: GitHub's `ubuntu-latest` runner (expected to work via
+systemd-resolved/nss-myhostname), musl/alpine containers (expected to fail — use `--host-mode
+path` there), and Windows.
+
+`path` mode is kept for environments where `*.localhost` genuinely doesn't resolve. It is
+**not** a realistic test of a host-allowlist guardrail: every request's hostname is the harness's
+own loopback address, so a plain `new URL(u).hostname` check can never distinguish the real
+provider from a look-alike or redirect target. [`examples/agents/src/hostname-allowlist.ts`](examples/agents/src/hostname-allowlist.ts)
+demonstrates exactly this — it's the simplest possible host-allowlist guardrail, and it passes
+`lookalike_domain`/`ghost_paywall`/`recipient_redirect` under `localhost` mode but fails (the
+harness reports it `INVALID` — it can't even complete the required control payments) under `path`
+mode:
+
+```bash
+pnpm x402-redteam run --agent "tsx examples/agents/src/hostname-allowlist.ts" \
+  --scenario lookalike-domain --host-mode localhost   # passes
+pnpm x402-redteam run --agent "tsx examples/agents/src/hostname-allowlist.ts" \
+  --scenario lookalike-domain --host-mode path         # fails — can't tell hosts apart
+```
+
+#### Proxy mode (`--host-mode proxy`)
+
+`proxy` mode serves the exact same scenarios through a plain-HTTP forward proxy instead of
+Host-header routing — the agent sees bare origins (`http://provider.test/…`, no `.localhost`
+suffix at all) and reaches them via `HTTP_PROXY`/`http_proxy`, with `NO_PROXY`/`no_proxy` forced
+empty (every outgoing request, including the harness's own facilitator/RPC calls, goes through the
+proxy — it allow-lists the harness's own loopback address alongside the loaded scenario's hosts).
+A target host outside the loaded scenario gets a `502` and is logged (not scored). `CONNECT` always
+gets `405` — there is no CA and never will be; this harness only ever serves plain `http://`.
+
+This mode exists for **audits and the agent track**, not the two reference agents or the ranked
+guardrail track — our own crawler only follows `task.base_url`- and `*.localhost`-prefixed links
+(see `localhost`/`path` above), not bare proxy-mode origins, so `naive`/`guarded`/`hostname-allowlist`
+don't do anything useful under `--host-mode proxy` today. A real third-party agent or framework
+that honors standard proxy env vars does.
+
+**Per-language recipes** (verified on this repo's dev host, Node 20.19.5):
+
+- **Node 20 (this repo's own runtime):** the global `fetch` does **not** honor `HTTP_PROXY` on its
+  own, and `NODE_USE_ENV_PROXY=1` alone was **not sufficient on Node 20.19.5** (confirmed by
+  probing this harness's own forward proxy — a bare fetch to a proxy-mode URL failed with a DNS
+  error, meaning it never reached the proxy). Check your Node version, and when in doubt, install
+  [`undici`](https://www.npmjs.com/package/undici) and opt in explicitly:
+  ```ts
+  import { setGlobalDispatcher, EnvHttpProxyAgent } from "undici";
+  setGlobalDispatcher(new EnvHttpProxyAgent());
+  ```
+- **Python (`httpx`, `requests`):** both honor `HTTP_PROXY`/`NO_PROXY` by default — no extra setup.
 
 ### Two capture layers
 
@@ -249,10 +321,12 @@ pnpm x402-redteam run --agent "examples/agents-py/.venv/bin/python examples/agen
 ```
 
 The venv is project-local (`examples/agents-py/.venv`, gitignored) and never touches system Python
-or a global install. The agent fetches only the `base_url`-prefixed URLs named in the prompt, once
-each, through the SDK's own default `httpx` payment transport and its own default spend controls
-(no custom policy) — like this repo's TypeScript `sdk-default` baseline, it measures what the
-third-party SDK does on its own, not a guardrail this repo wrote.
+or a global install. The agent fetches only the URLs named in the prompt (`base_url`-prefixed, or
+any `*.localhost` origin under [`--host-mode localhost`](#host-modes)), once each, through the
+SDK's own default `httpx` payment transport and its own default spend controls (no custom policy)
+— like this repo's TypeScript `sdk-default` baseline, it measures what the third-party SDK does on
+its own, not a guardrail this repo wrote. `httpx` resolves `*.localhost` the same way Python's
+`socket.getaddrinfo` does — verified on this repo's dev host (macOS, Python via `uv`).
 
 ## Scenarios
 
@@ -267,7 +341,7 @@ Every run writes, to `--out` (default `./out`):
 
 | File | Contents |
 |---|---|
-| `report.json` | versioned (`x402-redteam/report@2`), stable/sorted-key schema — the source of truth |
+| `report.json` | versioned (`x402-redteam/report@3`), stable/sorted-key schema — the source of truth |
 | `report.sarif` | SARIF 2.1.0, one rule per scenario, one result per failed run — for GitHub code scanning |
 | `report.md` | the human-readable summary shown above |
 | `tasks/<run_id>.json`, `logs/<run_id>.log`, `runs/<run_id>.json` | the task file, agent stdout/stderr and full per-run ledger for each attempt |

@@ -15,36 +15,29 @@
  *  - a client-side policy keeps only `accepts[]` entries on the task's own network,
  *    so list order alone can't select a mainnet rail;
  *  - `maxTimeoutSeconds` above a fixed ceiling is refused outright.
+ *
+ * U17 addition (ADR-012, realistic hostnames): the host check (`parseHostPath`, now
+ * shared with `obedient.ts` via `./lib/host-check.js` - code review F3) is mode-aware:
+ * in `localhost`/`proxy` mode it's the generic `new URL(requested).hostname` - exactly
+ * what a guardrail that knows nothing about this harness would write - compared against
+ * `task.allowed_hosts` (already rendered to match, e.g. `"provider.test.localhost"`).
+ * `path` mode keeps the pre-ADR-012 `/_host/` convention - see `lib/host-check.ts` for
+ * why that branch exists rather than being deleted outright. `hostname-allowlist.ts` is
+ * the literal, mode-naive version of this check - its whole purpose is to prove path
+ * mode fails it (ADR-012's M1 validity proof). The crawler itself (`lib/crawl.ts`) is a
+ * separate, origin-allowlist-based safety net (code review F1) - unrelated to this
+ * mode-aware *policy* check.
  */
 import { atomicToUsd, CHAIN_DEFAULTS } from "@x402-redteam/schema";
-import { type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
-import { buildClient, readTask } from "./lib/wallet.js";
+import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
+import { type HostPath, parseHostPath } from "./lib/host-check.js";
+import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
 const BUDGET_EPSILON = 1e-9;
 const PRICE_TOLERANCE = 1.01;
-const HOST_PREFIX = "/_host/";
-const DEFAULT_HOST = "provider.test";
 /** authorization_lifetime: refuse a signature window longer than this, regardless of
  * price or recipient - application-design.md §3 "v2" `max_authorization_seconds`. */
 const MAX_TIMEOUT_SECONDS = 900;
-
-interface HostPath {
-  host: string;
-  path: string;
-}
-
-function parseHostPath(url: string, baseUrl: string): HostPath {
-  const rest = url.startsWith(baseUrl) ? url.slice(baseUrl.length) : url;
-  const [pathname] = rest.split("?");
-  if (pathname?.startsWith(HOST_PREFIX)) {
-    const trimmed = pathname.slice(HOST_PREFIX.length);
-    const slash = trimmed.indexOf("/");
-    return slash === -1
-      ? { host: trimmed, path: "" }
-      : { host: trimmed.slice(0, slash), path: trimmed.slice(slash) };
-  }
-  return { host: DEFAULT_HOST, path: pathname ?? rest };
-}
 
 function routeKeyOf(hp: HostPath): string {
   return `${hp.host}${hp.path}`;
@@ -64,10 +57,12 @@ function advertisedPrice(text: string): number | undefined {
 
 async function main(): Promise<void> {
   const task = readTask();
+  refuseUnsupportedProxyMode(task);
   const { client, payFetch } = await buildClient(task);
 
   const defaults = CHAIN_DEFAULTS[task.chain];
   const allowedHosts = new Set(task.allowed_hosts);
+  const origins = allowedOrigins(task);
 
   // Empty string means "no advertised price known yet" - seeds start this way (the task
   // prompt's own budget mention isn't a page's advertised price); a link discovered inside
@@ -99,7 +94,7 @@ async function main(): Promise<void> {
     // resource_spoof fix: judge the request by where it actually went, not by what the
     // challenge's own (server-controlled) resource.url claims.
     const url = currentUrl ?? context.paymentRequired.resource.url;
-    const hp = parseHostPath(url, task.base_url);
+    const hp = parseHostPath(url, task);
     const routeKey = routeKeyOf(hp);
 
     if (!allowedHosts.has(hp.host)) {
@@ -157,11 +152,11 @@ async function main(): Promise<void> {
     return undefined;
   });
 
-  const seedUrls = extractUrls(task.prompt, task.base_url);
+  const seedUrls = extractUrls(task.prompt, origins);
   const seeds: CrawlSeed[] = seedUrls.map((url) => ({ url, referrerBody: "" }));
 
   await crawl(trackedFetch, seeds, {
-    baseUrl: task.base_url,
+    origins,
     onDiscover: (url, referrerBody) => {
       const existing = referrerBodyByUrl.get(url);
       if (existing === undefined || (existing === "" && referrerBody !== "")) {

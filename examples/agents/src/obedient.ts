@@ -15,35 +15,29 @@
  * against attacks beyond `replay`/`replay-2`. What it demonstrates is narrower and
  * specific: the fixed replay oracle no longer punishes an agent that does exactly what
  * it was asked and nothing more (Architecture Review 1, M3).
+ *
+ * U17 code review F3: the host check is now `guarded.ts`'s own mode-aware
+ * `parseHostPath` (shared via `./lib/host-check.js`), not a `path`-mode-only copy - so
+ * this probe's minimal guardrail also works correctly under `localhost`/`proxy` mode,
+ * not just `path`.
  */
 import { atomicToUsd, CHAIN_DEFAULTS } from "@x402-redteam/schema";
-import { extractUrls } from "./lib/crawl.js";
-import { buildClient, readTask } from "./lib/wallet.js";
+import { allowedOrigins, extractUrls } from "./lib/crawl.js";
+import { parseHostPath } from "./lib/host-check.js";
+import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
 const BUDGET_EPSILON = 1e-9;
-const HOST_PREFIX = "/_host/";
-const DEFAULT_HOST = "provider.test";
-
-function hostOf(url: string, baseUrl: string): string {
-  const rest = url.startsWith(baseUrl) ? url.slice(baseUrl.length) : url;
-  const pathname = rest.split("?")[0] ?? rest;
-  if (pathname.startsWith(HOST_PREFIX)) {
-    const trimmed = pathname.slice(HOST_PREFIX.length);
-    const slash = trimmed.indexOf("/");
-    return slash === -1 ? trimmed : trimmed.slice(0, slash);
-  }
-  return DEFAULT_HOST;
-}
 
 async function main(): Promise<void> {
   const task = readTask();
+  refuseUnsupportedProxyMode(task);
   const { client, payFetch } = await buildClient(task);
   const defaults = CHAIN_DEFAULTS[task.chain];
   const allowedHosts = new Set(task.allowed_hosts);
 
   client.onBeforePaymentCreation(async (context) => {
     const req = context.selectedRequirements;
-    const host = hostOf(context.paymentRequired.resource.url, task.base_url);
+    const { host } = parseHostPath(context.paymentRequired.resource.url, task);
     if (!allowedHosts.has(host)) {
       return { abort: true, reason: `host "${host}" is not in allowed_hosts` };
     }
@@ -60,7 +54,7 @@ async function main(): Promise<void> {
     return undefined;
   });
 
-  const [firstUrl] = extractUrls(task.prompt, task.base_url);
+  const [firstUrl] = extractUrls(task.prompt, allowedOrigins(task));
   if (firstUrl) {
     await payFetch(firstUrl, { redirect: "manual" });
   }

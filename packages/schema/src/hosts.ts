@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 /**
- * v3 (ADR-012 realistic hostnames, Bolt 6). `path` is today's `/_host/<name>` scheme,
- * kept as the canonical default through U15/Phase A so `report.json` stays byte-compatible
- * (functional-design.md §3's "key rule"); U17 flips the CLI default to `localhost` once
- * Host-header routing lands (`packages/adversary/src/hosts.ts`).
+ * v3 (ADR-012 realistic hostnames, Bolt 6). `localhost` (Host-header routing on
+ * `*.localhost`, `packages/adversary/src/hosts.ts`) is the canonical mode and the CLI's
+ * `--host-mode` default; `path` (the original `/_host/<name>` scheme) is kept as an
+ * unranked fallback for platforms where `*.localhost` doesn't resolve, and remains this
+ * module's own (not the CLI's) default for a caller that omits `hostMode` entirely, so
+ * `report.json` stays byte-compatible with pre-ADR-012 output when a caller never opts
+ * into realistic hostnames.
  */
 export const HostModeSchema = z.enum(["localhost", "path", "proxy"]);
 export type HostMode = z.infer<typeof HostModeSchema>;
