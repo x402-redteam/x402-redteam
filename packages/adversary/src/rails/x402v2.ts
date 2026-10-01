@@ -117,39 +117,79 @@ export function buildPaymentRequired(
   };
 }
 
-function eq(a: string, b: string, caseInsensitive: boolean): boolean {
-  return caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
+/** Order-independent deep-equality, so an `extra` object the client's JSON round-trip
+ * reordered still matches (code review fix 2: field-by-field against the wire
+ * `PaymentRequirements`, not a decoded/normalized value). */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  return `{${keys
+    .map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`)
+    .join(",")}}`;
+}
+
+/** The subset of `PaymentPayload` this binding check reads - every v2 scheme's payload
+ * echoes `accepted` verbatim from the `PaymentRequirements` entry it chose. */
+interface AcceptedEcho {
+  scheme?: string;
+  network?: string;
+  asset?: string;
+  amount?: string;
+  payTo?: string;
+  maxTimeoutSeconds?: number;
+  extra?: Record<string, unknown>;
+}
+
+function acceptedMatches(accepted: AcceptedEcho, requirement: PaymentRequirements): boolean {
+  return (
+    accepted.scheme === requirement.scheme &&
+    accepted.network === requirement.network &&
+    accepted.asset === requirement.asset &&
+    accepted.amount === requirement.amount &&
+    accepted.payTo === requirement.payTo &&
+    accepted.maxTimeoutSeconds === requirement.maxTimeoutSeconds &&
+    stableStringify(accepted.extra ?? {}) === stableStringify(requirement.extra ?? {})
+  );
 }
 
 /**
- * ADR-014 §3 binding check, x402v2 shape: a credential's *decoded* terms (which, for
- * both v1- and v2-shaped payloads, are already normalized by `capture.decodePayload`)
- * must match one of the entries the currently-issued challenge for this route actually
- * offered. This is deliberately scoped to *this* issuance (`ctx.currentChallengeId`),
- * not "any challenge this run ever issued" (that broader attribution match is
+ * ADR-014 §3 binding check, x402v2 shape (code review fix 2): the credential's *echoed*
+ * `accepted` - the wire `PaymentRequirements` entry the client claims it's paying,
+ * field-by-field, not a decoded/normalized value - must equal one entry of one of this
+ * route's current issuance's challenges (`ctx.currentChallengeIds` - fix 7: x402v2
+ * always has exactly one, MPP may have several). This is deliberately scoped to *this*
+ * issuance, not "any challenge this run ever issued" (that broader attribution match is
  * capture/attribute.ts's job, unchanged) - it exists purely to surface the diagnostic
- * `challenge_mismatch` reason without altering delivery, which still depends on
+ * `binding_mismatch` flag without altering delivery, which still depends on
  * attribution's own `challenge_id` match (routes.ts).
+ *
+ * NOTE (deviation, reported): fix 2 also asks to compare the credential's echoed
+ * `resource.url` against the issued resource URL. Verified against `@x402/core`
+ * 2.28.0's actual `PaymentPayload` type: a v2 credential carries no `resource` field at
+ * all (`resource` only appears on the *server's* `RouteConfig`/`PaymentRequired`, never
+ * echoed back) - there is nothing on the wire to compare. Implementing this literally
+ * would require either inventing a field the real SDK never sends (useless - it would
+ * never match a real client) or flagging every `resource_spoof` payment as a mismatch
+ * (wrong - that scenario's whole point is a legitimate payment against a route whose
+ * *advertised* resource URL lies; U20's functional-design.md §4 requires behaviour to
+ * stay byte-identical for that scenario). Left out pending clarification from the
+ * architect on what, concretely, should be compared.
  */
-function computeBinding(
-  decoded: { chain: Chain; network: string; asset: string; to: string; amount_atomic: string },
-  ctx: DecodeCtx,
-): BindingResult {
-  const current = ctx.challenges.find((c) => c.challenge_id === ctx.currentChallengeId);
-  if (!current) {
+function computeBinding(payload: unknown, ctx: DecodeCtx): BindingResult {
+  const anyPayload = payload as { accepted?: AcceptedEcho };
+  const accepted = anyPayload.accepted;
+  if (!accepted) {
+    // v1-shaped payload (no `accepted` to echo-check): nothing to validate here: v1
+    // credentials carry no echo of what they're claiming to pay at all.
+    return { challenge_ref: null, matches: true };
+  }
+  const current = ctx.challenges.filter((c) => ctx.currentChallengeIds.includes(c.challenge_id));
+  const matched = current.find((c) => c.accepts.some((r) => acceptedMatches(accepted, r)));
+  if (!matched) {
     return { challenge_ref: null, matches: false, reason: "challenge_mismatch" };
   }
-  const evmCase = decoded.chain === "evm";
-  const matches = current.accepts.some(
-    (r) =>
-      eq(r.network, decoded.network, false) &&
-      eq(r.asset, decoded.asset, evmCase) &&
-      eq(r.payTo, decoded.to, evmCase) &&
-      r.amount === decoded.amount_atomic,
-  );
-  return matches
-    ? { challenge_ref: current.challenge_id, matches: true }
-    : { challenge_ref: current.challenge_id, matches: false, reason: "challenge_mismatch" };
+  return { challenge_ref: matched.challenge_ref ?? matched.challenge_id, matches: true };
 }
 
 function issue(ctx: IssueCtx): IssueResult {
@@ -170,6 +210,9 @@ function issue(ctx: IssueCtx): IssueResult {
     accepts: requirementsList,
     seq: ctx.seq,
     rail: "x402v2",
+    // Code review fix 4: x402v2 has no separate echo-token the way MPP's `id` is - the
+    // issued challenge's own id *is* its binding reference.
+    challenge_ref: ctx.challenge_id,
   };
   // v2 (challenge_injection): a scenario-supplied body_json replaces the default 402
   // body wholesale and, like any other page-visible text, is searched by prose
@@ -196,7 +239,7 @@ async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult>
   // port (the two were separate try/catches producing an identical response).
   const payload = decodePaymentSignatureHeader(raw.raw as string);
   const decoded = await ctx.capture.decodePayload(payload, ctx.hints);
-  const binding = computeBinding(decoded, ctx);
+  const binding = computeBinding(payload, ctx);
   return { legs: [decoded], binding };
 }
 

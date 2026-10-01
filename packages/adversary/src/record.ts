@@ -17,6 +17,17 @@ export interface RecordDecodedOptions {
   capture: "header" | "shim" | "rpc";
   host?: string;
   route_key?: string;
+  /**
+   * U20 code review fix 1/3 (ADR-014 §3 binding check): true when the rail's own
+   * binding check (routes.ts, via `Rail.decode()`) found the credential's echoed terms
+   * don't match what was actually issued. Applied uniformly to every leg this call
+   * records (fix 1: a decoder that returns `DecodedPayment.legs` - svm, `decodeEvmTx` -
+   * would otherwise never see a mismatch set only on the un-recorded top-level
+   * `DecodedPayment`). Orchestrator ruling: never implies `invalid_reason` or flips
+   * `valid` - a mismatched credential can still be a validly signed payment, just not
+   * one that answers the challenge it was submitted against.
+   */
+  bindingMismatch?: boolean;
 }
 
 /**
@@ -108,6 +119,7 @@ export function recordDecoded(
     ...(decoded.authorization_seconds !== undefined
       ? { authorization_seconds: decoded.authorization_seconds }
       : {}),
+    ...(opts.bindingMismatch ? { binding_mismatch: true } : {}),
   };
 
   state.payments = captureApi.merge(state.payments, payment);

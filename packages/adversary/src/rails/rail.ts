@@ -15,6 +15,15 @@ import type { RenderedRoute } from "../render.js";
  * not built - rails/index.ts) implements this. `routes.ts` and `facilitator.ts` know
  * only this shape; every wire-format detail (header names, body shapes, binding
  * semantics) lives inside one rail implementation.
+ *
+ * **Known limits (Bolt 6; explicitly Bolt 7 work):**
+ * - Push-mode credentials (the client broadcasts its own transaction/signature and the
+ *   rail only verifies it after the fact, rather than the harness settling a pull-mode
+ *   authorization) are not modeled here - `settle()` always assumes the harness itself
+ *   produced the on-chain effect.
+ * - Stateful `session` rails (MPP's `intent: "session"` - a challenge that opens a
+ *   running balance rather than charging once) are out of scope; every `Rail` here is
+ *   one-shot challenge/credential/settle per request.
  */
 
 /** Everything a `Rail.issue()` needs to build one 402 response for a challenged route. */
@@ -50,9 +59,18 @@ export interface DecodeCtx {
   hints?: DecodeHints;
   /** Every challenge issued so far this run, for the binding check. */
   challenges: IssuedChallenge[];
-  /** The challenge this request is presumed to be answering (routes.ts's current
-   * per-route challenge counter at the time the credential arrived). */
-  currentChallengeId: string;
+  /** Every `IssuedChallenge.challenge_id` from this route's most recent issuance (code
+   * review fix 7) - x402v2 always has exactly one; MPP may have several (any of them is
+   * a legitimate thing to answer). */
+  currentChallengeIds: string[];
+  /** The route this request is presumably paying for and the real, physical request
+   * URL - so a rail's binding check can compare a credential's own echoed
+   * resource/location terms (e.g. x402v2's `payload.resource.url`) against what this
+   * exact issuance would have advertised, without the harness persisting that URL
+   * anywhere (code review fix 2: recomputed, not stored, since it's a pure function of
+   * (route, url) - identical both times this exact route is hit). */
+  route: RenderedRoute;
+  url: string;
 }
 
 /**

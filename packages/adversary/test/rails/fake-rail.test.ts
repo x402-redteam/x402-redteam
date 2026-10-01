@@ -68,6 +68,11 @@ function fakeRequirement(method: string, payTo: string, amount: string): Payment
 
 const MERCHANT = "mpp-merchant-9f3a";
 const AMOUNT = "500";
+// Deliberately DIFFERENT terms than A's (code review fix 7): proves delivery accepts
+// either sibling challenge from the same issuance on its own merits, not because the
+// two happen to share terms.
+const MERCHANT_B = "mpp-merchant-b2c1";
+const AMOUNT_B = "750";
 
 function issue(ctx: IssueCtx): IssueResult {
   // MPP allows several challenges per 402 (ADR-014 full): offer both an "evm" and a
@@ -81,14 +86,16 @@ function issue(ctx: IssueCtx): IssueResult {
     accepts: [fakeRequirement("evm", MERCHANT, AMOUNT)],
     seq: ctx.seq,
     rail: "mpp" as const,
+    challenge_ref: idA,
   };
   const issuedB = {
     challenge_id: idB,
     route_key: ctx.route.route_key,
-    requirements: fakeRequirement("solana", MERCHANT, AMOUNT),
-    accepts: [fakeRequirement("solana", MERCHANT, AMOUNT)],
+    requirements: fakeRequirement("solana", MERCHANT_B, AMOUNT_B),
+    accepts: [fakeRequirement("solana", MERCHANT_B, AMOUNT_B)],
     seq: ctx.seq,
     rail: "mpp" as const,
+    challenge_ref: idB,
   };
   const wwwAuthenticate = [
     `Payment id="${idA}", realm="fake", method="evm", intent="charge", request="${b64url({ id: idA, method: "evm" })}"`,
@@ -177,10 +184,15 @@ describe("fake-rail (ADR-014 MPP-shaped seam proof)", () => {
     app = new Hono();
     const holder = new RunHolder();
     const shared: Shared = { seed: "x402-redteam-v1", capture: makeCapture(), holder };
-    registerScenarioRoutes(app, shared, { railFor: () => fakeRail });
+    registerScenarioRoutes(app, shared);
 
     const scenario = buildScenario();
     state = new RunState(scenario, "evm", "fake-rail-run");
+    // U20 code review fix 5: with the rail now resolved at `load()` time (production,
+    // `adversary/index.ts`), a `RunState` built directly (as every test here does)
+    // injects it by simply setting this field - no `registerScenarioRoutes` override
+    // needed any more.
+    state.rail = fakeRail;
     const rendered = renderScenario(scenario, "evm", "http://provider.test", "x402-redteam-v1");
     holder.current = { state, rendered };
   });
@@ -254,6 +266,42 @@ describe("fake-rail (ADR-014 MPP-shaped seam proof)", () => {
 
     expect(res.status).toBe(402);
     const payment = state.payments.find((p) => p.dedupe_key === "fake-nonce-mismatch");
-    expect(payment?.invalid_reason).toBe("challenge_mismatch");
+    // Orchestrator ruling (U20 code review fix 3): a binding mismatch is a separate,
+    // dedicated flag - it never sets `invalid_reason` or flips `valid`.
+    expect(payment?.valid).toBe(true);
+    expect(payment?.invalid_reason).toBeUndefined();
+    expect(payment?.binding_mismatch).toBe(true);
+  });
+
+  it("pays challenge B (different terms than A, never paid yet), and delivers", async () => {
+    // U20 code review fix 7: `challengeB` is `idB` from the very FIRST issuance (test 1)
+    // - still unpaid, since the earlier tests only paid `idA` (test 2) or echoed a
+    // nonexistent id (test 3). Proves delivery accepts a sibling challenge from this
+    // route's issuance on its own terms, not only the first/primary one.
+    const challengeB = state.challenges.find((c) => c.challenge_id.endsWith("-alt"));
+    if (!challengeB) throw new Error("expected a sibling '-alt' challenge from test 1");
+
+    const credential = b64url({
+      challenge: challengeB.challenge_id,
+      payload: {
+        from: "mpp-payer-3",
+        to: MERCHANT_B,
+        amount_atomic: AMOUNT_B,
+        asset: "fake-usd",
+        network: "mpp:fake",
+        nonce: "fake-nonce-b",
+      } satisfies FakePayload,
+    });
+
+    const res = await app.request("/mpp-route", {
+      headers: { Authorization: `Payment ${credential}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("mpp-delivered");
+    const payment = state.payments.find((p) => p.dedupe_key === "fake-nonce-b");
+    expect(payment?.valid).toBe(true);
+    expect(payment?.binding_mismatch).toBeUndefined();
+    expect(payment?.challenge_id).toBe(challengeB.challenge_id);
   });
 });

@@ -1,4 +1,5 @@
 import type { Chain, IssuedChallenge, Payment, RequestLog, Scenario } from "@x402-redteam/schema";
+import type { Rail } from "./rails/rail.js";
 
 /** Per-route runtime bookkeeping that isn't part of the exported ledger shape. */
 export interface RouteRuntime {
@@ -6,6 +7,10 @@ export interface RouteRuntime {
   challengeCounter: number;
   /** True once this route has delivered its `delivered_body` at least once (used by `replay`). */
   deliveredOnce: boolean;
+  /** U20 code review fix 7: every `IssuedChallenge.challenge_id` from this route's most
+   * recent issuance (x402v2: always one; MPP: several) - a credential answering ANY of
+   * them delivers, not only the first. Empty until the first `issueChallenge()`. */
+  currentChallengeIds: string[];
 }
 
 /**
@@ -41,6 +46,14 @@ export class RunState {
   pageBodies: string[] = [];
   delivered = false;
   private readonly routeRuntimes = new Map<string, RouteRuntime>();
+  /**
+   * U20 code review fix 5: resolved once, at `load()` time (`adversary/index.ts`), so a
+   * scenario naming an unimplemented rail (`x402v1`/`mpp`) fails fast there
+   * (`NotImplementedRail`) instead of 500ing the first request. `undefined` only when a
+   * `RunState` is constructed directly (tests that never exercise `routes.ts`, e.g.
+   * `record.test.ts`) - `routes.ts` falls back to resolving it lazily in that case.
+   */
+  rail?: Rail;
 
   // v2 (ADR-013, mock chain RPC): per-run bookkeeping for the EVM and Solana mock RPCs,
   // per U10 functional-design.md §3/§4. Never derived from wall-clock time.
@@ -70,7 +83,7 @@ export class RunState {
   runtimeFor(routeKey: string): RouteRuntime {
     let runtime = this.routeRuntimes.get(routeKey);
     if (!runtime) {
-      runtime = { challengeCounter: 0, deliveredOnce: false };
+      runtime = { challengeCounter: 0, deliveredOnce: false, currentChallengeIds: [] };
       this.routeRuntimes.set(routeKey, runtime);
     }
     return runtime;

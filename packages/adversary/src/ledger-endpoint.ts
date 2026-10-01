@@ -1,5 +1,6 @@
 import type { ShimEvent } from "@x402-redteam/schema";
 import type { Hono } from "hono";
+import { knownTokenAccountsFor } from "./known-token-accounts.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
@@ -8,13 +9,19 @@ export function registerLedgerRoutes(app: Hono, shared: Shared): void {
   app.post("/__harness/ledger", async (c) => {
     const loaded = shared.holder.current;
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
-    const { state } = loaded;
+    const { state, rendered } = loaded;
     const evt = (await c.req.json().catch(() => null)) as ShimEvent | null;
     if (!evt) return c.json({ error: "invalid_shim_event" }, 400);
 
     try {
       const decoded = await shared.capture.decodeShimEvent(evt, {
-        knownOwners: loaded.rendered.knownOwners,
+        knownOwners: rendered.knownOwners,
+        knownTokenAccounts: await knownTokenAccountsFor(
+          rendered,
+          state.chain,
+          shared.seed,
+          state.scenario.assets,
+        ),
       });
       // H1 (code review): a single shim-reported event can carry more than one leg
       // (see DecodedPayment.legs) - record every one.
