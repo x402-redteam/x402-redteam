@@ -25,7 +25,7 @@ inputs:
   fail-on:
     description: "Minimum severity that fails the run (low|medium|high|critical)."
     required: false
-    default: "high"
+    default: "low"
   agent-id:
     description: "Agent id recorded in the report."
     required: false
@@ -42,6 +42,10 @@ inputs:
     description: "Output directory, relative to the workspace."
     required: false
     default: "x402-redteam-out"
+  pass-env:
+    description: "Comma-separated extra env var names to pass through to the agent, forwarded as --pass-env. Never put a secret's *value* here - name the env var instead (e.g. ANTHROPIC_API_KEY) and set it on the job/step as usual; this input only controls which names the harness lets through its otherwise-clean agent environment."
+    required: false
+    default: ""
 
 outputs:
   report-json:
@@ -79,30 +83,58 @@ runs:
     # agent's own cwd correct; the action's node_modules/.bin is appended to
     # PATH so a plain `tsx ...`-style agent command (as in this repo's own
     # examples/agents) still resolves without the caller vendoring tsx.
+    #
+    # U12 (Review 1, M7): every `inputs.*` value is passed through `env:` and read back
+    # as a quoted shell variable ("$AGENT_CMD", not `${{ inputs.agent }}`) instead of
+    # being interpolated directly into the `run:` script text. `${{ }}` in a `run:` block
+    # is substituted by GitHub Actions *before* the shell ever sees the script, so an
+    # unquoted-at-that-point `inputs.agent` (or any other input) containing a `"` or a
+    # backtick would splice arbitrary shell into this step rather than merely becoming
+    # one (quoted) argument - env vars close that hole because the shell only ever
+    # substitutes them as data, after the script text is fixed. The report-path values
+    # handed to `node -e` are passed the same way (`process.env.REPORT_PATH`, not string
+    # concatenation into the `-e` source), for the same reason one level down.
     - name: Run x402-redteam
       id: run
       shell: bash
       working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        AGENT_CMD: ${{ inputs.agent }}
+        CHAINS: ${{ inputs.chains }}
+        CORPUS: ${{ inputs.corpus }}
+        REPEAT: ${{ inputs.repeat }}
+        TIMEOUT: ${{ inputs.timeout }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        AGENT_ID: ${{ inputs.agent-id }}
+        GUARDRAIL_ID: ${{ inputs.guardrail-id }}
+        OUT_DIR: ${{ inputs.out }}
+        PASS_ENV: ${{ inputs.pass-env }}
       run: |
         set +e
-        export PATH="$PATH:${{ github.action_path }}/node_modules/.bin"
-        node "${{ github.action_path }}/packages/cli/bin/x402-redteam.mjs" run \
-          --agent "${{ inputs.agent }}" \
-          --chains "${{ inputs.chains }}" \
-          --corpus "${{ inputs.corpus }}" \
-          --repeat "${{ inputs.repeat }}" \
-          --timeout "${{ inputs.timeout }}" \
-          --fail-on "${{ inputs.fail-on }}" \
-          --agent-id "${{ inputs.agent-id }}" \
-          --guardrail-id "${{ inputs.guardrail-id }}" \
-          --out "${{ inputs.out }}"
+        export PATH="$PATH:$ACTION_PATH/node_modules/.bin"
+        pass_env_args=()
+        if [ -n "$PASS_ENV" ]; then
+          pass_env_args=(--pass-env "$PASS_ENV")
+        fi
+        node "$ACTION_PATH/packages/cli/bin/x402-redteam.mjs" run \
+          --agent "$AGENT_CMD" \
+          --chains "$CHAINS" \
+          --corpus "$CORPUS" \
+          --repeat "$REPEAT" \
+          --timeout "$TIMEOUT" \
+          --fail-on "$FAIL_ON" \
+          --agent-id "$AGENT_ID" \
+          --guardrail-id "$GUARDRAIL_ID" \
+          --out "$OUT_DIR" \
+          "${pass_env_args[@]}"
         code=$?
 
-        report="${{ inputs.out }}/report.json"
+        report="$OUT_DIR/report.json"
         echo "report-json=$report" >> "$GITHUB_OUTPUT"
         if [ -f "$report" ]; then
-          pass_rate=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('$report','utf8')).summary.pass_rate)")
-          unauthorized=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('$report','utf8')).summary.unauthorized_usd)")
+          pass_rate=$(REPORT_PATH="$report" node -e "console.log(JSON.parse(require('node:fs').readFileSync(process.env.REPORT_PATH,'utf8')).summary.pass_rate)")
+          unauthorized=$(REPORT_PATH="$report" node -e "console.log(JSON.parse(require('node:fs').readFileSync(process.env.REPORT_PATH,'utf8')).summary.unauthorized_usd)")
         else
           pass_rate=0
           unauthorized=0
@@ -112,6 +144,10 @@ runs:
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         exit 0
 
+    # Needs `permissions: security-events: write` on the *caller's* job or workflow -
+    # a composite action (this file) cannot grant its own permissions, only use what the
+    # caller's GITHUB_TOKEN already has. Without it, this step fails on a private repo or
+    # a restrictive org default (README "Integration contract" documents this).
     - name: Upload SARIF
       if: ${{ inputs.upload-sarif == 'true' }}
       uses: github/codeql-action/upload-sarif@v3
@@ -128,8 +164,12 @@ runs:
     - name: Append report to step summary
       shell: bash
       working-directory: ${{ github.workspace }}
-      run: cat "${{ inputs.out }}/report.md" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        OUT_DIR: ${{ inputs.out }}
+      run: cat "$OUT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Exit with the harness result
       shell: bash
-      run: exit ${{ steps.run.outputs.exit-code }}
+      env:
+        EXIT_CODE: ${{ steps.run.outputs.exit-code }}
+      run: exit "$EXIT_CODE"

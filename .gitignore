@@ -7,3 +7,9 @@ out/
 .DS_Store
 .claude/worktrees/
 .claude/settings.local.json
+
+# U12: examples/agents-py's project-local uv venv (functional-design.md §2.5) - never
+# committed, never created by CI.
+examples/agents-py/.venv/
+examples/agents-py/__pycache__/
+

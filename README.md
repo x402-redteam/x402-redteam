@@ -93,12 +93,27 @@ Environment variables:
 | `X402_REDTEAM_CHAIN` | `"evm"` or `"svm"` |
 | `X402_FACILITATOR_URL` | mock `/verify` `/settle` `/supported` endpoint |
 | `SOLANA_RPC_URL` | mock Solana JSON-RPC (blockhash, mint account, slot) |
+| `X402_EVM_RPC_URL`, `ETH_RPC_URL` | mock EVM JSON-RPC (v2) |
 
-`task.json` (version 1):
+Beyond `PATH`/`HOME`/`NODE_OPTIONS`, the agent subprocess gets *only* the env vars above —
+nothing else in the harness's own environment leaks through, API keys included, unless you name
+it with `--pass-env NAME1,NAME2` (also exposed as the GitHub Action's `pass-env` input, forwarded
+the same way). Anything ending in `_PROXY` is dropped even if you name it explicitly. This is how
+[the LLM agent below](#bring-an-llm-agent) gets `ANTHROPIC_API_KEY` without the harness ever
+writing it anywhere.
+
+> **Action permissions:** the composite action's SARIF-upload step needs
+> `permissions: security-events: write` on your *calling* job or workflow — a composite action
+> can't grant that to itself, only use what your workflow's `GITHUB_TOKEN` already has. Without it,
+> that step fails (harmlessly to the run's own pass/fail result, but you lose code-scanning
+> annotations) on a private repo or under a restrictive org default.
+
+`task.json` (version 2 — additive; an agent that ignores unknown fields keeps working against a
+version-1 task unchanged):
 
 ```jsonc
 {
-  "version": 1,
+  "version": 2,
   "run_id": "opaque-hex",
   "prompt": "rendered task prompt — the job, in plain English, budget stated in words",
   "base_url": "http://127.0.0.1:43021",
@@ -110,7 +125,9 @@ Environment variables:
   "facilitator_url": "http://127.0.0.1:43021/facilitator",
   "solana_rpc_url": "http://127.0.0.1:43021/solana-rpc",
   "ledger_url": "http://127.0.0.1:43021/__harness/ledger",
-  "notice": "TEST KEYS ONLY — no funds"
+  "notice": "TEST KEYS ONLY — no funds",
+  "wallet_balance_usd": 100,                               // v2: the agent's modelled wallet balance
+  "evm_rpc_url": "http://127.0.0.1:43021/evm-rpc"          // v2
 }
 ```
 
@@ -163,6 +180,59 @@ client.register("solana:*", new ExactSvmScheme(wrapped, { rpcUrl: task.solana_rp
 A direct (non-x402) transfer your agent makes in response to page prose is reported the same way,
 via `recordTransfer` from `@x402-redteam/capture` — see
 [`examples/agents/src/naive.ts`](examples/agents/src/naive.ts) for a working example.
+
+### Bring an LLM agent
+
+[`examples/agents/src/llm.ts`](examples/agents/src/llm.ts) is a Claude tool-use agent that decides
+*for itself* whether to pay, instead of following a scripted policy — three tools (`http_get`,
+`pay_and_get`, `send_usdc`), no attack awareness in its system prompt, `--repeat` and pass_rate
+instead of a determinism assertion. Its results are **experimental**: never committed to
+`results/`, never ranked, never run in CI (ADR-008 amendment).
+
+Running it for real needs an Anthropic API key and is the one exception to this repo's "no
+network" rule (manual, non-CI runs only):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+examples/agents/scripts/run-llm.sh --repeat 5
+```
+
+- The key is read **only** from `ANTHROPIC_API_KEY`, passed through with `--pass-env
+  ANTHROPIC_API_KEY` — never written to `task.json`, a log file, or a report.
+- Model defaults to `claude-sonnet-5`; override with `X402_LLM_MODEL`.
+- Spend is capped for the **whole session**, not per run: `run-llm.sh` keeps a spend file that
+  every agent process reads and adds to. Defaults: $5 per session
+  (`X402_LLM_SESSION_BUDGET_USD`) and $0.25 per run (`X402_LLM_BUDGET_USD`). Each run prints its
+  estimated spend, and the script prints the session total. Run the agent through
+  `run-llm.sh`; invoking it directly only gets the per-run cap.
+- Without `ANTHROPIC_API_KEY` set, `run-llm.sh` prints `SKIPPED: ANTHROPIC_API_KEY not set` and
+  exits 0 **without starting the harness** — a clean skip, not a failure. Invoking
+  `examples/agents/src/llm.ts` directly (bypassing the script) without a key instead exits 2, the
+  same "invalid run" every control failure produces (ADR-009) — correct, since it isn't a pass.
+- `X402_LLM_POLICY_HINTS=1` adds `allowed_hosts` and the task budget to the system prompt, for
+  comparing an LLM given an explicit policy hint against one given none.
+- Offline, CI-safe tests cover the tool handlers (against a live mock adversary) and the agent
+  loop (against a scripted, stubbed Anthropic client) — no key or network needed for `pnpm test`.
+
+### Python agents
+
+[`examples/agents-py/`](examples/agents-py/) runs the same corpus against a client on a different
+SDK entirely — the [`x402` PyPI package](https://pypi.org/project/x402/) — to prove header capture
+works cross-language, not just against `@x402/*`. EVM only in Bolt 5:
+
+```bash
+cd examples/agents-py
+uv venv --python 3.12 .venv
+uv sync
+cd ../..
+pnpm x402-redteam run --agent "examples/agents-py/.venv/bin/python examples/agents-py/agent.py" --chains evm
+```
+
+The venv is project-local (`examples/agents-py/.venv`, gitignored) and never touches system Python
+or a global install. The agent fetches only the `base_url`-prefixed URLs named in the prompt, once
+each, through the SDK's own default `httpx` payment transport and its own default spend controls
+(no custom policy) — like this repo's TypeScript `sdk-default` baseline, it measures what the
+third-party SDK does on its own, not a guardrail this repo wrote.
 
 ## Scenarios
 
