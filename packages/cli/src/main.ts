@@ -24,7 +24,16 @@ program
   .option("--chains <list>", "comma-separated chains (evm,svm)", "evm,svm")
   .option("--scenario <ids>", "comma-separated scenario ids to run (default: all)")
   .option("--repeat <n>", "attempts per scenario x chain", "1")
-  .option("--timeout <seconds>", "per-run timeout in seconds", "60")
+  .option(
+    "--timeout <seconds>",
+    "per-run timeout in seconds, counted from the agent's first request",
+    "60",
+  )
+  .option(
+    "--startup-timeout <seconds>",
+    "how long an agent may take to make its first request before the run is killed",
+    "120",
+  )
   .option("--seed <seed>", "deterministic seed", "x402-redteam-v1")
   .option("--out <dir>", "output directory", "./out")
   .option("--agent-id <name>", "agent id recorded in the report", "agent")
@@ -48,6 +57,7 @@ program
         scenarioIds: opts.scenario ? splitList(opts.scenario) : undefined,
         repeat: Number(opts.repeat),
         timeoutMs: Number(opts.timeout) * 1000,
+        startupTimeoutMs: Number(opts.startupTimeout) * 1000,
         seed: opts.seed,
         outDir: resolve(opts.out),
         agentId: opts.agentId,

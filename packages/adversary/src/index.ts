@@ -39,6 +39,8 @@ export interface Adversary {
   baseUrl: string;
   load(run: { scenario: Scenario; chain: Chain; run_id: string }): void;
   drain(): DrainedRun;
+  /** Requests the loaded run has received so far (0 when nothing is loaded). */
+  requestCount(): number;
   close(): Promise<void>;
 }
 
@@ -93,6 +95,9 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
         payments: bySeq(state.payments),
         delivered: state.delivered,
       };
+    },
+    requestCount() {
+      return holder.current?.state.requests.length ?? 0;
     },
     close() {
       return new Promise<void>((resolve, reject) => {

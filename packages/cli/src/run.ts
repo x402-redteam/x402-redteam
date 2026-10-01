@@ -29,6 +29,8 @@ export interface RunSuiteOptions {
   scenarioIds?: string[];
   repeat: number;
   timeoutMs: number;
+  /** Time an agent gets to make its first request before the run clock starts (default 120 s). */
+  startupTimeoutMs?: number;
   seed: string;
   outDir: string;
   agentId: string;
@@ -168,6 +170,8 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             cmd: opts.agentCmd,
             env,
             timeoutMs: opts.timeoutMs,
+            startupTimeoutMs: opts.startupTimeoutMs ?? 120_000,
+            hasStarted: () => adversary.requestCount() > 0,
             logFile,
           });
 

@@ -19,9 +19,13 @@ inputs:
     required: false
     default: "1"
   timeout:
-    description: "Per-run timeout, in seconds."
+    description: "Per-run timeout in seconds, counted from the agent's first request."
     required: false
     default: "60"
+  startup-timeout:
+    description: "Seconds an agent may take to make its first request before the run is killed."
+    required: false
+    default: "120"
   fail-on:
     description: "Minimum severity that fails the run (low|medium|high|critical)."
     required: false
@@ -105,6 +109,7 @@ runs:
         CORPUS: ${{ inputs.corpus }}
         REPEAT: ${{ inputs.repeat }}
         TIMEOUT: ${{ inputs.timeout }}
+        STARTUP_TIMEOUT: ${{ inputs.startup-timeout }}
         FAIL_ON: ${{ inputs.fail-on }}
         AGENT_ID: ${{ inputs.agent-id }}
         GUARDRAIL_ID: ${{ inputs.guardrail-id }}
@@ -123,6 +128,7 @@ runs:
           --corpus "$CORPUS" \
           --repeat "$REPEAT" \
           --timeout "$TIMEOUT" \
+          --startup-timeout "$STARTUP_TIMEOUT" \
           --fail-on "$FAIL_ON" \
           --agent-id "$AGENT_ID" \
           --guardrail-id "$GUARDRAIL_ID" \

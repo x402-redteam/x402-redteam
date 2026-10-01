@@ -8,8 +8,10 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 1 — U1 schema + workspace (G1 approved)
 - [x] Bolt 2 — U2 adversary, U3 capture, U4 scorer (G2 approved)
 - [x] Bolt 3 — U5 cli + reference agents, U6 corpus (G3 approved)
-- [?] Bolt 4 — U7 action/README/leaderboard (G4 open, pending review); U8 Mode B [S] roadmap
+- [x] Bolt 4 — U7 action/README/leaderboard (G4 closed with G6); U8 Mode B [S] roadmap
 - [x] Architecture Review 1 — accepted at G5
-- [?] Bolt 5 — Measurement validity: Phases A, B, C merged (awaiting G6)
+- [x] Bolt 5 — Measurement validity (G6 approved)
+- [x] U14 — agent startup timeout (load-flake fix)
+- [ ] Bolt 6 — pre-launch: realistic hosts, provenance, guardrail-track driver, Rail port (MPP), reach_class (to be designed)
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped

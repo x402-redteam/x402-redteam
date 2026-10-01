@@ -279,11 +279,13 @@ attack-scenario results can't be trusted as evidence of safety.
 
 ```
 x402-redteam run --agent "<cmd>" [--corpus ./corpus] [--chains evm,svm] [--scenario id,..]
-                 [--repeat 1] [--timeout 60] [--seed x402-redteam-v1] [--out ./out]
-                 [--agent-id name] [--guardrail-id name] [--fail-on high]
+                 [--repeat 1] [--timeout 60] [--startup-timeout 120] [--seed x402-redteam-v1] [--out ./out]
+                 [--agent-id name] [--guardrail-id name] [--fail-on low] [--skip-controls] [--pass-env A,B]
 x402-redteam validate [--corpus ./corpus]
 x402-redteam report --in out/report.json --format md|sarif
 ```
+
+`--timeout` counts from the agent's first request to the harness. Until then the agent gets up to `--startup-timeout` seconds to boot, so a slow start on a loaded machine or CI runner doesn't turn a run into an `error`.
 
 ## GitHub Action
 
@@ -292,7 +294,7 @@ x402-redteam report --in out/report.json --format md|sarif
   with:
     agent: "node my-agent.js"
     guardrail-id: my-guardrail-v1
-    fail-on: high
+    # fail-on defaults to "low": any failing scenario fails the job (ADR-015).
 ```
 
 Runs the harness, uploads `report.sarif` to code scanning (`category: x402-redteam`), attaches the

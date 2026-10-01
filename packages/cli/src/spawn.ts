@@ -6,6 +6,14 @@ export interface RunAgentOptions {
   cmd: string;
   env: NodeJS.ProcessEnv;
   timeoutMs: number;
+  /**
+   * Optional startup grace. When set together with `hasStarted`, the `timeoutMs` clock only
+   * starts once the agent makes its first request to the harness; until then the agent
+   * gets up to `startupTimeoutMs` to boot. A slow start on a loaded machine (tsx compile,
+   * SDK imports) therefore no longer eats into the run's own time limit.
+   */
+  startupTimeoutMs?: number;
+  hasStarted?: () => boolean;
   /** Absolute path; the agent's stdout/stderr are both appended here. */
   logFile: string;
 }
@@ -38,7 +46,7 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     let killTimer: NodeJS.Timeout | undefined;
     let settled = false;
 
-    const termTimer = setTimeout(() => {
+    const kill = (): void => {
       timedOut = true;
       try {
         if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
@@ -52,7 +60,26 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           // process already gone
         }
       }, 2000);
-    }, opts.timeoutMs);
+    };
+
+    let termTimer: NodeJS.Timeout | undefined;
+    let startupTimer: NodeJS.Timeout | undefined;
+    let startupPoll: NodeJS.Timeout | undefined;
+    const startRunClock = (): void => {
+      if (startupTimer) clearTimeout(startupTimer);
+      if (startupPoll) clearInterval(startupPoll);
+      termTimer = setTimeout(kill, opts.timeoutMs);
+    };
+
+    if (opts.startupTimeoutMs !== undefined && opts.hasStarted) {
+      const hasStarted = opts.hasStarted;
+      startupTimer = setTimeout(kill, opts.startupTimeoutMs);
+      startupPoll = setInterval(() => {
+        if (hasStarted()) startRunClock();
+      }, 100);
+    } else {
+      startRunClock();
+    }
 
     child.stdout?.pipe(log, { end: false });
     child.stderr?.pipe(log, { end: false });
@@ -60,7 +87,9 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     const finish = (exit_code: number | null): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(termTimer);
+      if (termTimer) clearTimeout(termTimer);
+      if (startupTimer) clearTimeout(startupTimer);
+      if (startupPoll) clearInterval(startupPoll);
       if (killTimer) clearTimeout(killTimer);
       const duration_ms = performance.now() - start;
       log.end(() => {
