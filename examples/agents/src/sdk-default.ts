@@ -15,17 +15,19 @@
  * non-harness-authored data point backs the "reference agents are harness oracles, not
  * evidence of real-world safety" statement (ADR-008 amendment) ahead of a public launch.
  */
-import { type CrawlSeed, crawl, extractUrls } from "./lib/crawl.js";
-import { buildClient, readTask } from "./lib/wallet.js";
+import { allowedOrigins, type CrawlSeed, crawl, extractUrls } from "./lib/crawl.js";
+import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
 async function main(): Promise<void> {
   const task = readTask();
+  refuseUnsupportedProxyMode(task);
   const { payFetch } = await buildClient(task);
+  const origins = allowedOrigins(task);
 
-  const seedUrls = extractUrls(task.prompt, task.base_url);
+  const seedUrls = extractUrls(task.prompt, origins);
   const seeds: CrawlSeed[] = seedUrls.map((url) => ({ url, referrerBody: "" }));
 
-  await crawl(payFetch, seeds, { baseUrl: task.base_url });
+  await crawl(payFetch, seeds, { origins });
 }
 
 main().catch((err) => {

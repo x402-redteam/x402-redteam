@@ -7,11 +7,14 @@ Solana is added only if an RPC override is confirmed on that SDK's client (uncon
 write time; running it on `svm` would otherwise silently dial the public Solana devnet,
 which the harness's "no real funds, no network" rule forbids).
 
-Fetches every `task.json` `prompt` URL that starts with `base_url`, once each, through the
-SDK's own default httpx payment transport - the SDK's own default spend controls apply
-(currently at most $1 per payment; see `x402.client_base.DEFAULT_MAX_AMOUNT_PER_PAYMENT`),
-same as this repo's TypeScript agents' "SDK default" baseline. No custom policy: this
-agent's purpose is to prove header capture works cross-language, not to model a guardrail.
+Fetches every `task.json` `prompt` URL whose origin is declared by the task (`base_url`, or
+any `host_mode: "localhost"` virtual host in `task["hosts"]` - see `url_utils.py`), once
+each, through the SDK's own default httpx payment transport - the SDK's own default spend
+controls apply (currently at most $1 per payment; see
+`x402.client_base.DEFAULT_MAX_AMOUNT_PER_PAYMENT`), same as this repo's TypeScript agents'
+"SDK default" baseline. No custom policy: this agent's purpose is to prove header capture
+works cross-language, not to model a guardrail. `host_mode: "proxy"` is not supported (see
+`run()`).
 
 Invocation (per the design; there is no wrapper script for this agent):
     examples/agents-py/.venv/bin/python examples/agents-py/agent.py
@@ -22,7 +25,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import sys
 import traceback
 
@@ -30,6 +32,8 @@ from eth_account import Account
 from x402 import x402Client
 from x402.http.clients.httpx import wrapHttpxWithPayment
 from x402.mechanisms.evm.exact import ExactEvmScheme
+
+from url_utils import allowed_origins, extract_urls
 
 REQUEST_TIMEOUT_SECONDS = 30.0
 
@@ -43,21 +47,24 @@ def read_task() -> dict:
         return json.load(f)
 
 
-def extract_urls(text: str, base_url: str) -> list[str]:
-    """Every `base_url`-prefixed URL in `text`, trailing punctuation trimmed, deduped in
-    first-seen order - mirrors `examples/agents/src/lib/crawl.ts`'s `extractUrls`, but
-    this agent fetches each one exactly once (§4: "fetches only prompt URLs ... once
-    each"), with no crawl of links discovered inside fetched pages."""
-    pattern = re.compile(re.escape(base_url) + r'[^\s"\'<>)\]]*')
-    found = [u.rstrip(".,;:!?") for u in pattern.findall(text)]
-    return list(dict.fromkeys(found))
-
-
 async def run(task: dict) -> int:
     if task["chain"] != "evm":
         print(
             f'python-x402: unsupported chain "{task["chain"]}" - this agent is EVM-only '
             "in Bolt 5 (run the harness with --chains evm).",
+            file=sys.stderr,
+        )
+        return 1
+
+    # U17 code review F2: this agent only ever follows task["base_url"]/task["hosts"]
+    # origin URLs (see url_utils.extract_urls) - under proxy mode every URL is a bare
+    # origin it can't reach, so it would silently fetch nothing and look like a pass.
+    # Fail loudly instead of a silent pass.
+    if task.get("host_mode") == "proxy":
+        print(
+            "python-x402: proxy mode is not supported by this agent - it only follows "
+            'task["base_url"]/task["hosts"]-origin URLs, never a bare proxy-mode origin '
+            "(see README's Host modes section). Run it with --host-mode localhost or path.",
             file=sys.stderr,
         )
         return 1
@@ -70,7 +77,7 @@ async def run(task: dict) -> int:
     client.register("eip155:*", ExactEvmScheme(signer=account))
     # No set_spend_controls() call: the SDK's own default ($1/payment) applies.
 
-    urls = extract_urls(task["prompt"], task["base_url"])
+    urls = extract_urls(task["prompt"], allowed_origins(task))
     if not urls:
         print("python-x402: no base_url-prefixed URLs found in the prompt", file=sys.stderr)
 

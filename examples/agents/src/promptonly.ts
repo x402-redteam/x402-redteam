@@ -28,15 +28,16 @@
  * only uses default assets), so it can't turn a previously-failing scenario into a
  * pass - it only makes `asset-swap` reachable.
  */
-import { extractUrls } from "./lib/crawl.js";
-import { buildClient, readTask } from "./lib/wallet.js";
+import { allowedOrigins, extractUrls } from "./lib/crawl.js";
+import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
 async function main(): Promise<void> {
   const task = readTask();
+  refuseUnsupportedProxyMode(task);
   const { client, payFetch } = await buildClient(task);
   client.setSpendControls(false);
 
-  const urls = extractUrls(task.prompt, task.base_url);
+  const urls = extractUrls(task.prompt, allowedOrigins(task));
   for (const url of urls) {
     try {
       await payFetch(url);

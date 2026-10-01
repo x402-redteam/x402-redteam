@@ -46,20 +46,20 @@ describe("main `run` usage errors (v3)", () => {
   });
 });
 
+// ADR-012 (full)/U17: localhost and proxy are real host modes now - only --host-mode
+// bogus (above) is a usage error. `--host-mode <mode>`'s own default flip (path -> ADR-012
+// §1's canonical "localhost") is checked via `--help`, per commander's auto-appended
+// "(default: ...)" text, rather than a real run - a real run exercises the adversary and
+// corpus end to end, which belongs in `hosts.e2e.test.ts`, not this fast usage-error suite.
+describe("main `run` --host-mode defaults to localhost (ADR-012 full, U17)", () => {
+  it("--help shows localhost as --host-mode's default", () => {
+    const result = runCli(["run", "--help"]);
+    expect(result.stdout).toMatch(/--host-mode <mode>[\s\S]*?\(default:\s*"localhost"\)/);
+  });
+});
+
 // Code review item 6: a stub flag must fail loudly, not be silently accepted.
 describe("main `run` rejects not-yet-implemented stub flags (v3, code review item 6)", () => {
-  it("--host-mode localhost exits 2 (not yet implemented, ADR-012/U17)", () => {
-    const result = runCli(["run", "--agent", "true", "--host-mode", "localhost"]);
-    expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/--host-mode "localhost" is not implemented yet/);
-  });
-
-  it("--host-mode proxy exits 2 (not yet implemented, ADR-012/U17)", () => {
-    const result = runCli(["run", "--agent", "true", "--host-mode", "proxy"]);
-    expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/--host-mode "proxy" is not implemented yet/);
-  });
-
   it("--agent-uid exits 2 (not yet implemented, U19)", () => {
     const result = runCli(["run", "--agent", "true", "--agent-uid", "1000"]);
     expect(result.status).toBe(2);
