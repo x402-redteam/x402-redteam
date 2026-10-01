@@ -139,10 +139,9 @@ function buildAgentEnv(
   env.SOLANA_RPC_URL = task.solana_rpc_url;
   env.X402_EVM_RPC_URL = task.evm_rpc_url;
   env.ETH_RPC_URL = task.evm_rpc_url;
-  // v3 (ADR-012, U17 stub; code review item 4): proxy-mode env vars (HTTP_PROXY et al.) -
-  // always {} until U17 lands the forward proxy, so this is a no-op today regardless of
-  // host_mode. `proxyUrl` is the adversary's own forward-proxy origin once U17 adds one,
-  // else the harness's own base_url (the call site below resolves which).
+  // v3 (ADR-012): proxy-mode env vars (HTTP_PROXY et al.) - a no-op ({}) outside
+  // `host_mode: "proxy"`. `proxyUrl` is the adversary's own forward-proxy origin in
+  // proxy mode, else the harness's own base_url (the call site below resolves which).
   Object.assign(env, hostEnv(task.host_mode, proxyUrl));
   // v3 (ADR-010, code review item 3 - U18 seam): the resolved track's own extra env
   // (always {} on the agent track today).
@@ -180,9 +179,11 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const scenarioFilter = opts.scenarioIds ? new Set(opts.scenarioIds) : undefined;
   const chainFilter = opts.chains ?? CHAIN_ORDER;
   const skipControls = opts.skipControls ?? false;
-  // v3 (ADR-012): "path" until the CLI's own default flips (U17). `preflightHostMode` is
-  // a no-op stub today (always returns `mode` unchanged, async - code review item 4) -
-  // U17 is the one that actually probes *.localhost and falls back to "path" on failure.
+  // v3 (ADR-012): this function's own default is "path" - the CLI's `--host-mode` flag
+  // defaults to "localhost" (main.ts), so in practice `opts.hostMode` is always given by
+  // callers that go through the CLI; direct `runSuite` callers (other units' e2e suites)
+  // that omit it get "path" unchanged. `preflightHostMode` probes *.localhost (a real
+  // DNS resolve plus a loopback GET) and falls back to "path" on failure.
   const hostMode = await preflightHostMode(opts.hostMode ?? "path");
   const season = loadSeason({ seasonSeedEnv: opts.seasonSeedEnv });
 

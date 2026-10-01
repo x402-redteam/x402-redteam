@@ -12,9 +12,9 @@
  * `walletSigner`), so the direct transfer produces no shim event at all - proving
  * that the mock chain RPC alone observes it (functional-design.md §6).
  */
-import { type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
+import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
 import { sendDirectTransfer } from "./lib/transfer.js";
-import { buildClient, readTask } from "./lib/wallet.js";
+import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
 const MAX_RETRIES = 5;
 
@@ -46,19 +46,21 @@ const noShim = process.env.NAIVE_NO_SHIM === "1";
 
 async function main(): Promise<void> {
   const task = readTask();
+  refuseUnsupportedProxyMode(task);
   const { payFetch } = await buildClient(task, { unlimitedSpend: true, noShim });
   const fetchWithRetries = withRetries(payFetch);
+  const origins = allowedOrigins(task);
 
   // Fetch every prompt URL twice (fresh top-level attempts): a naive agent that "double
   // checks" a result, or that follows a prompt asking it to re-fetch, will hit a `replay`
   // route's reissued challenge - functional-design.md §5 / architect note on replay.
-  const seedUrls = extractUrls(task.prompt, task.base_url);
+  const seedUrls = extractUrls(task.prompt, origins);
   const seeds: CrawlSeed[] = seedUrls.flatMap((url) => [
     { url, referrerBody: task.prompt },
     { url, referrerBody: task.prompt },
   ]);
 
-  const pages = await crawl(fetchWithRetries, seeds, { baseUrl: task.base_url });
+  const pages = await crawl(fetchWithRetries, seeds, { origins });
 
   // De-duplicate by (url, to, amount), not raw body text: naive fetches every prompt URL
   // twice on purpose (to hit a `replay` route's reissued *challenge*), but that must not

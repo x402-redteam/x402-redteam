@@ -2,16 +2,23 @@
  * Self-contained BFS crawler for the standard driver, per functional-design.md §2
  * ("BFS over every link on harness origins ... depth <= 4, <= 200 fetches"). Copied and
  * adapted from `examples/agents/src/lib/crawl.ts` rather than imported - "do not import
- * from examples/" (functional-design.md §5) - with the depth/fetch caps and discovery
- * origins widened for a *maximally attempting* driver instead of the reference agents'
- * depth-3/30-fetch budget, and `onDiscover` reporting the discovering page's full URL
- * (not just its body) so `main.ts` can build GDP's `referrer: {url, text}`.
+ * from examples/" (functional-design.md §5) - with the depth/fetch caps widened for a
+ * *maximally attempting* driver instead of the reference agents' depth-3/30-fetch
+ * budget, and `onDiscover` reporting the discovering page's full URL (not just its body)
+ * so `main.ts` can build GDP's `referrer: {url, text}`.
+ *
+ * ADR-012 (full)/U17, mirrored here per code review round 2: a URL is only ever followed
+ * when its *origin* (scheme + host + port, exact match) is one `origins` actually names
+ * - never a prefix or suffix match against the raw URL string.
+ * `http://a.localhost.evil.com/x` and `http://x.localhost-evil.com/y` both satisfy a
+ * naive "starts with/contains .localhost" check while being a completely different, real
+ * (attacker-controlled) DNS origin - exact-origin-set membership
+ * (`new URL(u).origin`) can't be fooled that way.
  *
  * Code review round 1:
- * - finding 7: ADR-010 says the driver "fetches each URL twice" - this used to be true
- *   only of the seeds (`main.ts` manually duplicated them); every discovered link is now
- *   queued twice here too, so the rule is uniform and `main.ts` no longer needs to know
- *   about it.
+ * - finding 7: ADR-010 says the driver "fetches each URL twice" - every discovered link
+ *   is queued twice here, same as every seed, so the rule is uniform and `main.ts` no
+ *   longer needs to know about it.
  * - finding 8: a redirect target never used to get an `onDiscover` call at all (it isn't
  *   "found in a page body", it's an automatic hop), so a guardrail's `payment`/`transfer`
  *   `referrer` for a redirected URL was always `null` - it now cites the URL that
@@ -36,10 +43,10 @@ export interface CrawlSeed {
 }
 
 export interface CrawlOptions {
-  /** Every origin a discovered link is followed on - any `*.localhost` harness host,
-   * `base_url`, or an `/_host/` path-mode URL all resolve to one of these origins so the
-   * driver crawls every harness host, not just the one named in the prompt. */
-  originPrefixes: string[];
+  /** Every origin the crawler is allowed to request or follow a redirect/link to - see
+   * `allowedOrigins()`. Exact `scheme://host:port` membership, never a prefix/suffix
+   * match. */
+  origins: Set<string>;
   /** Default 4, per functional-design.md §2. */
   maxDepth?: number;
   /** Default 200, per functional-design.md §2. */
@@ -55,24 +62,64 @@ const DEFAULT_MAX_DEPTH = 4;
 const DEFAULT_MAX_FETCHES = 200;
 const MAX_REDIRECT_HOPS = 10;
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Any absolute http(s) URL - a broad candidate match; `isCrawlable` (exact origin
+ * membership) is what actually decides whether the crawler follows it. */
+const URL_CANDIDATE_RE = /https?:\/\/[^\s"'<>)\]]+/gi;
+
+function safeOrigin(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
 }
 
-function isOnAnyOrigin(url: string, originPrefixes: string[]): boolean {
-  return originPrefixes.some((prefix) => url.startsWith(prefix));
+/** A minimal, structural shape of `task.json` - just enough to compute the origin
+ * allow-list, mirroring `examples/agents/src/lib/crawl.ts`'s `HostSource`. */
+export interface HostSource {
+  base_url: string;
+  /** v3 (ADR-012): every virtual host this scenario declares, rendered to its origin
+   * under the active `host_mode`. */
+  hosts?: Record<string, string>;
 }
 
-/** Every URL in `text` that starts with one of `originPrefixes`, trailing punctuation
- * trimmed, in order of first appearance (lexical within the page, per the driver's
- * determinism rule, functional-design.md §3 step 6). */
-export function extractUrls(text: string, originPrefixes: string[]): string[] {
+/**
+ * Every origin the driver may request: `task.base_url`'s own origin (the harness's
+ * endpoints, and every `path`-mode virtual host, which is a path prefix on that one
+ * origin) union the origin of every `task.hosts` entry (every `localhost`-mode virtual
+ * host this scenario names - including an intentionally-malicious one, like a
+ * lookalike-domain route, which is still part of this scenario's own declared surface;
+ * refusing to *pay* it is the guardrail's job, not a reason to make it unreachable to
+ * the driver, which must reach everything).
+ */
+export function allowedOrigins(task: HostSource): Set<string> {
+  const origins = new Set<string>();
+  const base = safeOrigin(task.base_url);
+  if (base !== undefined) origins.add(base);
+  for (const hostUrl of Object.values(task.hosts ?? {})) {
+    const origin = safeOrigin(hostUrl);
+    if (origin !== undefined) origins.add(origin);
+  }
+  return origins;
+}
+
+/** True iff `url`'s own origin (scheme + host + port) is exactly one of `origins` - see
+ * the module docstring for why this is an exact-match set check, never a substring or
+ * suffix/prefix match against the raw URL string. */
+function isCrawlable(url: string, origins: Set<string>): boolean {
+  const origin = safeOrigin(url);
+  return origin !== undefined && origins.has(origin);
+}
+
+/** Every URL in `text` the driver is allowed to follow (see `isCrawlable`), trailing
+ * punctuation trimmed, in order of first appearance (lexical within the page, per the
+ * driver's determinism rule, functional-design.md §3 step 6). */
+export function extractUrls(text: string, origins: Set<string>): string[] {
+  const candidates = text.match(URL_CANDIDATE_RE) ?? [];
   const found: string[] = [];
-  for (const prefix of originPrefixes) {
-    const re = new RegExp(`${escapeRegExp(prefix)}[^\\s"'<>)\\]]*`, "g");
-    for (const match of text.match(re) ?? []) {
-      found.push(match.replace(/[.,;:!?]+$/, ""));
-    }
+  for (const raw of candidates) {
+    const trimmed = raw.replace(/[.,;:!?]+$/, "");
+    if (isCrawlable(trimmed, origins)) found.push(trimmed);
   }
   return found;
 }
@@ -86,7 +133,7 @@ export function extractUrls(text: string, originPrefixes: string[]): string[] {
 async function fetchOne(
   fetchFn: FetchLike,
   startUrl: string,
-  originPrefixes: string[],
+  origins: Set<string>,
   consumeFetch: () => boolean,
   onDiscover: ((url: string, referrerUrl: string, referrerBody: string) => void) | undefined,
 ): Promise<CrawledPage | undefined> {
@@ -110,7 +157,7 @@ async function fetchOne(
       } catch {
         return undefined;
       }
-      if (!isOnAnyOrigin(next, originPrefixes)) return undefined;
+      if (!isCrawlable(next, origins)) return undefined;
       onDiscover?.(next, url, "");
       url = next;
       continue;
@@ -166,19 +213,13 @@ export async function crawl(
     const item = queue.shift();
     if (!item) break;
 
-    const page = await fetchOne(
-      fetchFn,
-      item.url,
-      opts.originPrefixes,
-      consumeFetch,
-      opts.onDiscover,
-    );
+    const page = await fetchOne(fetchFn, item.url, opts.origins, consumeFetch, opts.onDiscover);
     if (!page) continue;
 
     pages.push(page);
     if (item.depth >= maxDepth) continue;
 
-    for (const next of extractUrls(page.body, opts.originPrefixes)) {
+    for (const next of extractUrls(page.body, opts.origins)) {
       if (seenLinks.has(next)) continue;
       seenLinks.add(next);
       opts.onDiscover?.(next, page.url, page.body);

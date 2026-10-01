@@ -16,7 +16,7 @@ import { createKeyPairSignerFromBytes, getBase58Encoder } from "@solana/kit";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { LocalAccount } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { type CrawlSeed, crawl, extractUrls } from "./crawl.js";
+import { allowedOrigins, type CrawlSeed, crawl, extractUrls } from "./crawl.js";
 import { DEFAULT_HELLO_TIMEOUT_MS, GdpClient } from "./gdp.js";
 import { extractTransferIntents, type TransferIntent } from "./intent.js";
 import { buildPayFetch, type PayContext } from "./pay.js";
@@ -126,6 +126,18 @@ async function main(): Promise<void> {
   const task = readTask();
   const guardrailCmd = process.env.X402_GUARDRAIL_CMD;
   if (!guardrailCmd) throw new Error("X402_GUARDRAIL_CMD is not set");
+  // Code review round 2: `proxy` mode needs the driver to honor HTTP_PROXY/http_proxy
+  // (Node's global `fetch` ignores them - CLAUDE.md "Known SDK facts"; the documented
+  // recipe is `undici`'s `EnvHttpProxyAgent`, not wired up here) and to render bare
+  // origins rather than `task.hosts`'s absolute URLs. Rather than silently crawling
+  // nothing (zero requests, a `path`-mode-shaped `allowedOrigins()` that matches
+  // nothing proxy mode actually requests) or bypassing the proxy and leaking a real DNS
+  // lookup, the driver refuses outright until this is implemented.
+  if (task.host_mode === "proxy") {
+    throw new Error(
+      "driver@1 does not support host_mode 'proxy' yet - it would either crawl nothing or risk a real DNS lookup; refusing to run rather than producing a misleading report",
+    );
+  }
 
   const taskPath = process.env.X402_REDTEAM_TASK as string;
   const runsDir = resolve(dirname(taskPath), "..", "runs");
@@ -167,7 +179,11 @@ async function main(): Promise<void> {
     );
     const hooks = new Set<GdpHook>(hello.hooks);
 
-    const originPrefixes = [...new Set<string>([task.base_url, ...Object.values(task.hosts)])];
+    // Code review round 2 (mirrors examples/agents/src/lib/crawl.ts's `allowedOrigins`):
+    // exact-origin-set membership, never a prefix/suffix match - see crawl.ts's
+    // docstring for why `http://a.localhost.evil.com` must never be treated as crawlable
+    // just because it starts with an allowed `*.localhost` string.
+    const origins = allowedOrigins(task);
 
     const payCtx: PayContext = {
       gdp,
@@ -194,7 +210,7 @@ async function main(): Promise<void> {
 
     // Code review finding 7: `crawl()` itself now fetches every seed (and every
     // discovered link) twice, so seeds are passed once each here.
-    const seedUrls = extractUrls(task.prompt, originPrefixes);
+    const seedUrls = extractUrls(task.prompt, origins);
     const seeds: CrawlSeed[] = seedUrls.map((url) => ({
       url,
       referrerUrl: TASK_PROMPT_AS_SOURCE_URL,
@@ -205,7 +221,7 @@ async function main(): Promise<void> {
     const fetchWithRetries = withRetries(payFetch);
 
     const pages = await crawl(fetchWithRetries, seeds, {
-      originPrefixes,
+      origins,
       maxDepth: MAX_DEPTH,
       maxFetches: MAX_DISCOVERY_FETCHES,
       onDiscover: (url, referrerUrl, referrerBody) => {

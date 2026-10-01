@@ -1,8 +1,20 @@
 /**
  * Shared crawler for both reference agents, per application-design.md §8 /
- * U5 functional-design.md §5: pulls URLs out of a page (or the task prompt)
- * that start with `task.base_url`, follows links up to depth 3, follows
- * redirects manually, and caps the whole crawl at 30 fetches.
+ * U5 functional-design.md §5: pulls URLs out of a page (or the task prompt),
+ * follows links up to depth 3, follows redirects manually, and caps the
+ * whole crawl at 30 fetches.
+ *
+ * ADR-012 (full)/U17: a URL is only ever followed when its *origin* (scheme + host +
+ * port, exact match) is one this scenario actually declared - `origin(task.base_url)`
+ * (the harness's own endpoints, and every `path`-mode virtual host) union the origin of
+ * every `task.hosts` value (every `localhost`/`proxy`-mode virtual host this scenario
+ * names, including a look-alike host that's part of *this* scenario, which a correct
+ * guardrail - not the crawler - is responsible for refusing to pay). Code review F1
+ * (HIGH, egress): an earlier version matched any `*.localhost`-*suffixed* origin by
+ * regex, which `http://a.localhost.evil.com/x` or `http://x.localhost-evil.com/y` both
+ * satisfy as a *string suffix/prefix* while being a completely different, real-DNS
+ * origin - exact-origin-set membership (`new URL(u).origin`, not a regex against the
+ * raw string) can't be fooled that way.
  */
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -22,7 +34,9 @@ export interface CrawlSeed {
 }
 
 export interface CrawlOptions {
-  baseUrl: string;
+  /** Every origin the crawler is allowed to request or follow a redirect/link to - see
+   * `allowedOrigins()`. */
+  origins: Set<string>;
   /** Default 3, per functional-design.md §5. */
   maxDepth?: number;
   /** Default 30, per functional-design.md §5. */
@@ -36,22 +50,73 @@ const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_FETCHES = 30;
 const MAX_REDIRECT_HOPS = 10;
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Any absolute http(s) URL - a broad candidate match; `isCrawlable` (exact origin
+ * membership) is what actually decides whether the crawler follows it. */
+const URL_CANDIDATE_RE = /https?:\/\/[^\s"'<>)\]]+/gi;
+
+function safeOrigin(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
 }
 
-/** Every `task.base_url`-prefixed URL found in `text`, trailing punctuation trimmed. */
-export function extractUrls(text: string, baseUrl: string): string[] {
-  const re = new RegExp(`${escapeRegExp(baseUrl)}[^\\s"'<>)\\]]*`, "g");
-  const found = text.match(re) ?? [];
-  return found.map((u) => u.replace(/[.,;:!?]+$/, ""));
+/** A minimal, structural shape of `TaskFile` - just enough to compute the origin
+ * allow-list, so this module never has to import `./wallet.js` (which itself imports
+ * `FetchLike` from here). */
+export interface HostSource {
+  base_url: string;
+  /** v3 (ADR-012): every virtual host this scenario declares, rendered to its origin
+   * under the active `host_mode`. Absent on a v1/v2 task (path mode only, implicitly). */
+  hosts?: Record<string, string>;
 }
 
-/** Fetches one seed to completion, following same-origin redirects manually. */
+/**
+ * Every origin a crawler driven by `task` may request: `task.base_url`'s own origin
+ * (the harness's endpoints, and every `path`-mode virtual host, which is a path prefix
+ * on that one origin) union the origin of every `task.hosts` entry (every
+ * `localhost`/`proxy`-mode virtual host this *scenario* names - including an
+ * intentionally-malicious one, like a lookalike-domain route, which is still part of
+ * this scenario's own declared surface; refusing to *pay* it is the guardrail's job, not
+ * a reason to make it unreachable to the crawler).
+ */
+export function allowedOrigins(task: HostSource): Set<string> {
+  const origins = new Set<string>();
+  const base = safeOrigin(task.base_url);
+  if (base !== undefined) origins.add(base);
+  for (const hostUrl of Object.values(task.hosts ?? {})) {
+    const origin = safeOrigin(hostUrl);
+    if (origin !== undefined) origins.add(origin);
+  }
+  return origins;
+}
+
+/** True iff `url`'s own origin (scheme + host + port) is exactly one of `origins` - see
+ * the module docstring for why this is an exact-match set check, never a substring or
+ * suffix/prefix regex against the raw URL string. */
+function isCrawlable(url: string, origins: Set<string>): boolean {
+  const origin = safeOrigin(url);
+  return origin !== undefined && origins.has(origin);
+}
+
+/** Every URL in `text` the crawler is allowed to follow (see `isCrawlable`), trailing
+ * punctuation trimmed. */
+export function extractUrls(text: string, origins: Set<string>): string[] {
+  const candidates = text.match(URL_CANDIDATE_RE) ?? [];
+  const found: string[] = [];
+  for (const raw of candidates) {
+    const trimmed = raw.replace(/[.,;:!?]+$/, "");
+    if (isCrawlable(trimmed, origins)) found.push(trimmed);
+  }
+  return found;
+}
+
+/** Fetches one seed to completion, following redirects manually - only within `origins`. */
 async function fetchOne(
   fetchFn: FetchLike,
   startUrl: string,
-  baseUrl: string,
+  origins: Set<string>,
   consumeFetch: () => boolean,
 ): Promise<CrawledPage | undefined> {
   let url = startUrl;
@@ -74,7 +139,7 @@ async function fetchOne(
       } catch {
         return undefined;
       }
-      if (!next.startsWith(baseUrl)) return undefined;
+      if (!isCrawlable(next, origins)) return undefined;
       url = next;
       continue;
     }
@@ -123,13 +188,13 @@ export async function crawl(
     const item = queue.shift();
     if (!item) break;
 
-    const page = await fetchOne(fetchFn, item.url, opts.baseUrl, consumeFetch);
+    const page = await fetchOne(fetchFn, item.url, opts.origins, consumeFetch);
     if (!page) continue;
 
     pages.push(page);
     if (item.depth >= maxDepth) continue;
 
-    for (const next of extractUrls(page.body, opts.baseUrl)) {
+    for (const next of extractUrls(page.body, opts.origins)) {
       if (seenLinks.has(next)) continue;
       seenLinks.add(next);
       opts.onDiscover?.(next, page.body);

@@ -36,9 +36,17 @@ function renderContext(scenarioId: string, chain: Chain): RenderContext {
   };
 }
 
-/** Every rendered text a `reach_class: prose` scenario might carry its injection in: a
+/**
+ * Every rendered text a `reach_class: prose` scenario might carry its injection in: a
  * route's `page` (prose-payment) or its challenge's `body_json` (challenge-injection),
- * per the corpus's own prose-class scenarios. */
+ * per the corpus's own prose-class scenarios.
+ *
+ * `JSON.stringify(renderJsonStrings(body_json, ctx))` reconstructs the 402 body rather
+ * than booting the adversary and fetching the real route - verified equivalent to what
+ * the adversary actually serves: `packages/adversary/src/routes.ts` pushes exactly
+ * `JSON.stringify(bodyJson)` (the same rendered `body_json`) into `pageBodies`, the same
+ * text the harness's own prose-attribution rule scans.
+ */
 function renderedTextsFor(scenario: ReturnType<typeof loadCorpus>[number], chain: Chain): string[] {
   const ctx = renderContext(scenario.id, chain);
   const texts: string[] = [];

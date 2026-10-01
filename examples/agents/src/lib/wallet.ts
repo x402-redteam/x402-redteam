@@ -14,17 +14,19 @@ import type { LocalAccount } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { FetchLike } from "./crawl.js";
 
-/** The harness's task.json (version 1 or 2 - additive, application-design.md §6 "v2"),
- * per application-design.md §6. Kept local (rather than importing `@x402-redteam/cli`)
- * so the example agents don't depend on the CLI. */
+/** The harness's task.json (version 1, 2 or 3 - additive, application-design.md §6 "v2"
+ * and "Contracts (v3, Bolt 6)"), per application-design.md §6. Kept local (rather than
+ * importing `@x402-redteam/cli`) so the example agents don't depend on the CLI. */
 export interface TaskFile {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   run_id: string;
   prompt: string;
   base_url: string;
   chain: "evm" | "svm";
   network: string;
   budget_usd: number;
+  /** v3 (ADR-012): rendered through the active `host_mode` - e.g. "provider.test" in
+   * `path` mode, "provider.test.localhost" in `localhost` mode. */
   allowed_hosts: string[];
   wallet: { address: string; private_key: string } | { address: string; secret_key_base58: string };
   facilitator_url: string;
@@ -35,6 +37,12 @@ export interface TaskFile {
   wallet_balance_usd?: number;
   /** v2 only (ADR-013). */
   evm_rpc_url?: string;
+  /** v3 only (ADR-012): which host mode rendered this task's URLs/`allowed_hosts`.
+   * Absent on a v1/v2 task, which is always equivalent to "path". */
+  host_mode?: "localhost" | "path" | "proxy";
+  /** v3 only (ADR-012): every virtual host this scenario declares, mapped to its
+   * rendered origin under `host_mode`. */
+  hosts?: Record<string, string>;
 }
 
 /** Reads and parses `task.json` from `X402_REDTEAM_TASK`. */
@@ -42,6 +50,29 @@ export function readTask(): TaskFile {
   const path = process.env.X402_REDTEAM_TASK;
   if (!path) throw new Error("X402_REDTEAM_TASK is not set");
   return JSON.parse(readFileSync(path, "utf8")) as TaskFile;
+}
+
+/**
+ * U17 code review F2: the shared crawler (`lib/crawl.ts`) only ever follows
+ * `task.base_url`-origin and `task.hosts`-origin URLs - it has no proxy-aware HTTP
+ * client, so under `--host-mode proxy` every one of this scenario's bare-origin URLs
+ * (`http://provider.test/...`, no `.localhost` suffix and not `task.base_url`-prefixed)
+ * looks unreachable. Left unchecked, `naive`/`sdk-default`/`promptonly` (which make no
+ * policy decision either way) would silently crawl nothing and score a false PASS - the
+ * one outcome this harness's whole premise forbids. Every crawler-based
+ * reference/probe agent calls this right after `readTask()` so proxy mode fails loudly
+ * (a clear message, non-zero exit) instead. See README's Host modes section - proxy mode
+ * is for a real external agent/framework that honors `HTTP_PROXY` itself, not these
+ * reference agents.
+ */
+export function refuseUnsupportedProxyMode(task: TaskFile): void {
+  if (task.host_mode === "proxy") {
+    throw new Error(
+      "proxy mode is not supported by this agent - it only follows task.base_url- and " +
+        "*.localhost-origin URLs, never a bare proxy-mode origin (see README's Host modes " +
+        "section). Run it with --host-mode localhost or path instead.",
+    );
+  }
 }
 
 /** The agent's raw secret, chain-appropriate. */
