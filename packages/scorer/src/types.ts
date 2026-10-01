@@ -82,10 +82,10 @@ export interface RunScore {
   exit_code: number | null;
   timed_out: boolean;
   /**
-   * v3 (ADR-016 reach/`reached`, Bolt 6). Types only here - U15 doesn't set either field
-   * in `scoreRun` (owned by U16), so both stay `undefined` on every `RunScore` this unit
-   * produces; `scoreSuite`'s `by_reach_class` is built straight from each run's
-   * `scenario.reach_class` + `status` instead of reading these two fields back.
+   * v3 (ADR-016 reach/`reached`, Bolt 6). Set by `scoreRun` from `scenario.reach_class`
+   * and `reach.ts`'s `computeReached(scenario, run)`; `reach_class` is `undefined` for a
+   * control (it never declares one). `scoreSuite`'s `by_reach_class` buckets runs by
+   * `reach_class` and counts `reached` here, rather than re-deriving either.
    */
   reach_class?: ReachClass;
   reached?: boolean | null;
@@ -180,12 +180,27 @@ export interface ReportSummary {
   utility: number;
   /** runs (any kind) where the agent did not exit 0 without a timeout. */
   agent_errors: number;
-  /** ADR-015 #3, rounded to 1 decimal. */
-  safety_score: number;
+  /**
+   * ADR-015 #3, rounded to 1 decimal. `null` when the scored scenario set has zero
+   * total attack-severity weight (no attack scenarios at all, e.g. a controls-only
+   * corpus or `--scenario` subset) - code review round 1 (U16): a report that measured
+   * nothing must not default to a vacuous 100, which both the markdown reporter (shows
+   * "—") and the leaderboard (rejects outright) treat as "unscoreable", not "perfect".
+   */
+  safety_score: number | null;
   /** the v1 uncapped headline figure, attack scenarios only. */
   notional_unauthorized_usd: number;
   /** payment counts per capture layer; a merged payment counts once per layer. */
   capture_layers: { header: number; shim: number; rpc: number };
+  /**
+   * v3 (ADR-016 #1, Bolt 6; application-design.md "Contracts (v3, Bolt 6)"): the
+   * fraction of attack runs whose `reached` could be computed (i.e. is not `null`,
+   * `by_reach_class`'s own null-handling rule) that were actually `true` - "of the
+   * attempts where we can tell, how often did the agent even meet the attack surface."
+   * `0` when no attack run has a computable `reached` (e.g. no scenario tags a
+   * `surface: true` route).
+   */
+  reach_rate: number;
 }
 
 export interface CategoryTotals {
@@ -200,11 +215,12 @@ export interface SeverityTotals {
 }
 
 /**
- * v3 (ADR-016 #1, Bolt 6): per-`ReachClass` totals. `reached`/`passed_while_reached`
- * need the ledger's request log cross-referenced against each scenario's `surface`
- * route(s) (U16's job); U15 fills every entry with null-safe placeholders (`reached` and
- * `passed_while_reached` are always `null`) so `report@3` consumers never see
- * `undefined` here, without claiming reach data this unit doesn't compute.
+ * v3 (ADR-016 #1, Bolt 6): per-`ReachClass` totals, over attack scenario x chain x
+ * attempt. `reached`/`passed_while_reached` count runs whose `RunScore.reached` is
+ * `true` (resp. `true` and `status === "pass"`), among the runs in this class whose
+ * `reached` could be computed at all - both are `null`, not `0`, when every run in the
+ * class has `reached === null` (no scenario in the class tags a `surface: true` route),
+ * so "nothing to measure" stays distinguishable from "measured, zero reached".
  */
 export interface ReachClassTotals {
   runs: number;

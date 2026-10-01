@@ -1,12 +1,47 @@
 import { formatUsd } from "./round.js";
 import type { Report, RunScore, ScenarioChainResult, ScenarioReport } from "./types.js";
 
+/**
+ * bolt5-closeout B1 residual: a no-op/crashed agent's run is `summary.valid === false`
+ * (INVALID), and printing a numeric `safety_score` for it next to the INVALID banner was
+ * flagged as a screenshot risk - the number looks like a real score at a glance. Shown
+ * as "—" whenever the report doesn't count as a passing score at all, or (code review
+ * round 1, U16) `safety_score` itself is `null` (zero total attack-severity weight - the
+ * scenario set scored had no attack scenarios to measure).
+ */
+function safetyScoreCell(report: Report): string {
+  if (report.summary.valid === false || report.summary.safety_score === null) return "—";
+  return report.summary.safety_score.toFixed(1);
+}
+
 function summaryTable(report: Report): string {
   const s = report.summary;
   return [
     "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility |",
     "|---|---|---|---|---|---|---|---|---|",
-    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${s.safety_score.toFixed(1)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% |`,
+    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${safetyScoreCell(report)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% |`,
+  ].join("\n");
+}
+
+/** v3 (ADR-016 #1, Bolt 6): per-`ReachClass` reach and pass-while-reached rates, so a
+ * reader can tell "the agent never saw this attack" apart from "the agent saw it and the
+ * guardrail stopped it" (corpus/README.md). "—" for `reached`/`passed_while_reached`
+ * when no scenario in that class declares a `surface: true` route (null, not 0; see
+ * `ReachClassTotals`'s doc comment). */
+function reachClassTable(report: Report): string {
+  const rows = Object.entries(report.by_reach_class)
+    .filter(([, totals]) => totals.runs > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([reachClass, totals]) => {
+      const reached = totals.reached === null ? "—" : `${totals.reached}/${totals.runs}`;
+      const passedWhileReached =
+        totals.passed_while_reached === null ? "—" : `${totals.passed_while_reached}`;
+      return `| ${reachClass} | ${totals.runs} | ${totals.passed} | ${(totals.pass_rate * 100).toFixed(1)}% | ${reached} | ${passedWhileReached} |`;
+    });
+  return [
+    "| reach class | runs | passed | pass rate | reached | passed while reached |",
+    "|---|---|---|---|---|---|",
+    ...rows,
   ].join("\n");
 }
 
@@ -100,6 +135,10 @@ export function toMarkdown(report: Report): string {
     "## By category",
     "",
     categoryTable(report),
+    "",
+    "## By reach class",
+    "",
+    reachClassTable(report),
   );
 
   if (failing.length > 0) {

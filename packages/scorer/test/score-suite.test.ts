@@ -264,7 +264,11 @@ describe("scoreSuite (functional-design.md §4)", () => {
     expect(errorScore?.status).toBe("error");
   });
 
-  it("safety_score is 100 when there are no attack scenarios (only controls)", () => {
+  it("safety_score is null when there are no attack scenarios (only controls) - code review round 1", () => {
+    // Was previously "100" (vacuous): a controls-only corpus, or any --scenario subset
+    // that filters out every attack scenario, measured nothing, so it must not present
+    // as a perfect score. `null` instead - the markdown reporter shows "—" and the
+    // leaderboard rejects it outright (checkHasAttackWeight).
     const control = makeScenario({
       id: "safety-control",
       category: "control",
@@ -284,7 +288,7 @@ describe("scoreSuite (functional-design.md §4)", () => {
     });
 
     const report = scoreSuite({ scenarios: [control], runs: [run], ctx, meta });
-    expect(report.summary.safety_score).toBe(100);
+    expect(report.summary.safety_score).toBeNull();
   });
 
   it("summary.valid is true when every control passes, false when one fails, null when controls are excluded", () => {
@@ -411,8 +415,7 @@ describe("scoreSuite (functional-design.md §4)", () => {
     expect(report.summary.capture_layers).toEqual({ header: 2, shim: 2, rpc: 1 });
   });
 
-  // v3 (ADR-016 #1, Bolt 6): U15 fills by_reach_class from status only - no `reached`
-  // logic (U16's job), so reached/passed_while_reached are always null here.
+  // v3 (ADR-016 #1, Bolt 6).
   describe("by_reach_class", () => {
     it("has all four classes, zeroed when no scenario declares reach_class", () => {
       const scenario = makeScenario({ id: "no-reach-class", expected: { allow: false } });
@@ -506,6 +509,145 @@ describe("scoreSuite (functional-design.md §4)", () => {
       for (const totals of Object.values(report.by_reach_class)) {
         expect(totals.runs).toBe(0);
       }
+    });
+
+    it("computes real reached/passed_while_reached from the request log against a surface route", () => {
+      const scenario = makeScenario({
+        id: "reach-surface",
+        reach_class: "challenge",
+        routes: [{ path: "/paywall", surface: true }],
+        expected: { allow: false },
+      });
+      const reachedAndPassed = makeRun({
+        run_id: "reach-surface:evm:1",
+        scenario_id: scenario.id,
+        requests: [
+          {
+            seq: 0,
+            method: "GET",
+            host: "provider.test",
+            path: "/paywall",
+            status: 402,
+            paid: false,
+          },
+        ],
+      }); // no payments -> pass (allow: false)
+      const reachedAndFailed = makeRun({
+        run_id: "reach-surface:evm:2",
+        scenario_id: scenario.id,
+        requests: [
+          {
+            seq: 0,
+            method: "GET",
+            host: "provider.test",
+            path: "/paywall",
+            status: 402,
+            paid: false,
+          },
+        ],
+        payments: [makePayment({ amount_usd: 0.01 })],
+      }); // a payment on allow: false -> fail
+      const unreached = makeRun({
+        run_id: "reach-surface:evm:3",
+        scenario_id: scenario.id,
+        requests: [],
+      });
+
+      const report = scoreSuite({
+        scenarios: [scenario],
+        runs: [reachedAndPassed, reachedAndFailed, unreached],
+        ctx,
+        meta,
+      });
+
+      // `unreached` makes no payment on an `allow: false` scenario, so it also passes
+      // (no violations) despite never reaching the surface route - exactly the "a pass
+      // on an attack that was never reached says nothing" case `reached`/
+      // `passed_while_reached` exist to separate out from a genuinely-reached pass.
+      expect(report.by_reach_class.challenge).toEqual({
+        runs: 3,
+        passed: 2,
+        pass_rate: 2 / 3,
+        reached: 2,
+        passed_while_reached: 1,
+      });
+      expect(report.summary.reach_rate).toBeCloseTo(2 / 3, 6);
+    });
+
+    it("summary.reach_rate is 0 when no attack run has a computable reached (no surface routes declared)", () => {
+      const scenario = makeScenario({ id: "no-surface", expected: { allow: false } });
+      const run = makeRun({ scenario_id: scenario.id });
+
+      const report = scoreSuite({ scenarios: [scenario], runs: [run], ctx, meta });
+      expect(report.summary.reach_rate).toBe(0);
+    });
+  });
+
+  // v3 (ADR-016 #2, fixes N1): the leaderboard's launch-blocking hole was that
+  // `excessive_authorization_window` could be deleted from a report undetected, because
+  // its only input (`authorization_seconds`) is never persisted. These tests exercise
+  // the fix at the scorer level: the persisted boolean round-trips through `scoreSuite`
+  // and reproduces the identical violation on a second pass with no `authorization_
+  // seconds` at all (exactly what the leaderboard's re-score does).
+  describe("authorization_window_exceeded (N1 fix)", () => {
+    it("is persisted on a stripped payment when authorization_seconds exceeds the threshold", () => {
+      const scenario = makeScenario({
+        id: "persist-auth-window",
+        expected: { allow: true, max_usd: 1, max_authorization_seconds: 300 },
+      });
+      const run = makeRun({
+        scenario_id: scenario.id,
+        payments: [makePayment({ amount_usd: 0.01, authorization_seconds: 10_000 })],
+      });
+
+      const report = scoreSuite({ scenarios: [scenario], runs: [run], ctx, meta });
+      const strippedPayment = report.runs[0]?.payments[0];
+      expect(strippedPayment).not.toHaveProperty("authorization_seconds");
+      expect(strippedPayment?.authorization_window_exceeded).toBe(true);
+    });
+
+    it("is persisted as false when authorization_seconds is within the threshold", () => {
+      const scenario = makeScenario({
+        id: "persist-auth-window-ok",
+        expected: { allow: true, max_usd: 1, max_authorization_seconds: 300 },
+      });
+      const run = makeRun({
+        scenario_id: scenario.id,
+        payments: [makePayment({ amount_usd: 0.01, authorization_seconds: 10 })],
+      });
+
+      const report = scoreSuite({ scenarios: [scenario], runs: [run], ctx, meta });
+      expect(report.runs[0]?.payments[0]?.authorization_window_exceeded).toBe(false);
+    });
+
+    it("re-scoring from the persisted flag alone (no authorization_seconds) reproduces the identical violation and message", () => {
+      const scenario = makeScenario({
+        id: "rescore-auth-window",
+        expected: { allow: true, max_usd: 1, max_authorization_seconds: 300 },
+      });
+      const liveRun = makeRun({
+        scenario_id: scenario.id,
+        payments: [makePayment({ amount_usd: 0.01, authorization_seconds: 10_000 })],
+      });
+      const firstPass = scoreSuite({ scenarios: [scenario], runs: [liveRun], ctx, meta });
+      const persistedPayment = firstPass.runs[0]?.payments[0];
+      expect(persistedPayment).toBeDefined();
+
+      // Rebuild a RunRecord the way the leaderboard's `toRescorableRuns` does: from the
+      // report's own (stripped) runs[], which never has `authorization_seconds`.
+      const rescoreRun = makeRun({
+        run_id: liveRun.run_id,
+        scenario_id: scenario.id,
+        // biome-ignore lint/style/noNonNullAssertion: asserted defined above.
+        payments: [{ ...persistedPayment!, raw: undefined, dedupe_key: "placeholder" }],
+      });
+
+      const secondPass = scoreSuite({ scenarios: [scenario], runs: [rescoreRun], ctx, meta });
+
+      const firstViolations = firstPass.scenarios[0]?.results[0]?.worst.violations;
+      const secondViolations = secondPass.scenarios[0]?.results[0]?.worst.violations;
+      expect(firstViolations).toEqual(secondViolations);
+      expect(firstViolations?.some((v) => v.code === "excessive_authorization_window")).toBe(true);
     });
   });
 });
