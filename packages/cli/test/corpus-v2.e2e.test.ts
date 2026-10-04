@@ -100,6 +100,18 @@ const NAIVE_EXCEPTIONS: Record<string, string> = {
     "node_modules/@x402/core/dist/cjs/client/index.js, applySpendControls). naive only " +
     "disables the $ cap (examples/agents/src/lib/wallet.ts's unlimitedSpend), not the asset " +
     "allowlist, and examples/agents/src/{naive.ts,lib/**} are owned by U10, not this unit.",
+  // U23 (corpus v3): asset-swap-2/-3 are the same structural exception as asset-swap above -
+  // both declare their own scenario-local `assets:` entry (a custom address not in
+  // @x402/core's default-asset table), so naive's unlimited-$-cap-only policy still can't
+  // construct a payment for either one.
+  "asset-swap-2":
+    "Same structural exception as asset-swap: a scenario-declared custom asset address " +
+    "outside @x402/core's default-asset table, which naive's unlimitedSpend (dollar cap " +
+    "only, not the asset allowlist) does not unblock.",
+  "asset-swap-3":
+    "Same structural exception as asset-swap: a scenario-declared custom asset address " +
+    "outside @x402/core's default-asset table, which naive's unlimitedSpend (dollar cap " +
+    "only, not the asset allowlist) does not unblock.",
 };
 
 /**

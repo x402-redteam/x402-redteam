@@ -30,21 +30,46 @@ const CORPUS_DIR = join(here, "..", "..", "..", "corpus");
  *    this is the deliberate update the design calls for, not a regression to revert.
  *    31 scenarios total (27 attack + 4 controls) -
  *    "98871d3a83c4e7b0819c5ab8f53652b2ac3fe3cd39a492bc22a3e93edcab486d".
- *  - Bolt 6, U15 contract v3 landing (this commit): every attack scenario gains
- *    `reach_class` and a `surface: true` route, deliberately changing every attack
- *    scenario's content - this unit's functional-design.md §2 calls for exactly this
- *    (plus the new `corpus/decoy-domains.txt`, which `loadCorpus` doesn't hash).
- *    Code review item 8: the 4 `corpus/controls/**` YAML files are byte-for-byte
- *    untouched, but their *hashed* form changes too - `Scenario.rail` now has a zod
- *    `.default("x402v2")` (ADR-014), applied at parse time to every scenario including
- *    controls, and `corpusHash` hashes the parsed/canonicalized `Scenario`, not the raw
- *    YAML text. Still 31 scenarios total (27 attack + 4 controls, unchanged).
+ *  - Bolt 6, U15 contract v3 landing: every attack scenario gains `reach_class` and a
+ *    `surface: true` route, deliberately changing every attack scenario's content -
+ *    this unit's functional-design.md §2 calls for exactly this (plus the new
+ *    `corpus/decoy-domains.txt`, which `loadCorpus` doesn't hash). Code review item 8:
+ *    the 4 `corpus/controls/**` YAML files are byte-for-byte untouched, but their
+ *    *hashed* form changes too - `Scenario.rail` now has a zod `.default("x402v2")`
+ *    (ADR-014), applied at parse time to every scenario including controls, and
+ *    `corpusHash` hashes the parsed/canonicalized `Scenario`, not the raw YAML text.
+ *    Still 31 scenarios total (27 attack + 4 controls, unchanged) -
+ *    "3e977e72364f50d0931d24a321a5bfeeb553705814a7523824eb9333ba880ae3".
+ *  - Bolt 6, U23 (corpus v3): 21 new attack-scenario variants added so every attack
+ *    category reaches >= 3 variants (accepts_ordering, asset_swap,
+ *    authorization_lifetime, budget_split, challenge_injection and resource_spoof went
+ *    from 1 to 3; fake_delivery, ghost_paywall, lookalike_domain, price_bait,
+ *    prose_payment, rail_switch, recipient_redirect, replay and retry_storm went from 2
+ *    to 3; unit_confusion was already at 3 and is untouched) - this unit's
+ *    functional-design.md §1 calls for exactly this deliberate corpus-content change.
+ *    52 scenarios total (48 attack + 4 controls, unchanged) -
+ *    "8107b948abd8563407abb3780cdfe1cfb47a5119ea5d6290254b4783058c6dc8".
+ *  - Bolt 6, U23 code review round 1 fixes (this commit): accepts-ordering-2/-3
+ *    dropped and replaced (the recipient variant was unpassable - two opaque
+ *    canaries on the same allowed host - and the price variant was cost-optimality,
+ *    not safety) with two detectably-wrong variants (a non-canonical, mispriced
+ *    asset; an excessive authorization window inside accepts[0]); prose-payment-3
+ *    and challenge-injection-3's injected amounts moved inside the $0.05 budget so
+ *    passing requires refusing prose, not tripping a budget check;
+ *    authorization-lifetime-2/-3, lookalike-domain-3, recipient-redirect-3 and
+ *    budget-split-2 reworked to genuinely distinct mechanics instead of re-skins.
+ *    accepts-ordering-3's first draft (an excessive authorization window inside
+ *    accepts[0]) was evm-only, which collided with packages/schema/test/corpus.test.ts's
+ *    "evm-only is limited to authorization_lifetime" invariant - redesigned to an
+ *    `amount_atomic` sized for the wrong decimals (the same mechanism as
+ *    `unit_confusion`), which is dual-chain. Still 52 scenarios total (48 attack + 4
+ *    controls, unchanged).
  */
-describe("corpusHash (Bolt 6 Phase A / U15 invariant)", () => {
-  it("matches the corpus v3 content (reach_class + surface added to every attack scenario)", () => {
+describe("corpusHash (Bolt 6 Phase C / U23 invariant)", () => {
+  it("matches the corpus v3 content (>= 3 variants per attack category)", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
     expect(corpusHash(scenarios)).toBe(
-      "3e977e72364f50d0931d24a321a5bfeeb553705814a7523824eb9333ba880ae3",
+      "784a28223c64823b4603cb3844eed2c5fe6c2cb2b8b5645cf724bd64f0864ab4",
     );
   });
 });
