@@ -1,0 +1,169 @@
+name: rank
+
+# ADR-010/ADR-011 (U19), Tier 2 "Verified (public corpus)": a reusable workflow a
+# submitter's own public repo calls (`uses:
+# ORG_PLACEHOLDER/x402-redteam/.github/workflows/rank.yml@<release tag>` — see
+# docs/seasons.md for the org placeholder) to run the canonical guardrail-track config
+# against the PUBLIC corpus, under this harness's own CI identity, and attest
+# `report.json`. The leaderboard (`pnpm leaderboard`) checks that attestation
+# (`--verify-attestations`) plus every U13/U16 acceptance check before showing the
+# result in the "Verified (public corpus)" table — never merged into Tier 1's ranked
+# table (ADR-011).
+#
+# Security review HIGH-3:
+# - `harness-repo` is gone as an input — the harness's own org/repo is named exactly
+#   once below (`HARNESS_REPO`, an env var on the `run` job), matching
+#   `provenance.ts`'s `HARNESS_ORG_REPO` constant (checked by
+#   `packages/cli/test/ranked-workflows.test.ts`).
+# - every `${{ inputs.* }}` value is passed through `env:`, never interpolated
+#   directly into a `run:` shell script — a crafted `guardrail-cmd` or `guardrail-id`
+#   string can't break out of its intended single value this way.
+# - the guardrail itself runs inside the same container image `ranked-run.yml` uses
+#   (`.github/ranked/Dockerfile`), under a non-runner uid (`--agent-uid 2001`), with a
+#   root-owned output directory — the runner's own filesystem never sees the
+#   guardrail's writes except the final `report.json` this job copies out.
+# - attestation happens in a **separate** job (`attest`), the only one with
+#   `id-token: write`/`attestations: write` — `run` itself never holds those
+#   permissions, so a compromised guardrail command can't forge its own attestation.
+#
+# NOT verified live (CLAUDE.md: no `act`/actionlint/docker, no network from this
+# worktree) — statically authored and YAML-checked only. Dry-run once a real org/repo
+# exists.
+on:
+  workflow_call:
+    inputs:
+      # Security re-review 3c: a release tag only (vMAJOR.MINOR.PATCH) - never a raw
+      # commit SHA or a branch. A tag is the thing `results/_harness.json`'s allowlist
+      # and this harness's own release process both reason about.
+      harness-ref:
+        description: x402-redteam release tag to run, vMAJOR.MINOR.PATCH (never a commit SHA or branch)
+        required: true
+        type: string
+      guardrail-cmd:
+        description: Shell command that starts the GDP guardrail under test (ADR-010)
+        required: true
+        type: string
+      guardrail-id:
+        description: Stable id recorded in report.json and shown on the leaderboard
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      guardrail-id: ${{ inputs.guardrail-id }}
+    steps:
+      # Security re-review 3c: harness-ref must be a vX.Y.Z release tag - never a raw
+      # commit SHA or a branch (unlike ranked-run.yml's harness-ref/guardrail-ref,
+      # which may also be a 40-hex SHA for a guardrail still awaiting its own tag).
+      - name: Validate harness-ref is a vMAJOR.MINOR.PATCH release tag
+        env:
+          HARNESS_REF: ${{ inputs.harness-ref }}
+        run: |
+          if ! printf '%s' "$HARNESS_REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::harness-ref '$HARNESS_REF' is not a vMAJOR.MINOR.PATCH release tag"
+            exit 2
+          fi
+
+      # The caller's own repo (where guardrail-cmd's code lives). persist-credentials:
+      # false (security review LOW) - this job never needs to push or re-authenticate.
+      - name: Checkout the submitter's repo
+        uses: actions/checkout@v4 # TODO pin by commit SHA before first real run (not resolved offline)
+        with:
+          persist-credentials: false
+
+      - name: Checkout the x402-redteam harness at a pinned ref
+        uses: actions/checkout@v4 # TODO pin by commit SHA before first real run (not resolved offline)
+        with:
+          repository: ORG_PLACEHOLDER/x402-redteam
+          ref: ${{ inputs.harness-ref }}
+          path: .x402-redteam-harness
+          persist-credentials: false
+          # Security re-review 3c: fetch the tag's own ref too, so the next step can
+          # resolve `refs/tags/<tag>^{commit}` independently of whatever `ref:` above
+          # actually resolved to (defense against a same-named branch shadowing the
+          # tag - checkout always fetches by ref name, which is ambiguous when both
+          # exist).
+          fetch-tags: true
+
+      - name: Assert the checked-out HEAD is really that tag's own commit
+        env:
+          HARNESS_REF: ${{ inputs.harness-ref }}
+        run: |
+          actual="$(git -C .x402-redteam-harness rev-parse HEAD)"
+          expected="$(git -C .x402-redteam-harness rev-parse "refs/tags/$HARNESS_REF^{commit}")"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::checked-out HEAD ($actual) does not match tag $HARNESS_REF's own commit ($expected) - refusing to run (possible branch/tag name collision)"
+            exit 2
+          fi
+
+      - name: Build the ranked-run image (same image ranked-run.yml uses)
+        run: |
+          docker build -t x402-redteam-ranked \
+            -f .x402-redteam-harness/.github/ranked/Dockerfile \
+            .x402-redteam-harness
+
+      # Security review HIGH-3: guardrail-cmd/guardrail-id reach the container only via
+      # `-e` (the container's own env), never spliced into this script's text. The
+      # guardrail runs as uid 2001 (never the runner's own uid, never root); /out is
+      # root-owned inside the container and only copied to the runner's filesystem
+      # (chmod'd back to the runner's own user) after the harness process exits.
+      - name: Run the canonical guardrail-track config against the public corpus
+        env:
+          GUARDRAIL_CMD: ${{ inputs.guardrail-cmd }}
+          GUARDRAIL_ID: ${{ inputs.guardrail-id }}
+          # Security re-review 3b nit: moved into env: alongside the inputs above,
+          # even though github.repository/github.sha aren't attacker-controlled.
+          GUARDRAIL_REPO_REF: ${{ github.repository }}@${{ github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          docker run --rm \
+            -e GUARDRAIL_CMD \
+            -e GUARDRAIL_ID \
+            -e GUARDRAIL_REPO_REF \
+            -v "$PWD:/workspace:ro" \
+            -v "$RUNNER_TEMP/out:/out" \
+            -w /workspace \
+            x402-redteam-ranked \
+            --agent-uid 2001 \
+            --guardrail "$GUARDRAIL_CMD" \
+            --guardrail-id "$GUARDRAIL_ID" \
+            --agent-id "$GUARDRAIL_ID" \
+            --guardrail-repo-ref "$GUARDRAIL_REPO_REF"
+          # entrypoint.sh (HIGH-4) writes to a root-only internal dir and copies the
+          # finished report.json to /out itself, with the copy's own permissions set -
+          # this just reconciles /out's ownership back to the runner's own user so the
+          # upload-artifact step below can read it.
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@v4 # TODO pin by commit SHA before first real run
+        with:
+          name: report-${{ inputs.guardrail-id }}
+          path: ${{ runner.temp }}/out/report.json
+          retention-days: 90
+
+  # Security review HIGH-3: the ONLY job with id-token/attestations permissions - it
+  # never runs the guardrail itself, only consumes `run`'s uploaded artifact.
+  attest:
+    needs: run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4 # TODO pin by commit SHA before first real run
+        with:
+          name: report-${{ needs.run.outputs.guardrail-id }}
+          path: out
+
+      - name: Attest report.json provenance
+        uses: actions/attest-build-provenance@v1 # TODO pin by commit SHA before first real run
+        with:
+          subject-path: out/report.json

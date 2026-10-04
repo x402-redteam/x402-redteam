@@ -8,14 +8,63 @@ import {
   type Scenario,
   ScenarioSchema,
 } from "@x402-redteam/schema";
-import { corpusHash, type Report, type RunScore, scoreSuite } from "@x402-redteam/scorer";
+import {
+  corpusHash,
+  type RedactedReport,
+  type Report,
+  type RunScore,
+  redact,
+  scoreSuite,
+} from "@x402-redteam/scorer";
 import { describe, expect, it } from "vitest";
 import {
-  buildLeaderboard,
+  buildLeaderboard as buildLeaderboardReal,
   type LeaderboardEntry,
   type RejectedRow,
 } from "../src/build-leaderboard.js";
-import type { ResultsMeta } from "../src/load-results.js";
+import { contentHash, type ResultsMeta, type SeasonRecords } from "../src/load-results.js";
+import { RANK_SIGNER, RANKED_RUN_SIGNER, type VerifiedMap } from "../src/provenance.js";
+
+/**
+ * ADR-011 (U19) test shim: auto-verifies every guardrail-track `report@3` entry as Tier
+ * 2 (signer `rank.yml`, matching `entry.sha256`'s own `subject_sha256` - security
+ * review HIGH-5), so the pre-existing acceptance-check tests below (schema, canonical
+ * config, rescore, run coverage, ranking/rendering - all written before tiers existed)
+ * keep testing exactly what they tested before, without each one needing its own
+ * `verified` map. Real tier/attestation behavior (Tier 1 redacted entries, Tier 2
+ * gating, Tier 3 rejection) gets its own dedicated describe block at the end of this
+ * file, which calls `buildLeaderboardReal` directly with an explicit `verified` map.
+ * Reference-kind entries never need a `verified` entry (exempt from tier gating,
+ * ORCHESTRATOR RULING) - this shim never bothers computing one for them either way.
+ */
+function autoVerified(entries: LeaderboardEntry[]): VerifiedMap {
+  const out: VerifiedMap = {};
+  for (const e of entries) {
+    const data = e.data;
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      (data as { schema?: unknown }).schema === "x402-redteam/report@3" &&
+      (data as { config?: { track?: unknown } }).config?.track === "guardrail"
+    ) {
+      out[e.id] = { tier: 2, signer: RANK_SIGNER, subject_sha256: e.sha256 ?? contentHash(data) };
+    }
+  }
+  return out;
+}
+
+/** Security review condition #14: the default allowlist every test in this file uses
+ * unless it explicitly wants to exercise `checkHarnessAllowlistConcrete`'s own
+ * rejection - never the permissive `["*"]`/`[]` `buildLeaderboardReal`'s own default
+ * would otherwise fall back to. */
+function buildLeaderboard(
+  entries: LeaderboardEntry[],
+  scenarios: Scenario[],
+  meta: ResultsMeta = {},
+  harnessAllowlist: string[] = TEST_HARNESS_ALLOWLIST,
+) {
+  return buildLeaderboardReal(entries, scenarios, meta, harnessAllowlist, autoVerified(entries));
+}
 
 /**
  * Hand-built fixtures validated through the schema package's own zod
@@ -181,7 +230,12 @@ const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   harness_commit: "a".repeat(40),
   season: null,
   seed_commitment: null,
+  guardrail_repo_ref: `test-org/test-guardrail@${"c".repeat(40)}`,
 };
+
+/** Security review condition #14: the only harness allowlist under which a Tier 1/2
+ * entry can ever be accepted - `["*"]`/`[]` are both rejected outright now. */
+const TEST_HARNESS_ALLOWLIST = [CANONICAL_CONFIG.harness_commit];
 
 /** The agent track's own canonical shape (ADR-010 §4): no driver/hooks, `repeat >= 5`. */
 const AGENT_CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
@@ -232,7 +286,8 @@ function acceptedEntry(id: string, overrides: Record<string, unknown> = {}): Lea
       run({ run_id: "s2:evm:1", scenario_id: "s2" }),
     ],
   });
-  return { id, data: { ...report, ...overrides } };
+  const data = { ...report, ...overrides };
+  return { id, data, sha256: contentHash(data) };
 }
 
 /** An agent-track counterpart to `acceptedEntry` (ADR-010 §4, `repeat: 5`): code review
@@ -246,7 +301,36 @@ function acceptedAgentEntry(id: string, overrides: Record<string, unknown> = {})
     runs: [...repeatedRuns("s1", "evm", repeat), ...repeatedRuns("s2", "evm", repeat)],
     config: AGENT_CANONICAL_CONFIG,
   });
-  return { id, data: { ...report, ...overrides } };
+  const data = { ...report, ...overrides };
+  return { id, data, sha256: contentHash(data) };
+}
+
+/**
+ * ADR-011 (U19) Tier 1: a redacted, season-stamped version of `acceptedEntry` - the
+ * shape a `ranked-run.yml` run would actually publish. `season`/`seed_commitment`
+ * aren't `CANONICAL_CONFIG`'s own (null) values, since a season run's `config.seed` is
+ * `"season:<id>"`, never the canonical public-corpus seed - Tier 1's own checks never
+ * call `checkCanonicalConfig`, so that mismatch is expected and irrelevant here.
+ */
+function seasonRedactedEntry(
+  id: string,
+  overrides: Record<string, unknown> = {},
+): LeaderboardEntry {
+  const report = buildReport({
+    guardrailId: id,
+    runs: [
+      run({ run_id: "s1:evm:1", scenario_id: "s1" }),
+      run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+    ],
+    config: {
+      seed: "season:season-1",
+      season: "season-1",
+      seed_commitment: SEASON_1_SEED_COMMITMENT,
+    },
+  });
+  const redacted: RedactedReport = redact(report);
+  const data = { ...redacted, ...overrides };
+  return { id, data, sha256: contentHash(data) };
 }
 
 function rejectedIds(rejected: RejectedRow[]): string[] {
@@ -254,6 +338,20 @@ function rejectedIds(rejected: RejectedRow[]): string[] {
 }
 
 const NO_META: ResultsMeta = {};
+
+/** Security review MEDIUM-11: a committed `results/_seasons.json` record matching
+ * `seasonRedactedEntry`'s own `config.seed_commitment` and `corpus_hash` (the latter is
+ * `CURRENT_SCENARIOS`'s own hash, since that's the "held-out corpus" every Tier 1
+ * fixture here is built against). */
+const SEASON_1_SEED_COMMITMENT = "a".repeat(64);
+const SEASON_1_RECORDS = {
+  "season-1": {
+    seed_commitment: SEASON_1_SEED_COMMITMENT,
+    corpus_hash: corpusHash(CURRENT_SCENARIOS),
+    starts: "2026-01-01",
+    ends: "2026-03-31",
+  },
+};
 
 describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () => {
   it("check 1: rejects a report whose schema isn't x402-redteam/report@3", () => {
@@ -389,8 +487,8 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
       ],
     });
     const entries: LeaderboardEntry[] = [
-      { id: "dupe", data: reportA },
-      { id: "dupe", data: reportA },
+      { id: "dupe", data: reportA, sha256: contentHash(reportA) },
+      { id: "dupe", data: reportA, sha256: contentHash(reportA) },
     ];
     const { guardrails, rejected } = buildLeaderboard(entries, CURRENT_SCENARIOS, NO_META);
     expect(guardrails).toEqual([]);
@@ -445,7 +543,11 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
         ),
       ).toBe(true);
 
-      const entry: LeaderboardEntry = { id: "auth-window", data: report };
+      const entry: LeaderboardEntry = {
+        id: "auth-window",
+        data: report,
+        sha256: contentHash(report),
+      };
       const { guardrails, rejected } = buildLeaderboard([entry], scenarios, NO_META);
       expect(rejected).toEqual([]);
       expect(guardrails.map((r) => r.id)).toEqual(["auth-window"]);
@@ -638,11 +740,13 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     expect(rejected[0]?.reason).toMatch(/harness_commit/);
   });
 
-  it('accepts harness_commit: "unknown" (the pre-U15 `git rev-parse` failure value)', () => {
+  it('accepts harness_commit: "unknown" (the pre-U15 `git rev-parse` failure value) when it is itself on the allowlist', () => {
     const entry = acceptedEntry("unknown-commit", {
       config: { ...CANONICAL_CONFIG, harness_commit: "unknown" },
     });
-    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META, [
+      "unknown",
+    ]);
     expect(rejected).toEqual([]);
     expect(guardrails.map((r) => r.id)).toEqual(["unknown-commit"]);
   });
@@ -665,7 +769,11 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
       runs: [...repeatedRuns("s1", "evm", 3), ...repeatedRuns("s2", "evm", 3)],
       config: { guardrail_nondeterministic: true, repeat: 3 },
     });
-    const entry: LeaderboardEntry = { id: "nondeterministic-ok", data: report };
+    const entry: LeaderboardEntry = {
+      id: "nondeterministic-ok",
+      data: report,
+      sha256: contentHash(report),
+    };
     const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
     expect(rejected).toEqual([]);
     expect(guardrails.map((r) => r.id)).toEqual(["nondeterministic-ok"]);
@@ -691,12 +799,19 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     expect(rejected[0]?.reason).toMatch(/harness_commit/);
   });
 
-  it("accepts any harness_commit when the allowlist is the default wildcard (U19 hasn't filled results/_harness.json yet)", () => {
-    const entry = acceptedEntry("default-allowlist");
-    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META, ["*"]);
-    expect(rejected).toEqual([]);
-    expect(guardrails.map((r) => r.id)).toEqual(["default-allowlist"]);
-  });
+  it(
+    "security review condition #14 (behavior change): a wildcard allowlist now " +
+      "REJECTS a Tier 2 entry outright, rather than accepting it - the pre-U19 " +
+      "'U19 hasn't filled results/_harness.json yet' permissiveness is exactly the " +
+      "hole condition #14 closes.",
+    () => {
+      const entry = acceptedEntry("wildcard-allowlist");
+      const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META, ["*"]);
+      expect(guardrails).toEqual([]);
+      expect(rejectedIds(rejected)).toEqual(["wildcard-allowlist"]);
+      expect(rejected[0]?.reason).toMatch(/release allowlist/);
+    },
+  );
 });
 
 describe("buildLeaderboard: run coverage (code review round 1, item 1, CRITICAL)", () => {
@@ -845,9 +960,9 @@ describe("buildLeaderboard: ranking, columns and kind (functional-design.md §4)
     });
 
     const entries: LeaderboardEntry[] = [
-      { id: "beta", data: betaReport },
-      { id: "alpha", data: alpha.data },
-      { id: "gamma", data: gammaReport },
+      { id: "beta", data: betaReport, sha256: contentHash(betaReport) },
+      { id: "alpha", data: alpha.data, sha256: alpha.sha256 },
+      { id: "gamma", data: gammaReport, sha256: contentHash(gammaReport) },
     ];
 
     const { guardrails } = buildLeaderboard(entries, CURRENT_SCENARIOS, NO_META);
@@ -860,27 +975,39 @@ describe("buildLeaderboard: ranking, columns and kind (functional-design.md §4)
     );
   });
 
-  it("labels an entry's kind from results/_meta.json, defaulting to submitted, and marks it '(reference)' in the table", () => {
-    const entries: LeaderboardEntry[] = [
-      acceptedEntry("naive-baseline"),
-      acceptedEntry("someone-else"),
-    ];
-    const meta: ResultsMeta = { "naive-baseline": { kind: "reference" } };
+  it(
+    "labels an entry's kind from results/_meta.json, defaulting to submitted - a " +
+      "reference entry (ORCHESTRATOR RULING) moves to the dedicated Reference " +
+      "section, never 'guardrails', regardless of attestation",
+    () => {
+      const entries: LeaderboardEntry[] = [
+        acceptedEntry("naive-baseline"),
+        acceptedEntry("someone-else"),
+      ];
+      const meta: ResultsMeta = { "naive-baseline": { kind: "reference" } };
 
-    const { guardrails, markdown } = buildLeaderboard(entries, CURRENT_SCENARIOS, meta);
+      const { guardrails, reference, markdown } = buildLeaderboard(
+        entries,
+        CURRENT_SCENARIOS,
+        meta,
+      );
 
-    expect(guardrails.find((r) => r.id === "naive-baseline")?.kind).toBe("reference");
-    expect(guardrails.find((r) => r.id === "someone-else")?.kind).toBe("submitted");
-    // Code review round 1, item 8: a reference row is marked inline.
-    expect(markdown).toContain("naive-baseline (reference)");
-    expect(markdown).not.toContain("someone-else (reference)");
-  });
+      expect(guardrails.map((r) => r.id)).toEqual(["someone-else"]);
+      expect(guardrails.find((r) => r.id === "someone-else")?.kind).toBe("submitted");
+      expect(reference.map((r) => r.id)).toEqual(["naive-baseline"]);
+      expect(reference[0]?.kind).toBe("reference");
+      // Code review round 1, item 8: a reference row is marked inline, inside its own
+      // section - never inside the Verified table someone-else's row is in.
+      expect(markdown).toContain("naive-baseline (reference)");
+      expect(markdown).not.toContain("someone-else (reference)");
+      const verifiedSection = markdown.split("## Agent track")[0] ?? "";
+      expect(verifiedSection).not.toContain("naive-baseline");
+    },
+  );
 
   it("renders the addendum banner and the '#' column header, not 'rank'", () => {
     const { markdown } = buildLeaderboard([acceptedEntry("solo")], CURRENT_SCENARIOS, NO_META);
-    expect(markdown).toContain(
-      "Unranked / experimental: scores are not yet comparable across guardrails (see ADR-010)",
-    );
+    expect(markdown).toContain("Provenance tiers (ADR-011)");
     expect(markdown).toMatch(/\|\s*#\s*\|\s*guardrail\s*\|/);
     expect(markdown).not.toMatch(/\|\s*rank\s*\|/);
   });
@@ -896,7 +1023,7 @@ describe("buildLeaderboard: ranking, columns and kind (functional-design.md §4)
     // One row per (agent, attack scenario): s1 and s2, both attack scenarios.
     expect(agents.map((r) => r.agentId)).toEqual(["some-agent", "some-agent"]);
     expect(agents.map((r) => r.scenarioId).sort()).toEqual(["s1", "s2"]);
-    expect(markdown).toContain("## Guardrail track — ranked");
+    expect(markdown).toContain("## Verified (public corpus)");
     expect(markdown).toContain("## Agent track — observations (unranked)");
     // The agent row appears only in its own section's table, not the guardrail one.
     const guardrailSection = markdown.split("## Agent track")[0] ?? "";
@@ -1009,7 +1136,7 @@ describe("buildLeaderboard: rendering", () => {
     expect(first.agents.map((r) => `${r.agentId}:${r.scenarioId}`)).toEqual(
       second.agents.map((r) => `${r.agentId}:${r.scenarioId}`),
     );
-    expect(first.markdown).toContain("## Guardrail track — ranked");
+    expect(first.markdown).toContain("## Verified (public corpus)");
     expect(first.markdown).toContain("## Agent track — observations (unranked)");
     expect(first.markdown).toContain("guardrail-one");
     expect(first.markdown).toContain("guardrail-two");
@@ -1056,7 +1183,8 @@ describe("buildLeaderboard: rendering", () => {
     expect(agents).toEqual([]);
     expect(stale).toEqual([]);
     expect(rejected).toEqual([]);
-    expect(markdown).toContain("no accepted guardrail-track results");
+    expect(markdown).toContain("no Tier 1 ranked result yet");
+    expect(markdown).toContain("no Tier 2 verified result yet");
     expect(markdown).toContain("no agent-track observations");
     expect(markdown).toContain("## Rejected");
     expect(markdown).toContain("## Stale corpus");
@@ -1095,6 +1223,395 @@ describe("buildLeaderboard: rendering", () => {
     expect(calls.length).toBeGreaterThan(0);
     for (const args of calls) {
       expect(args).toMatch(/["']en["']\s*$/);
+    }
+  });
+});
+
+describe("buildLeaderboard: provenance tiers (ADR-011, U19, security review)", () => {
+  /** Every call in this block uses the concrete allowlist/season records unless the
+   * test is specifically exercising their own rejection. */
+  function buildReal(
+    entries: LeaderboardEntry[],
+    verified: VerifiedMap,
+    opts: { harnessAllowlist?: string[]; seasonRecords?: SeasonRecords } = {},
+  ) {
+    return buildLeaderboardReal(
+      entries,
+      CURRENT_SCENARIOS,
+      NO_META,
+      opts.harnessAllowlist ?? TEST_HARNESS_ALLOWLIST,
+      verified,
+      opts.seasonRecords ?? SEASON_1_RECORDS,
+    );
+  }
+
+  function verifiedFor(entry: LeaderboardEntry, tier: 1 | 2): VerifiedMap {
+    const signer = tier === 1 ? RANKED_RUN_SIGNER : RANK_SIGNER;
+    // biome-ignore lint/style/noNonNullAssertion: every entry built in this file sets sha256.
+    return { [entry.id]: { tier, signer, subject_sha256: entry.sha256! } };
+  }
+
+  it("Tier 1: a redacted season report with a verified tier-1 attestation is ranked, not merged into 'Verified'", () => {
+    const entry = seasonRedactedEntry("ranked-guardrail");
+
+    const { ranked, guardrails, rejected, markdown } = buildReal([entry], verifiedFor(entry, 1));
+
+    expect(rejectedIds(rejected)).toEqual([]);
+    expect(ranked.map((r) => r.id)).toEqual(["ranked-guardrail"]);
+    expect(ranked[0]?.rank).toBe(1);
+    expect(guardrails).toEqual([]);
+    expect(markdown).toContain("## Ranked (held-out season)");
+    expect(markdown).toContain("### Season season-1");
+    const rankedSection = markdown.split("## Verified (public corpus)")[0] ?? "";
+    expect(rankedSection).toContain("ranked-guardrail");
+  });
+
+  it("security review MEDIUM-11: ranked rows from different seasons render as separate sub-tables, each re-ranked from 1", () => {
+    const season1Record = SEASON_1_RECORDS["season-1"];
+    const season2Records = {
+      ...SEASON_1_RECORDS,
+      "season-2": { ...season1Record, seed_commitment: "b".repeat(64) },
+    };
+    const entryA = seasonRedactedEntry("season1-guardrail");
+    const entryB = seasonRedactedEntry("season2-guardrail", {
+      config: {
+        ...CANONICAL_CONFIG,
+        season: "season-2",
+        seed_commitment: "b".repeat(64),
+        seed: "season:season-2",
+      },
+    });
+
+    const result = buildReal(
+      [entryA, entryB],
+      { ...verifiedFor(entryA, 1), ...verifiedFor(entryB, 1) },
+      {
+        seasonRecords: season2Records,
+      },
+    );
+
+    expect(result.rejected).toEqual([]);
+    expect(result.ranked.map((r) => r.id).sort()).toEqual([
+      "season1-guardrail",
+      "season2-guardrail",
+    ]);
+    expect(result.markdown).toContain("### Season season-1");
+    expect(result.markdown).toContain("### Season season-2");
+    // Each season's own rendered sub-table starts its own rank column at 1 - distinct
+    // from `result.ranked`'s own flat, globally-numbered array.
+    const season1Table = result.markdown.split("### Season season-1")[1]?.split("###")[0] ?? "";
+    const season2Table = result.markdown.split("### Season season-2")[1]?.split("##")[0] ?? "";
+    expect(season1Table).toMatch(/\|\s*1\s*\|\s*season1-guardrail/);
+    expect(season2Table).toMatch(/\|\s*1\s*\|\s*season2-guardrail/);
+  });
+
+  it("Tier 1: the same redacted report without a verified entry is rejected (Tier 3 default)", () => {
+    const entry = seasonRedactedEntry("unverified-season");
+
+    const { ranked, rejected } = buildReal([entry], {});
+
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["unverified-season"]);
+    expect(rejected[0]?.reason).toMatch(/Tier 3/);
+  });
+
+  it("Tier 1: a verified entry at the wrong tier (2, not 1) is still rejected", () => {
+    const entry = seasonRedactedEntry("wrong-tier");
+
+    const { ranked, rejected } = buildReal([entry], verifiedFor(entry, 2));
+
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["wrong-tier"]);
+  });
+
+  it("Tier 1: a redacted report with no active season (config.season null) is rejected even if verified", () => {
+    const report = redact(
+      buildReport({
+        guardrailId: "no-season",
+        runs: [
+          run({ run_id: "s1:evm:1", scenario_id: "s1" }),
+          run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+        ],
+      }),
+    );
+    const entry: LeaderboardEntry = { id: "no-season", data: report, sha256: contentHash(report) };
+
+    const { ranked, rejected } = buildReal([entry], verifiedFor(entry, 1));
+
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["no-season"]);
+    expect(rejected[0]?.reason).toMatch(/season/);
+  });
+
+  it("a report@3-redacted entry never satisfies the full-report (requireReportAtV3) path", () => {
+    const entry = seasonRedactedEntry("redacted-not-full");
+    // No verified entry at all: still must be rejected via the Tier 1 path (not
+    // mistaken for a malformed report@3), i.e. the Tier 3 reason, not a schema error.
+    const { rejected } = buildReal([entry], {});
+    expect(rejected[0]?.reason).not.toMatch(/report@3"/);
+    expect(rejected[0]?.reason).toMatch(/Tier 3/);
+  });
+
+  it("security review MEDIUM-11: a Tier 1 report is rejected when no committed season record exists for its season id", () => {
+    const entry = seasonRedactedEntry("no-season-record");
+    const { ranked, rejected } = buildReal([entry], verifiedFor(entry, 1), { seasonRecords: {} });
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["no-season-record"]);
+    expect(rejected[0]?.reason).toMatch(/season record/);
+  });
+
+  it("security review MEDIUM-11: a Tier 1 report is rejected when seed_commitment doesn't match the committed record", () => {
+    const entry = seasonRedactedEntry("bad-commitment", {
+      config: { ...CANONICAL_CONFIG, season: "season-1", seed_commitment: "b".repeat(64) },
+    });
+    const { ranked, rejected } = buildReal([entry], verifiedFor(entry, 1));
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["bad-commitment"]);
+    expect(rejected[0]?.reason).toMatch(/seed_commitment mismatch/);
+  });
+
+  it("security review condition #14: Tier 1 is rejected outright while results/_harness.json is absent/wildcard", () => {
+    const entry = seasonRedactedEntry("wildcard-allowlist");
+    const { ranked, rejected } = buildReal([entry], verifiedFor(entry, 1), {
+      harnessAllowlist: ["*"],
+    });
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["wildcard-allowlist"]);
+    expect(rejected[0]?.reason).toMatch(/results\/_harness\.json/);
+  });
+
+  it("security review HIGH-12: Tier 1 is rejected when config.guardrail_repo_ref is null", () => {
+    const entry = seasonRedactedEntry("no-repo-ref", {
+      config: { ...CANONICAL_CONFIG, season: "season-1", guardrail_repo_ref: null },
+    });
+    const { ranked, rejected } = buildReal([entry], verifiedFor(entry, 1));
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["no-repo-ref"]);
+    expect(rejected[0]?.reason).toMatch(/guardrail_repo_ref/);
+  });
+
+  it("security review HIGH-5: Tier 1 is rejected when the committed file's content no longer matches subject_sha256", () => {
+    const entry = seasonRedactedEntry("tampered-after-attestation");
+    // `verified` is captured from the *original* entry, modeling "attested, then the
+    // committed file was edited afterwards" - verified.subject_sha256 still reflects
+    // the original content.
+    const verified = verifiedFor(entry, 1);
+    const tamperedData = { ...(entry.data as object), harness_version: "9.9.9-tampered" };
+    // A fresh load of the (now-tampered) file computes its *current* hash, same as
+    // `load-results.ts`'s `loadResultsDir` always does - this is what HIGH-5 compares
+    // against the stale `subject_sha256` above.
+    const tampered: LeaderboardEntry = {
+      id: entry.id,
+      data: tamperedData,
+      sha256: contentHash(tamperedData),
+    };
+    const { ranked, rejected } = buildReal([tampered], verified);
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["tampered-after-attestation"]);
+    expect(rejected[0]?.reason).toMatch(/subject hash mismatch/);
+  });
+
+  it("Tier 2: a full report@3 with a verified tier-2 attestation lands in 'Verified (public corpus)', never 'ranked'", () => {
+    const entry = acceptedEntry("verified-guardrail");
+
+    const { ranked, guardrails, rejected, markdown } = buildReal([entry], verifiedFor(entry, 2));
+
+    expect(rejectedIds(rejected)).toEqual([]);
+    expect(ranked).toEqual([]);
+    expect(guardrails.map((r) => r.id)).toEqual(["verified-guardrail"]);
+    expect(markdown).toContain("## Verified (public corpus)");
+  });
+
+  it("Tier 3: a full report@3 guardrail-track entry with no verified entry is rejected by default", () => {
+    const entry = acceptedEntry("self-reported");
+
+    const { guardrails, ranked, rejected } = buildReal([entry], {});
+
+    expect(guardrails).toEqual([]);
+    expect(ranked).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["self-reported"]);
+    expect(rejected[0]?.reason).toMatch(/Tier 3/);
+  });
+
+  it(
+    "security review condition #14: Tier 2 is rejected outright while the harness " +
+      "allowlist is the wildcard - even though checkHarnessCommit's own, older check " +
+      "would otherwise have let a wildcard allowlist's commit through",
+    () => {
+      const entry = acceptedEntry("wildcard-allowlist-tier2");
+      const { guardrails, rejected } = buildReal([entry], verifiedFor(entry, 2), {
+        harnessAllowlist: ["*"],
+      });
+      expect(guardrails).toEqual([]);
+      expect(rejectedIds(rejected)).toEqual(["wildcard-allowlist-tier2"]);
+      expect(rejected[0]?.reason).toMatch(/results\/_harness\.json/);
+    },
+  );
+
+  it("security review condition #14: Tier 2 is rejected (via the pre-existing harness_commit check) while the allowlist is empty", () => {
+    const entry = acceptedEntry("empty-allowlist");
+    const { guardrails, rejected } = buildReal([entry], verifiedFor(entry, 2), {
+      harnessAllowlist: [],
+    });
+    expect(guardrails).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["empty-allowlist"]);
+    expect(rejected[0]?.reason).toMatch(/release allowlist/);
+  });
+
+  it("security review HIGH-12: Tier 2 is rejected when config.guardrail_repo_ref is missing", () => {
+    const entry = acceptedEntry("tier2-no-repo-ref", {
+      config: { ...CANONICAL_CONFIG, guardrail_repo_ref: null },
+    });
+    const { guardrails, rejected } = buildReal([entry], verifiedFor(entry, 2));
+    expect(guardrails).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["tier2-no-repo-ref"]);
+    expect(rejected[0]?.reason).toMatch(/guardrail_repo_ref/);
+  });
+
+  it("security review HIGH-5: Tier 2 is rejected when the content hash doesn't match subject_sha256", () => {
+    const entry = acceptedEntry("tier2-tampered");
+    const verified: VerifiedMap = {
+      "tier2-tampered": { tier: 2, signer: RANK_SIGNER, subject_sha256: "0".repeat(64) },
+    };
+    const { guardrails, rejected } = buildReal([entry], verified);
+    expect(guardrails).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["tier2-tampered"]);
+    expect(rejected[0]?.reason).toMatch(/subject hash mismatch/);
+  });
+
+  it("the agent track is never tier-gated: an unverified agent-track entry is still observed, not rejected", () => {
+    const entry = acceptedAgentEntry("observed-agent");
+
+    const { agents, ranked, guardrails, rejected } = buildReal([entry], {});
+
+    expect(rejected).toEqual([]);
+    expect(ranked).toEqual([]);
+    expect(guardrails).toEqual([]);
+    expect(agents.length).toBeGreaterThan(0);
+  });
+
+  it("ORCHESTRATOR RULING: a reference-kind guardrail-track entry is exempt from tier gating and lands in 'Reference', never 'Verified'", () => {
+    const entry = acceptedEntry("naive-baseline");
+    const meta: ResultsMeta = { "naive-baseline": { kind: "reference" } };
+
+    const result = buildLeaderboardReal(
+      [entry],
+      CURRENT_SCENARIOS,
+      meta,
+      TEST_HARNESS_ALLOWLIST,
+      {}, // no attestation at all - must not matter for a reference entry
+      SEASON_1_RECORDS,
+    );
+
+    expect(result.rejected).toEqual([]);
+    expect(result.guardrails).toEqual([]);
+    expect(result.ranked).toEqual([]);
+    expect(result.reference.map((r) => r.id)).toEqual(["naive-baseline"]);
+    expect(result.markdown).toContain(
+      "## Reference (harness oracles — exempt from tier gating, never ranked)",
+    );
+  });
+
+  it("ORCHESTRATOR RULING: a reference-kind agent-track entry lands in 'Reference', not 'agents'", () => {
+    // security re-review N3: the id must be one of canonical.ts's hardcoded
+    // REFERENCE_IDS - results/_meta.json's own "kind": "reference" is no longer
+    // sufficient by itself.
+    const entry = acceptedAgentEntry("guarded-reference");
+    const meta: ResultsMeta = { "guarded-reference": { kind: "reference" } };
+
+    const result = buildLeaderboardReal(
+      [entry],
+      CURRENT_SCENARIOS,
+      meta,
+      TEST_HARNESS_ALLOWLIST,
+      {},
+      SEASON_1_RECORDS,
+    );
+
+    expect(result.rejected).toEqual([]);
+    expect(result.agents).toEqual([]);
+    expect(result.reference.map((r) => r.id)).toEqual(["guarded-reference"]);
+  });
+
+  it("security re-review N3: results/_meta.json's own 'kind: reference' is not enough on its own - the id must also be in the hardcoded REFERENCE_IDS allowlist", () => {
+    const entry = acceptedEntry("not-a-real-reference-id");
+    const meta: ResultsMeta = { "not-a-real-reference-id": { kind: "reference" } };
+
+    // No verified attestation at all: if this id were (wrongly) treated as a
+    // reference, it would be exempt and land in `reference`; since it isn't in
+    // REFERENCE_IDS, it must instead go through ordinary Tier 2 gating and be
+    // rejected as Tier 3 (self-reported).
+    const result = buildLeaderboardReal(
+      [entry],
+      CURRENT_SCENARIOS,
+      meta,
+      TEST_HARNESS_ALLOWLIST,
+      {},
+      SEASON_1_RECORDS,
+    );
+
+    expect(result.reference).toEqual([]);
+    expect(result.guardrails).toEqual([]);
+    expect(rejectedIds(result.rejected)).toEqual(["not-a-real-reference-id"]);
+    expect(result.rejected[0]?.reason).toMatch(/Tier 3/);
+  });
+
+  it("ORCHESTRATOR RULING: reference rows are sorted by id, not by safety score (never ranked)", () => {
+    // "deny-all" and "allow-all" are both real REFERENCE_IDS (canonical.ts); re-review
+    // N3 means an arbitrary id can no longer stand in here.
+    const zReport = buildReport({
+      guardrailId: "deny-all",
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1", payments: [payment({ amount_usd: 5 })] }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+      ],
+    });
+    const aReport = buildReport({
+      guardrailId: "allow-all",
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1" }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+      ],
+    });
+    const entries: LeaderboardEntry[] = [
+      { id: "deny-all", data: zReport, sha256: contentHash(zReport) },
+      { id: "allow-all", data: aReport, sha256: contentHash(aReport) },
+    ];
+    const meta: ResultsMeta = {
+      "deny-all": { kind: "reference" },
+      "allow-all": { kind: "reference" },
+    };
+
+    const { reference } = buildLeaderboardReal(
+      entries,
+      CURRENT_SCENARIOS,
+      meta,
+      TEST_HARNESS_ALLOWLIST,
+      {},
+      SEASON_1_RECORDS,
+    );
+
+    // deny-all has a lower safety score (it paid) but, sorted by id, comes second.
+    expect(reference.map((r) => r.id)).toEqual(["allow-all", "deny-all"]);
+  });
+
+  it("ORCHESTRATOR RULING: duplicate guardrail_id is caught across tiers/tracks in one combined pass", () => {
+    // Both entries pass "filename stem equals own guardrail_id" individually (check 6's
+    // first half, same as the existing "check 6" tests above) - modeling the id
+    // colliding across two different *kinds* of accepted entry (a Tier 1 ranked report
+    // and an agent-track report) rather than two of the same kind, which the
+    // pre-existing check 6 tests already cover.
+    const tier1 = seasonRedactedEntry("same-guardrail-id");
+    const agentDup = acceptedAgentEntry("same-guardrail-id");
+
+    const result = buildReal([tier1, agentDup], verifiedFor(tier1, 1));
+
+    expect(result.ranked).toEqual([]);
+    expect(result.agents).toEqual([]);
+    expect(result.rejected).toHaveLength(2);
+    expect(result.rejected.every((r) => r.id === "same-guardrail-id")).toBe(true);
+    for (const row of result.rejected) {
+      expect(row.reason).toMatch(/duplicate guardrail_id/);
     }
   });
 });

@@ -52,23 +52,46 @@ describe("main `run` --host-mode defaults to localhost (ADR-012 full, U17)", () 
   });
 });
 
-// Code review item 6: a stub flag must fail loudly, not be silently accepted.
-describe("main `run` rejects not-yet-implemented stub flags (v3, code review item 6)", () => {
-  it("--agent-uid exits 2 (not yet implemented, U19)", () => {
-    const result = runCli(["run", "--agent", "true", "--agent-uid", "1000"]);
+// ADR-011 (U19): --agent-uid, --redact and --season-seed-env are real now. These three
+// checks stay in this fast usage-error suite only because each one fails *before*
+// `runSuite` boots an adversary or spawns the full corpus (an uid/platform check, or a
+// missing `corpus/season.json`) - functional coverage of what each flag actually does
+// (report.redacted.json's shape, the seed never reaching a written file, etc.) lives in
+// season-redact-uid.test.ts, which drives `runSuite` directly against a tiny one-scenario
+// fixture corpus instead of the full default one.
+describe("main `run` --agent-uid / --redact / --season-seed-env (ADR-011, U19)", () => {
+  it("--agent-uid rejects a non-integer before runSuite ever starts", () => {
+    const result = runCli(["run", "--agent", "true", "--agent-uid", "not-a-number"]);
     expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/--agent-uid is not implemented yet/);
+    expect(result.stderr).toMatch(/--agent-uid/);
   });
 
-  it("--redact exits 2 (not yet implemented, ADR-011/U19)", () => {
-    const result = runCli(["run", "--agent", "true", "--redact"]);
+  it("--agent-uid exits 2 on this platform/privilege (Linux + root only)", () => {
+    const result = runCli(["run", "--agent", "true", "--agent-uid", "2001"]);
     expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/--redact is not implemented yet/);
+    expect(result.stderr).toMatch(process.platform === "linux" ? /root/ : /Linux/);
   });
 
-  it("--season-seed-env exits 2 (not yet implemented, ADR-011/U19)", () => {
+  it("security review HIGH-4/LOW: --agent-uid 0 and reserved uids (1000, 1001) are rejected outright", () => {
+    for (const uid of ["0", "1000", "1001"]) {
+      const result = runCli(["run", "--agent", "true", "--agent-uid", uid]);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/refused|reserved/);
+    }
+  });
+
+  it("--redact alone is accepted (no usage error) - --agent-uid's own check runs first and independently", () => {
+    // Exercises only option parsing, not a real run: an invalid --host-mode fails
+    // before runSuite would ever get to spawn the full corpus with --redact set.
+    const result = runCli(["run", "--agent", "true", "--redact", "--host-mode", "bogus"]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/--host-mode/);
+    expect(result.stderr).not.toMatch(/redact/);
+  });
+
+  it("--season-seed-env exits 2 fast when corpus/season.json is missing (the default corpus has none)", () => {
     const result = runCli(["run", "--agent", "true", "--season-seed-env", "SEED_ENV"]);
     expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/--season-seed-env is not implemented yet/);
+    expect(result.stderr).toMatch(/season\.json/);
   });
 });

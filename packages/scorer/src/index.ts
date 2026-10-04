@@ -1,6 +1,7 @@
 export * from "./json-reporter.js";
 export * from "./markdown-reporter.js";
 export * from "./reach.js";
+export * from "./redact.js";
 export * from "./resolve.js";
 export * from "./round.js";
 export * from "./sarif-reporter.js";

@@ -36,3 +36,23 @@ export const VALID_GUARDRAIL_HOOKS = ["payment", "transfer", "sign"] as const;
 /** `config.harness_commit`: a full git SHA, or the literal "unknown" (ADR-011 "Harness
  * identity": `run.ts` records `git rev-parse HEAD` or "unknown" when that fails). */
 export const HARNESS_COMMIT_FORMAT = /^[0-9a-f]{40}$|^unknown$/;
+
+/**
+ * Security re-review N3: the only ids `buildLeaderboard` will ever treat as a
+ * harness-authored reference entry (exempt from tier gating, ORCHESTRATOR RULING) -
+ * hardcoded here, in code, rather than trusted from `results/_meta.json`'s own `kind`
+ * field alone. `_meta.json` is also CODEOWNERS-protected, but defense in depth: a
+ * compromised or accidentally-merged `_meta.json` edit that marks some arbitrary
+ * submitted id `"kind": "reference"` must not be enough, by itself, to let that
+ * id skip `checkVerifiedTier`/`checkHarnessAllowlistConcrete`/`checkGuardrailRepoRef`/
+ * `checkSubjectHash` - it also has to be one of *these* ids, which only a code change
+ * (a PR to this file, reviewed as code) can ever add to.
+ */
+export const REFERENCE_IDS: ReadonlySet<string> = new Set([
+  "naive-baseline",
+  "guarded-reference",
+  "allow-all",
+  "deny-all",
+  "reference-policy",
+  "sdk-defaults",
+]);

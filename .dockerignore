@@ -1,0 +1,10 @@
+# Security review LOW: never let a docker build context include .git (history,
+# hooks, possibly-cached credentials) or local dev artifacts the ranked-run/rank image
+# has no business shipping.
+.git
+node_modules
+**/node_modules
+out
+results/internal
+.claude
+*.log
