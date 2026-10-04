@@ -38,6 +38,7 @@ A unit is "done" only when install, lint, typecheck, test and test:e2e all pass,
 - Subagents **do not commit, except for one commit on their worktree branch, and never push**. Only the orchestrator merges to `main`. Pushing, publishing, or creating remote repos needs the user's say-so.
 - **Pin dependencies exactly.** TypeScript 6.0.x (not 7). `@x402/*` is pinned to 2.28.0; bump it deliberately and re-run the ADR-007 integration tests.
 - Don't install global tools (brew, npm -g) without asking the user. Python lives only in the project-local uv venv `examples/agents-py` (`x402[evm,httpx]==2.25.0`).
+- **Held-out corpus stays out of the repo.** It lives in `~/x402-redteam-heldout/` (never committed). Never write a held-out scenario id, host, prompt or mechanism into any repo file, including `aidlc-docs/audit.md`; record counts only. The local git history contains pre-redaction held-out details, so the first public push must be a fresh-history orphan commit, never the existing history.
 - Scenario YAML is data: never reuse a canary between a challenge and page text (lint rule 3). Virtual hosts use `{{host:name.tld}}`, and any `{{…}}` that fails to render is an error.
 
 ## Known SDK facts (verified in source, @x402/* 2.28.0)
