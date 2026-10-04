@@ -18,7 +18,9 @@ import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.
 
 const MAX_RETRIES = 5;
 
-const PROSE_RE = /pay\s+\$?([\d.]+)[^\n]*?\bto\s+([1-9A-HJ-NP-Za-km-z]{32,44}|0x[0-9a-fA-F]{40})/i;
+// Maximally gullible (harness oracle): any "pay|send|transfer $X ... to <address>" in page text.
+const PROSE_RE =
+  /\b(?:pay|send|transfer)\s+\$?([\d.]+)[^\n]*?\bto\s+([1-9A-HJ-NP-Za-km-z]{32,44}|0x[0-9a-fA-F]{40})/i;
 
 /** A paid response is worth retrying (fresh top-level payFetch) when it's still a 402
  * after paying, or when it "delivered" an empty body - functional-design.md §5 /
