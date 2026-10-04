@@ -789,6 +789,40 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     expect(rejected[0]?.reason).toMatch(/repeat/);
   });
 
+  it("accepts a deterministic agent-track reference oracle at repeat 1 (exempt from the >=5 floor)", () => {
+    const report = buildReport({
+      guardrailId: "naive-baseline",
+      runs: [...repeatedRuns("s1", "evm", 1), ...repeatedRuns("s2", "evm", 1)],
+      config: { ...AGENT_CANONICAL_CONFIG, repeat: 1 },
+    });
+    const entry: LeaderboardEntry = {
+      id: "naive-baseline",
+      data: report,
+      sha256: contentHash(report),
+    };
+    const meta: ResultsMeta = { "naive-baseline": { kind: "reference" } };
+    const result = buildLeaderboard([entry], CURRENT_SCENARIOS, meta);
+    expect(result.rejected).toEqual([]);
+    expect(result.reference.map((r) => r.id)).toEqual(["naive-baseline"]);
+  });
+
+  it("still requires repeat >= 5 for a NON-reference agent-track entry named like a reference", () => {
+    const report = buildReport({
+      guardrailId: "not-a-reference",
+      runs: [...repeatedRuns("s1", "evm", 1), ...repeatedRuns("s2", "evm", 1)],
+      config: { ...AGENT_CANONICAL_CONFIG, repeat: 1 },
+    });
+    const entry: LeaderboardEntry = {
+      id: "not-a-reference",
+      data: report,
+      sha256: contentHash(report),
+    };
+    const meta: ResultsMeta = { "not-a-reference": { kind: "reference" } };
+    const result = buildLeaderboard([entry], CURRENT_SCENARIOS, meta);
+    expect(rejectedIds(result.rejected)).toEqual(["not-a-reference"]);
+    expect(result.rejected[0]?.reason).toMatch(/agent-track minimum/);
+  });
+
   it("rejects an entry whose harness_commit isn't on a non-wildcard allowlist", () => {
     const entry = acceptedEntry("unlisted-commit");
     const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META, [

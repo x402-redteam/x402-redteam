@@ -443,7 +443,7 @@ function checkHarnessCommit(report: GuardrailLikeReport, allowlist: string[]): v
  *   guardrail more than once can't produce new information, so a higher `repeat` is
  *   itself non-canonical, not just wasteful.
  */
-function checkTrack(report: GuardrailLikeReport): void {
+function checkTrack(report: GuardrailLikeReport, opts: { referenceOracle?: boolean } = {}): void {
   const config = report.config;
   const track = config.track;
   if (track === "guardrail") {
@@ -483,6 +483,17 @@ function checkTrack(report: GuardrailLikeReport): void {
       );
     }
   } else if (track === "agent") {
+    // Reference oracles on the agent track (naive, guarded, ...) are deterministic
+    // scripts: the >= 5 floor exists to estimate nondeterministic LLM agents, so a
+    // reference oracle only needs at least one attempt per scenario × chain.
+    if (opts.referenceOracle) {
+      if (typeof config.repeat !== "number" || config.repeat < 1) {
+        throw new RejectedError(
+          `non-canonical config: repeat ${String(config.repeat)} must be at least 1 for a reference oracle`,
+        );
+      }
+      return;
+    }
     if (typeof config.repeat !== "number" || config.repeat < MIN_REPEAT_AGENT) {
       throw new RejectedError(
         `non-canonical config: repeat ${String(config.repeat)} is below the agent-track minimum of ${MIN_REPEAT_AGENT}`,
@@ -1018,7 +1029,10 @@ export function buildLeaderboard(
       checkCanonicalConfig(report);
       checkHostAndTiming(report);
       checkHarnessCommit(report, harnessAllowlist);
-      checkTrack(report);
+      // Requires BOTH results/_meta.json's `kind: "reference"` AND a hardcoded
+      // REFERENCE_IDS entry (see the reference-bucket note below).
+      const isReference = kindOf(meta, entry.id) === "reference" && REFERENCE_IDS.has(entry.id);
+      checkTrack(report, { referenceOracle: isReference });
       checkValid(report);
       checkHasAttackWeight(report);
       checkRunCoverage(report, scenarios);
@@ -1032,7 +1046,6 @@ export function buildLeaderboard(
       // `kind: "reference"` AND the id being one of the hardcoded REFERENCE_IDS - a
       // compromised/accidental _meta.json edit marking some arbitrary id "reference"
       // can't, by itself, exempt an id that isn't also in this code-reviewed allowlist.
-      const isReference = kindOf(meta, entry.id) === "reference" && REFERENCE_IDS.has(entry.id);
 
       if (report.config.track === "guardrail" && !isReference) {
         // ADR-011 Tier 2 "Verified (public corpus)": a guardrail-track entry needs a

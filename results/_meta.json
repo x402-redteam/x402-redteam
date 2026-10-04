@@ -1,4 +1,6 @@
 {
   "naive-baseline": { "kind": "reference" },
-  "guarded-reference": { "kind": "reference" }
+  "guarded-reference": { "kind": "reference" },
+  "reference-policy": { "kind": "reference" },
+  "allow-all": { "kind": "reference" }
 }
