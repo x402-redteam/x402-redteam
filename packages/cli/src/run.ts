@@ -45,17 +45,41 @@ const PROXY_NAME_RE = /_PROXY$/i;
 const CLI_SRC_DIR = dirname(fileURLToPath(import.meta.url));
 
 /**
- * v3 (ADR-016 #3 config fingerprint): `git -C <this checkout> rev-parse HEAD`, with a 2s
- * timeout (never let a slow/broken git block a run) falling back to "unknown" (e.g. not
- * a git checkout, or `git` isn't on PATH). Memoized (code review item 5): computed at
- * most once per process, since it can't change mid-run, and git's own stderr is
- * suppressed (a "fatal: not a git repository" message has no business reaching the
- * agent's own terminal). Constant within a checkout, so it never breaks the NFR1
- * byte-determinism check across two runs of the same build.
+ * The name of the env var a container image can set (via a Docker build arg baked in at
+ * image-build time) to tell the harness its own commit, for checkouts where `.git` isn't
+ * present to ask (e.g. a ranked/verified-run image, whose `.dockerignore` excludes
+ * `.git` on purpose). Also used by `buildAgentEnv` to make sure this value never reaches
+ * the agent/guardrail subprocess's own env, however it got set.
+ */
+export const HARNESS_COMMIT_ENV_NAME = "X402_HARNESS_COMMIT";
+
+/** A full, lowercase-hex 40-character commit SHA - the same format the leaderboard's
+ * own allowlist check requires (`packages/leaderboard/src/canonical.ts`'s
+ * `HARNESS_COMMIT_FORMAT`). The env value is lowercased before this is tested, so an
+ * uppercase-hex value is still accepted and recorded in its canonical, lowercase form. */
+const COMMIT_SHA_RE = /^[0-9a-f]{40}$/;
+
+/**
+ * v3 (ADR-016 #3 config fingerprint): resolves the harness's own commit, in order -
+ * `X402_HARNESS_COMMIT` when it's set to something that actually looks like a commit SHA
+ * (a container image bakes this in at build time, from a build arg, precisely for
+ * checkouts with no `.git` to ask); else `git -C <this checkout> rev-parse HEAD`, with a
+ * 2s timeout (never let a slow/broken git block a run); else `"unknown"` (neither source
+ * produced anything usable - e.g. not a git checkout, `git` isn't on PATH, and no env
+ * value was baked in). Memoized: computed at most once per process, since it can't
+ * change mid-run, and git's own stderr is suppressed (a "fatal: not a git repository"
+ * message has no business reaching the agent's own terminal). Constant within a
+ * checkout, so it never breaks the NFR1 byte-determinism check across two runs of the
+ * same build.
  */
 let cachedHarnessCommit: string | undefined;
 function computeHarnessCommit(): string {
   if (cachedHarnessCommit !== undefined) return cachedHarnessCommit;
+  const fromEnv = process.env[HARNESS_COMMIT_ENV_NAME]?.toLowerCase();
+  if (fromEnv !== undefined && COMMIT_SHA_RE.test(fromEnv)) {
+    cachedHarnessCommit = fromEnv;
+    return cachedHarnessCommit;
+  }
   try {
     cachedHarnessCommit = execFileSync("git", ["-C", CLI_SRC_DIR, "rev-parse", "HEAD"], {
       timeout: 2000,
@@ -151,8 +175,10 @@ function computeRunId(seed: string, scenarioId: string, chain: Chain, attempt: n
  * A clean env for the agent subprocess, per application-design.md §6 (v1) and §6 "v2":
  * inherits PATH/HOME/NODE_OPTIONS and any `passEnv` names from the harness's own
  * environment, always drops anything ending in `_PROXY` (even if it was explicitly
- * requested via `passEnv`), and adds the `X402_*`, `SOLANA_RPC_URL` and
- * `X402_FACILITATOR_URL` variables, plus v2's `X402_EVM_RPC_URL` / `ETH_RPC_URL`.
+ * requested via `passEnv`), always drops `X402_HARNESS_COMMIT` (even if it was
+ * explicitly requested via `passEnv` - the agent/guardrail under test has no business
+ * knowing which harness build is grading it), and adds the `X402_*`, `SOLANA_RPC_URL`
+ * and `X402_FACILITATOR_URL` variables, plus v2's `X402_EVM_RPC_URL` / `ETH_RPC_URL`.
  */
 function buildAgentEnv(
   taskPath: string,
@@ -165,6 +191,7 @@ function buildAgentEnv(
   const env: NodeJS.ProcessEnv = {};
   for (const name of names) {
     if (PROXY_NAME_RE.test(name)) continue;
+    if (name === HARNESS_COMMIT_ENV_NAME) continue;
     const value = process.env[name];
     if (value !== undefined) env[name] = value;
   }
@@ -226,13 +253,34 @@ function quietSummaryLine(report: Report, exitCode: number): string {
 }
 
 /**
- * Orchestrates the full suite run, per functional-design.md §2: boots one
- * adversary, drives it sequentially over (scenario, chain, attempt), scores
- * the runs and writes every report artifact. Exported for tests as well as
- * `main.ts`'s `run` command.
+ * Checks every id named in `--scenario` actually matches a scenario the corpus loaded.
+ * `scenarioIds === undefined` (no filter given) always passes. Throws naming exactly the
+ * ids that matched nothing, sorted and de-duplicated, and nothing else about the corpus -
+ * so a typo in a CI job's scenario list fails loudly and specifically instead of quietly
+ * running zero attack scenarios. Exported for its own unit test.
+ */
+export function assertScenarioFilterKnown(
+  allScenarios: ReadonlyArray<{ id: string }>,
+  scenarioIds: readonly string[] | undefined,
+): void {
+  if (scenarioIds === undefined) return;
+  const knownIds = new Set(allScenarios.map((s) => s.id));
+  const unknown = [...new Set(scenarioIds)].filter((id) => !knownIds.has(id)).sort();
+  if (unknown.length > 0) {
+    throw new Error(
+      `--scenario: unknown scenario id(s) not found in the loaded corpus: ${unknown.join(", ")}`,
+    );
+  }
+}
+
+/**
+ * Orchestrates the full suite run, per functional-design.md §2: boots a fresh adversary
+ * per run, drives it sequentially over (scenario, chain, attempt), scores the runs and
+ * writes every report artifact. Exported for tests as well as `main.ts`'s `run` command.
  */
 export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const allScenarios = loadCorpus(opts.corpus);
+  assertScenarioFilterKnown(allScenarios, opts.scenarioIds);
   const scenarioFilter = opts.scenarioIds ? new Set(opts.scenarioIds) : undefined;
   const chainFilter = opts.chains ?? CHAIN_ORDER;
   const skipControls = opts.skipControls ?? false;
@@ -279,7 +327,6 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   mkdirSync(logsDir, { recursive: true });
   mkdirSync(runsDir, { recursive: true });
 
-  const adversary = await createAdversary({ seed: effectiveSeed, capture, hostMode });
   const runs: RunRecord[] = [];
   // U18b item 1 (coordinator revision): one entry per guardrail-track run, in run
   // order, fed to `collectGuardrailInfo` after the loop - each run's own private record
@@ -287,14 +334,23 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   // afterwards (unlike the old `<runsDir>/<run_id>.gdp.json` sidecar scheme).
   const gdpRecords: Array<DriverGdpRecord | undefined> = [];
 
-  try {
-    for (const scenario of scenarios) {
-      for (const chain of CHAIN_ORDER) {
-        if (!chainFilter.includes(chain) || !scenario.chains.includes(chain)) continue;
+  for (const scenario of scenarios) {
+    for (const chain of CHAIN_ORDER) {
+      if (!chainFilter.includes(chain) || !scenario.chains.includes(chain)) continue;
 
-        for (let attempt = 1; attempt <= opts.repeat; attempt++) {
-          const run_id = computeRunId(effectiveSeed, scenario.id, chain, attempt);
+      for (let attempt = 1; attempt <= opts.repeat; attempt++) {
+        const run_id = computeRunId(effectiveSeed, scenario.id, chain, attempt);
 
+        // Measurement integrity: one adversary instance, on its own ephemeral port, per
+        // run - bound right before this run's agent is spawned and closed right after
+        // this run's ledger is drained, never shared with the run before or after it. A
+        // process that outlives its own run (e.g. a detached grandchild that escaped the
+        // process-group kill below) has nothing left to reach: this run's listener is
+        // already gone by the time any later run starts, and it was never told that
+        // later run's own, differently-numbered port, so a stray late request can only
+        // fail to connect - it can never be recorded into a different run's ledger.
+        const adversary = await createAdversary({ seed: effectiveSeed, capture, hostMode });
+        try {
           adversary.load({ scenario, chain, run_id });
           const task = buildTask({
             scenario,
@@ -474,11 +530,11 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             resolve(runsDir, `${run_id}.json`),
             `${JSON.stringify(runRecord, null, 2)}\n`,
           );
+        } finally {
+          await adversary.close();
         }
       }
     }
-  } finally {
-    await adversary.close();
   }
 
   // Code review item 3 / finding 5 (U18 seam): aggregate whatever the driver recorded

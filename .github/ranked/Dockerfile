@@ -54,6 +54,19 @@ WORKDIR /harness
 COPY . .
 RUN pnpm install --frozen-lockfile
 
+# `.dockerignore` excludes `.git` from this image on purpose, so `git rev-parse HEAD`
+# has nothing to ask once this image runs - rank.yml/ranked-run.yml instead resolve the
+# checked-out harness's own commit on the runner (where `.git` IS present) and pass it
+# in as this build arg, which `packages/cli/src/run.ts`'s harness-commit resolution
+# reads back out of this env var, ahead of ever trying `git` itself. Left unset (plain
+# `docker build .` outside those workflows), the harness falls back to `git`/"unknown"
+# exactly as it would anywhere else. Declared here, after every dependency-install
+# layer above, so a new commit (a new build-arg value) only invalidates this layer and
+# the lightweight ones below it, never the slow `apt-get`/age-download/`pnpm install`
+# layers.
+ARG HARNESS_COMMIT=unknown
+ENV X402_HARNESS_COMMIT=${HARNESS_COMMIT}
+
 # ranked-run.yml's own entrypoint script: age-decrypts /heldout-encrypted into /corpus
 # (mode 0400, root-owned) using $AGE_KEY, then execs the harness CLI with whatever args
 # this image was run with (--agent-uid, --guardrail, --season-seed-env, --redact, ...).

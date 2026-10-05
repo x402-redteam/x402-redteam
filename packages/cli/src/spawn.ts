@@ -120,9 +120,11 @@ export interface RunAgentResult {
 
 /**
  * Runs the agent command to completion (or until it's killed), per
- * functional-design.md §3. On timeout, SIGTERM goes to the whole process
- * group first (`detached: true` + `process.kill(-pid)`), then SIGKILL 2s
- * later if it's still alive. `duration_ms` is wall-clock via
+ * functional-design.md §3. SIGTERM goes to the whole process group
+ * (`detached: true` + `process.kill(-pid)`), then SIGKILL 2s later if it's
+ * still alive - on a timeout, and again once the direct child has closed on
+ * its own, so a non-detached sibling or grandchild never outlives its own
+ * run regardless of how that run ended. `duration_ms` is wall-clock via
  * `performance.now()`.
  */
 export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
@@ -143,20 +145,29 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     let killTimer: NodeJS.Timeout | undefined;
     let settled = false;
 
+    // Sends `signal` to the whole process group `detached: true` put `child` in - never
+    // only `child` itself, so any process `child` spawned without detaching further
+    // (an ordinary, non-detached grandchild) goes down with it. A detached grandchild
+    // that started its own session/group is out of reach of this call by construction;
+    // isolating it from the *next* run is `run.ts`'s job (a fresh adversary/port per
+    // run), not this process group's. Returns whether the group actually existed to
+    // receive the signal, so a caller can skip scheduling a follow-up signal to a group
+    // that's already gone.
+    const signalGroup = (signal: NodeJS.Signals): boolean => {
+      if (child.pid === undefined) return false;
+      try {
+        process.kill(-child.pid, signal);
+        return true;
+      } catch {
+        return false; // process already gone, or never had a group to signal
+      }
+    };
+
     const kill = (): void => {
       timedOut = true;
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
-      } catch {
-        // process already gone
+      if (signalGroup("SIGTERM")) {
+        killTimer = setTimeout(() => signalGroup("SIGKILL"), 2000);
       }
-      killTimer = setTimeout(() => {
-        try {
-          if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-        } catch {
-          // process already gone
-        }
-      }, 2000);
     };
 
     let termTimer: NodeJS.Timeout | undefined;
@@ -188,6 +199,18 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       if (startupTimer) clearTimeout(startupTimer);
       if (startupPoll) clearInterval(startupPoll);
       if (killTimer) clearTimeout(killTimer);
+      // Measurement integrity: the whole process group goes down at the end of every
+      // run, the same way it does on a timeout - not only when this run actually timed
+      // out. The direct child has already closed by the time `finish` runs, but that
+      // says nothing about whether it leaves behind a non-detached sibling or
+      // grandchild still sitting in its own group; this reaches that case the same way
+      // `kill()` above does. The follow-up SIGKILL is only scheduled when the SIGTERM
+      // actually reached a live group - nothing to follow up on otherwise. That timer
+      // is `unref()`'d and nothing here is awaited before `resolvePromise` below, so
+      // this adds no wall-clock time to this run.
+      if (signalGroup("SIGTERM")) {
+        setTimeout(() => signalGroup("SIGKILL"), 2000).unref();
+      }
       // Security review HIGH-4: sweep for any lingering agentUid process *after every
       // run*, not only on a timeout kill - a clean exit from the direct child doesn't
       // guarantee a detached grandchild didn't survive it.

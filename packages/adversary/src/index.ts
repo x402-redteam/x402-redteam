@@ -59,6 +59,15 @@ function bySeq<T extends { seq: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => a.seq - b.seq);
 }
 
+/** `@hono/node-server`'s `ServerType` is a union that also covers an HTTP/2 server,
+ * which has no `closeAllConnections` (an HTTP/1.1-only `net.Server` method) - every
+ * server this module actually creates is plain HTTP/1.1, so it's always present at
+ * runtime; this just reaches it past that wider declared type. */
+function closeAllConnections(srv: unknown): void {
+  const maybe = srv as { closeAllConnections?: () => void };
+  maybe.closeAllConnections?.();
+}
+
 /** How many ephemeral-port pairs to try before giving up on dual-stack binding - see
  * `bindDualStack`. Each retry is just a fresh `listen(0, ...)`, so this is cheap. */
 const MAX_DUAL_STACK_ATTEMPTS = 5;
@@ -212,13 +221,21 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
       return holder.current?.state.requests.length ?? 0;
     },
     async close() {
+      // `server.close()` alone only stops accepting new connections and waits for
+      // every open one to end on its own - a client holding a keep-alive socket open
+      // (even an idle one) keeps that promise pending indefinitely. `closeAllConnections()`
+      // drops every connection on this server right away, so `close()` resolves promptly
+      // regardless of what a client is still holding open.
+      closeAllConnections(server);
       await new Promise<void>((resolve, reject) => {
         server.close((err?: Error) => (err ? reject(err) : resolve()));
       });
       if (ipv6Server) {
+        closeAllConnections(ipv6Server);
         await new Promise<void>((resolve) => ipv6Server.close(() => resolve()));
       }
       if (proxyServer) {
+        closeAllConnections(proxyServer);
         await new Promise<void>((resolve) => proxyServer.close(() => resolve()));
       }
     },

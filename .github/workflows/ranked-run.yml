@@ -74,6 +74,15 @@ jobs:
           path: harness
           persist-credentials: false
 
+      # Recorded via GITHUB_ENV (read back below through its own `env:` mapping - never
+      # spliced into a run: block as a `${{ }}` expression) so the container built below
+      # carries this checkout's own commit, letting a run's own `config.harness_commit`
+      # be this harness's real identity rather than "unknown" (`.dockerignore` excludes
+      # `.git` from the image on purpose). Works whether `harness-ref` above resolved a
+      # tag or a raw commit SHA.
+      - name: Resolve the checked-out harness's own commit
+        run: echo "HARNESS_COMMIT=$(git -C harness rev-parse HEAD)" >> "$GITHUB_ENV"
+
       # ADR-011 "Seasons": the held-out corpus lives in a private repo, age-encrypted
       # at rest. Parameterized per task constraints ("the org name is not decided") via
       # a repository variable rather than a hardcoded org/repo — set `HELDOUT_REPO`
@@ -96,7 +105,13 @@ jobs:
           persist-credentials: false
 
       - name: Build the ranked-run image (age is installed here, not on this host)
-        run: docker build -t x402-redteam-ranked -f harness/.github/ranked/Dockerfile harness
+        env:
+          HARNESS_COMMIT: ${{ env.HARNESS_COMMIT }}
+        run: |
+          docker build -t x402-redteam-ranked \
+            --build-arg HARNESS_COMMIT="$HARNESS_COMMIT" \
+            -f harness/.github/ranked/Dockerfile \
+            harness
 
       # Security review HIGH-3/HIGH-8: every input reaches the container only via `-e`
       # (its own env), never spliced into this script's text.

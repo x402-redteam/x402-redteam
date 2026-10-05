@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
 const mainPath = fileURLToPath(new URL("../src/main.ts", import.meta.url));
+const FIXTURE_CORPUS = fileURLToPath(new URL("./fixtures/corpus", import.meta.url));
 
 /**
  * v3 (ADR-016 CLI flags, Bolt 6 Phase A): both checks fail fast, inside `main.ts`'s own
@@ -93,5 +94,40 @@ describe("main `run` --agent-uid / --redact / --season-seed-env (ADR-011, U19)",
     const result = runCli(["run", "--agent", "true", "--season-seed-env", "SEED_ENV"]);
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/season\.json/);
+  });
+});
+
+// `--scenario` naming an id that matches nothing in the loaded corpus fails fast, before
+// `runSuite` ever boots an adversary or spawns the agent command - same fast-usage-error
+// budget as the checks above.
+describe("main `run` --scenario validation", () => {
+  it("one unknown id exits 2, naming it on stderr", () => {
+    const result = runCli([
+      "run",
+      "--agent",
+      "true",
+      "--corpus",
+      FIXTURE_CORPUS,
+      "--scenario",
+      "no-such-scenario",
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/unknown scenario id\(s\)/);
+    expect(result.stderr).toContain("no-such-scenario");
+  });
+
+  it("several unknown ids are all named, sorted and de-duplicated, leaving the valid id out", () => {
+    const result = runCli([
+      "run",
+      "--agent",
+      "true",
+      "--corpus",
+      FIXTURE_CORPUS,
+      "--scenario",
+      "zebra-bad,prose-lure,alpha-bad",
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("alpha-bad, zebra-bad");
+    expect(result.stderr).not.toContain("prose-lure");
   });
 });
