@@ -102,10 +102,20 @@ jobs:
             echo "::error::checked-out HEAD ($actual) does not match tag $HARNESS_REF's own commit ($expected) - refusing to run (possible branch/tag name collision)"
             exit 2
           fi
+          # Recorded for the next step (via GITHUB_ENV, read back through its own
+          # `env:` mapping - never spliced into a run: block as a `${{ }}` expression)
+          # so the container this job builds carries the same commit this step just
+          # verified, letting a run's own `config.harness_commit` be this harness's
+          # real identity rather than "unknown" (`.dockerignore` excludes `.git` from
+          # the image on purpose).
+          echo "HARNESS_COMMIT=$actual" >> "$GITHUB_ENV"
 
       - name: Build the ranked-run image (same image ranked-run.yml uses)
+        env:
+          HARNESS_COMMIT: ${{ env.HARNESS_COMMIT }}
         run: |
           docker build -t x402-redteam-ranked \
+            --build-arg HARNESS_COMMIT="$HARNESS_COMMIT" \
             -f .x402-redteam-harness/.github/ranked/Dockerfile \
             .x402-redteam-harness
 

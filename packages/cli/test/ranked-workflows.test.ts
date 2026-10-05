@@ -288,4 +288,43 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
     const text = readFileSync(resolve(REPO_ROOT, "packages/leaderboard/src/provenance.ts"), "utf8");
     expect(text).toContain("--owner");
   });
+
+  /** Returns one step's own block (its `- name:` line through the next top-level
+   * `- name:` or end of file), for asserting on that step's `env:`/`run:` text in
+   * isolation from every other step. */
+  function stepBlockContaining(text: string, marker: string): string {
+    const markerIndex = text.indexOf(marker);
+    expect(markerIndex).toBeGreaterThanOrEqual(0);
+    const start = text.lastIndexOf("\n      - name:", markerIndex);
+    const rest = text.slice(start + 1);
+    const nextIndex = rest.indexOf("\n      - name:", 1);
+    return nextIndex === -1 ? rest : rest.slice(0, nextIndex);
+  }
+
+  it("the ranked Dockerfile declares a HARNESS_COMMIT build arg exported as X402_HARNESS_COMMIT", () => {
+    const text = readFileSync(resolve(REPO_ROOT, ".github/ranked/Dockerfile"), "utf8");
+    expect(text).toMatch(/^ARG HARNESS_COMMIT/m);
+    expect(text).toMatch(/^ENV X402_HARNESS_COMMIT=\$\{HARNESS_COMMIT\}/m);
+  });
+
+  it("rank.yml passes the checked-out harness's own commit as a HARNESS_COMMIT build arg via env, with no GitHub expression inside the run block", () => {
+    const text = readWorkflow(".github/workflows/rank.yml");
+    const block = stepBlockContaining(text, "docker build -t x402-redteam-ranked");
+    expect(block).toMatch(/HARNESS_COMMIT:\s*\$\{\{\s*env\.HARNESS_COMMIT\s*\}\}/);
+    expect(block).toContain('--build-arg HARNESS_COMMIT="$HARNESS_COMMIT"');
+    const runLines = block.slice(block.indexOf("run:"));
+    expect(runLines).not.toMatch(/\$\{\{/);
+  });
+
+  it("ranked-run.yml passes the checked-out harness's own commit as a HARNESS_COMMIT build arg via env, with no GitHub expression inside the run block", () => {
+    const text = readWorkflow(".github/workflows/ranked-run.yml");
+    expect(text).toContain(
+      'echo "HARNESS_COMMIT=$(git -C harness rev-parse HEAD)" >> "$GITHUB_ENV"',
+    );
+    const block = stepBlockContaining(text, "docker build -t x402-redteam-ranked");
+    expect(block).toMatch(/HARNESS_COMMIT:\s*\$\{\{\s*env\.HARNESS_COMMIT\s*\}\}/);
+    expect(block).toContain('--build-arg HARNESS_COMMIT="$HARNESS_COMMIT"');
+    const runLines = block.slice(block.indexOf("run:"));
+    expect(runLines).not.toMatch(/\$\{\{/);
+  });
 });

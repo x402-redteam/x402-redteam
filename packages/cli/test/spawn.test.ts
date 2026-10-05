@@ -31,6 +31,16 @@ class FakeChild extends EventEmitter {
   stderr = null;
 }
 
+/** `process.kill(pid, 0)` sends no signal and only checks whether `pid` exists. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("runAgent", () => {
   let outDir: string;
 
@@ -75,6 +85,31 @@ describe("runAgent", () => {
     // 200ms to SIGTERM + 2000ms grace to SIGKILL, plus scheduling slack.
     expect(elapsed).toBeLessThan(3000);
     expect(elapsed).toBeGreaterThan(1900);
+  });
+
+  it("kills a background child left in the agent's own process group after a normal (non-timeout) exit", async () => {
+    const logFile = join(outDir, "bg-child.log");
+    // A non-interactive `sh -c` script has no job control, so this background job stays
+    // in the same process group as the script itself rather than starting its own - the
+    // case the group signal on a normal exit (not only on a timeout) is meant to reach.
+    const result = await runAgent({
+      cmd: "sleep 30 >/dev/null 2>&1 & echo $!; exit 0",
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMs: 5000,
+      logFile,
+    });
+
+    expect(result.exit_code).toBe(0);
+    expect(result.timed_out).toBe(false);
+
+    const childPid = Number(readFileSync(logFile, "utf8").trim());
+    expect(childPid).toBeGreaterThan(0);
+
+    // The group signal `finish()` sends on every exit path is fire-and-forget (it must
+    // not add wall-clock time to the run) - give it a brief moment to actually land.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(isAlive(childPid)).toBe(false);
   });
   it("does not start the run clock until the agent has started (startup grace)", async () => {
     // Boots for 1.2 s, then "starts" and finishes 0.5 s later. With a 1 s run timeout this
