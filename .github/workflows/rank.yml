@@ -74,12 +74,12 @@ jobs:
       # The caller's own repo (where guardrail-cmd's code lives). persist-credentials:
       # false (security review LOW) - this job never needs to push or re-authenticate.
       - name: Checkout the submitter's repo
-        uses: actions/checkout@v4 # TODO pin by commit SHA before first real run (not resolved offline)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
       - name: Checkout the x402-redteam harness at a pinned ref
-        uses: actions/checkout@v4 # TODO pin by commit SHA before first real run (not resolved offline)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ORG_PLACEHOLDER/x402-redteam
           ref: ${{ inputs.harness-ref }}
@@ -152,7 +152,7 @@ jobs:
           # upload-artifact step below can read it.
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"
 
-      - uses: actions/upload-artifact@v4 # TODO pin by commit SHA before first real run
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: report-${{ inputs.guardrail-id }}
           path: ${{ runner.temp }}/out/report.json
@@ -168,12 +168,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v4 # TODO pin by commit SHA before first real run
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: report-${{ needs.run.outputs.guardrail-id }}
           path: out
 
       - name: Attest report.json provenance
-        uses: actions/attest-build-provenance@v1 # TODO pin by commit SHA before first real run
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: out/report.json

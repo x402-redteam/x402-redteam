@@ -124,7 +124,7 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 20
 
@@ -299,14 +299,14 @@ runs:
     - name: Upload SARIF
       if: ${{ always() && inputs.upload-sarif == 'true' && hashFiles(format('{0}/report.sarif', inputs.out)) != '' }}
       continue-on-error: true
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
       with:
         sarif_file: ${{ inputs.out }}/report.sarif
         category: x402-redteam
 
     - name: Upload report artifact
       if: ${{ always() && inputs.upload-artifact == 'true' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ env.X402_REDTEAM_ARTIFACT_DIR }}
