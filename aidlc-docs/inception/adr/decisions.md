@@ -314,3 +314,247 @@ interface Rail {
    - SVM `SetAuthority` (AccountOwner/CloseAccount) over a known token account is valued at that account's modelled balance, capped like `approve`.
    - A plain SPL `Transfer` resolves its asset from the source token account when it is a known ATA (the agent's own ATA for any known mint, through `DecodeHints.knownTokenAccounts`). If it isn't, it stays `asset: ""`, `asset_known: false`.
 5. The report schema becomes `x402-redteam/report@3`. When `summary.valid === false`, the markdown suppresses `safety_score` and shows "—", and the JSON keeps it.
+
+# Bolt 7 ADRs — Release engineering and open-source operations (designed 2026-10-07, senior-architect; status Proposed, gate G8)
+
+Sources were read on 2026-10-07. Action tags and SHAs were checked against the GitHub API that day. "Unverified" marks every claim I could not confirm. The project's facts that frame these ADRs: one maintainer; all reviewers are AI agents; no remote yet; 128 local commits; a ranked leaderboard whose integrity rests on a secret season seed.
+
+## ADR-017 Repository governance for a solo-maintained, security-sensitive project
+**Status:** Proposed (Bolt 7, U24-A, U24-H).
+
+**Context:** The owner wants the project to look professionally run. Two Scorecard checks penalise a solo project by construction, and AI reviews don't count toward either. Code-Review ("Review by bots, including bots powered by AI/ML, do not count") and Contributors (3+ organisations) are both effectively 0. Branch-Protection tier 2 and above needs ≥1 required approval, which an author can't give to their own PR. Source: [Scorecard checks](https://github.com/ossf/scorecard/blob/main/docs/checks.md).
+
+**Decision:**
+1. **Main is PR-only, enforced by a repository ruleset rather than classic branch protection.** Scorecard can read rulesets without an admin token (checks.md, Branch-Protection). The ruleset on `main`:
+   - blocks deletion and force-push, and requires linear history;
+   - requires a PR with **0 approvals** while there is one maintainer;
+   - requires the status checks `ci-ok`, `codeql`, `zizmor`, `pr-hygiene`;
+   - requires signed commits, which works because squash-merge commits made on github.com are signed by GitHub;
+   - has an empty bypass list; the owner uses an emergency bypass in "pull requests only" mode, and every use is logged in audit.md.
+   We do **not** fake reviews with a second account or a bot approval. That is gaming, and Scorecard ignores bot approvals anyway.
+2. **Merge policy:** squash-only, with the PR title as the commit subject. Head branches are deleted automatically.
+3. **Conventional Commits** are enforced on the PR title (the squash subject) by an in-repo script that runs on `pull_request` (`pr-hygiene.yml`). Allowed types: feat, fix, docs, chore, ci, build, refactor, test, perf, revert, corpus, season. No third-party action: the common one recommends `pull_request_target`, which zizmor flags.
+4. **DCO, not a CLA.** `Signed-off-by` is required on external contributors' commits, checked by `pr-hygiene.yml` (no app). MIT plus DCO is enough because audits don't need relicensing rights. A CLA only makes sense if the owner plans a dual licence, which is an owner decision.
+5. **Maintainer commits are SSH-signed.** Signing gives a verified badge on direct work; the ruleset's signed-commit rule covers merges.
+6. **Files:**
+   - `SECURITY.md`: private vulnerability reporting enabled; scope covers harness bugs, leaderboard gaming, held-out leakage, workflow vulnerabilities, and SDK findings handled under coordinated disclosure; acknowledgement within 7 days (the Best Practices badge needs ≤14); no bounty.
+   - `CODE_OF_CONDUCT.md`: [Contributor Covenant 3.0](https://ethicalsource.dev/blog/contributor-covenant-3), released 2025-07-28.
+   - `GOVERNANCE.md`: a maintainer-led ("BDFL") model; roles; **an explicit statement that design, implementation and code review are performed by AI agents under one human's gates**; succession and access continuity.
+   - `SUPPORT.md`, issue forms and a PR template.
+   - `CODEOWNERS` with a real handle. **While there is one maintainer, CODEOWNERS can't be enforced** (an author can't satisfy their own code-owner review). Say so in GOVERNANCE.md, and keep `verify-results.yml` as the mechanical control.
+7. **A second human maintainer or reviewer is the single highest-value governance change.** It is recommended before Season 1 is ranked; see ADR-026 and the owner decisions.
+
+**Consequences:**
+- The Scorecard Code-Review, Contributors and (for 90 days) Maintained checks stay low, and we publish why. Branch-Protection reaches about tier 1 to 3 out of 10 until a second reviewer exists (estimate).
+- The honest AI-review disclosure is itself the credibility move. A reviewer at Coinbase will find out anyway.
+
+## ADR-018 CI gating: what runs on PR, on main and nightly
+**Status:** Proposed (Bolt 7, U24-C).
+
+**Context:**
+- Standard GitHub-hosted runner minutes are free for public repos (GitHub billing docs; re-confirm at org creation), so the cost that matters is latency and flakiness, not money.
+- The E2E suite is six shards of 12–20 min, and self-test is six full suites in parallel.
+- `ci.yml` and `self-test.yml` trigger on both `push` and `pull_request`, so every PR commit runs twice.
+
+**Decision:**
+1. **PR (required, via one aggregator job `ci-ok`):**
+   - lint, typecheck, unit tests with coverage thresholds, `pnpm -r build` (CI never built before), the leaderboard diff and host-resolution;
+   - **plus** the E2E shards and the self-test matrix, but only when runtime paths change (`packages/**`, `corpus/**`, `examples/**`, `action.yml`, `pnpm-lock.yaml`, `.github/workflows/{ci,self-test}.yml`). A `changes` job decides this with `git diff` (no third-party paths-filter action), and the heavy jobs are skipped otherwise.
+   - `ci-ok` is `if: always()` and fails when any needed job failed or was cancelled. This avoids the "required check pending forever" problem with path filters.
+   - Docs-only PRs finish in about 3 min.
+2. **Push to main:** the same full set, unconditionally. `push` is limited to `branches: [main]`, and PRs use `pull_request`; no double runs.
+3. **Nightly (`nightly.yml`, cron plus manual dispatch):**
+   - the full E2E;
+   - unit tests on Node 22/24/26 on ubuntu, and Node 24 on macOS (`*.localhost` and contributors' machines);
+   - the Python agent test with the uv venv built in CI (closes review M8);
+   - `pnpm audit`;
+   - a **ranked dry run against a dummy season** (no secrets, as in the U22 checklist item 7) so the provenance pipeline can't rot unseen.
+   A failure opens or updates one tracking issue through `gh` (`issues: write` on that job only).
+4. Every workflow has top-level `permissions: {}` with per-job grants, `concurrency` (cancel in progress except on main), `timeout-minutes` on every job and `persist-credentials: false` on checkout.
+5. **Windows is unsupported** (sh spawning, process groups), and README says so. **Linux is the supported platform; macOS is best effort.**
+6. **Coverage:** `@vitest/coverage-v8` (exact pin). Thresholds start at the measured value minus 2 points per package and ratchet up; the target is ≥ 80 % statements overall (the Best Practices Silver criterion `test_statement_coverage80`). The baseline is **unmeasured today** (review §5.3).
+
+**Consequences:** A typical code PR goes green in about 20 min, bounded by the slowest E2E shard. The required-check surface is a single name, so rulesets don't churn when jobs change.
+
+## ADR-019 Workflow security and dependency supply chain
+**Status:** Proposed (Bolt 7, U24-D). Supersedes the "TODO pin" comments.
+
+**Context, verified 2026-10-07:**
+- Review finding H3 is fixed on main (commit 9250098). All 27 `uses:` references are pinned to SHAs, and I checked 5 of the 8 distinct actions against upstream tags: checkout v4.4.0, setup-node v4.4.0, pnpm/action-setup v4.4.0, attest-build-provenance v2.4.0 and upload-artifact v4.6.2 all match. Not checked: setup-python v5.6.0, download-artifact v4.3.0, codeql-action v3.38.2.
+- **But they pin superseded majors.** `actions/checkout@v4.4.0` declares `runs.using: node20` (read at that SHA). GitHub moved runners to Node 24 by default on 2026-06-16 and removes Node 20 "later in the fall of 2026" ([changelog](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)).
+- Current majors are checkout v7.0.1, setup-node v7.0.0, upload-artifact v7.0.1, download-artifact v8.0.1, setup-python v7.0.0, codeql-action v4.38.2, actions/attest v4.2.2 and pnpm/action-setup v6.1.0 (`node24`).
+- `attest-build-provenance` v4 is a wrapper over `actions/attest`, which new implementations should use.
+
+**Decision:**
+1. Bump every pin to the current major, by SHA with a `# vX.Y.Z` comment, using the pin table in U24-D, which the orchestrator re-verifies through the GitHub API at merge. Read each major's release notes for breaking changes; the upload v7 / download v8 artifact pairing especially.
+2. **Dependabot, not Renovate.** It is native, with no third-party app, it updates SHA pins together with their version comments, and it supports `cooldown`. Ecosystems: `github-actions` (directories `/` and `/.github/workflows`, which covers the composite `action.yml`), `npm` (pnpm lockfile) and `docker` (`/.github/ranked`). Grouped weekly, with a 7-day cooldown and 14 days for majors ([options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference)). Security updates bypass the cooldown, by design.
+3. **pnpm hardening** in `pnpm-workspace.yaml`:
+   - `minimumReleaseAge: 4320` (3 days; [pnpm 10.16](https://pnpm.io/blog/releases/10.16)), with `minimumReleaseAgeExclude` empty;
+   - keep the default of no dependency build scripts;
+   - `--frozen-lockfile` everywhere.
+4. **The `pnpm audit` policy:**
+   - `pnpm audit --prod --audit-level high` blocks on PRs that touch the lockfile, and nightly;
+   - dev-only and moderate advisories are reported, not blocking;
+   - exceptions go in `pnpm.auditConfig.ignoreGhsas` with a comment, an expiry date and a tracking issue.
+5. **SAST and workflow linting:**
+   - CodeQL advanced setup (`codeql.yml`; languages `javascript-typescript`, `actions`, `python`) on PRs, on main and weekly;
+   - `zizmor` (pedantic persona, SARIF upload, the way vitest does it: [zizmor.yml](https://github.com/vitest-dev/vitest/blob/main/.github/workflows/zizmor.yml));
+   - `actionlint`, as a pinned release binary checked against its sha256.
+6. **OpenSSF Scorecard workflow** (`ossf/scorecard-action` v2.4.4, `publish_results: true`, weekly plus on push to main, `id-token: write` on that job only). The badge goes in README.
+7. **Repository security features** (free on public repos; applied at bootstrap by U24-H): secret scanning plus push protection, private vulnerability reporting, Dependabot alerts and security updates, and code scanning. Custom secret patterns need GitHub Secret Protection (unverified on public repos), so the held-out guard is ADR-027.
+8. Fix the leftover: `verify-results.yml` still sets `node-version: 20`. So review finding M5 is **not** fully fixed.
+
+## ADR-020 Runtime: Node 24 is primary, Node 22 is the floor until its EOL
+**Status:** Proposed (Bolt 7, U24-B). Amends commit c878966 ("move to Node 22").
+
+**Context:**
+- Node 22 is in maintenance and reaches EOL on **2027-04-30**. Node 24 is LTS until 2028-04 ([endoflife](https://endoflife.ai/nodejs/22), [schedule](https://github.com/nodejs/release#release-schedule)).
+- Node 26 (April 2026) becomes LTS in late October 2026. The exact date is unverified.
+- Moving the canonical runtime to 22 buys six months.
+- The canonical JSON uses default-locale `localeCompare` in three places (review finding L7), so **ICU differences between Node versions are a latent determinism input**.
+
+**Decision:**
+1. CI's primary runtime, the Action's `setup-node`, and the ranked image (`node:24-bookworm-slim@sha256:…`, digest resolved by the orchestrator) all move to **Node 24**. `engines.node` is `>=22.14`. The nightly matrix runs 22/24/26.
+2. One shared canonicaliser that sorts by code unit (RFC 8785 style) replaces the three implementations. If any committed hash changes, the orchestrator regenerates `results/` in the same unit.
+3. Pin `@types/node` exactly to `24.x`, and pin the root `tsx` exactly. This closes the remaining caret ranges from review finding L11.
+4. The Action's `setup-node` changes the **caller's** Node for every later step of their job. Document this. Restoring it is not possible in a composite action (unverified alternative: run the harness through `node` from a private toolcache path).
+
+## ADR-021 Versioning and release: one version, release-commit-driven, immutable GitHub Releases
+**Status:** Proposed (Bolt 7, U24-E).
+
+**Decision:**
+1. **One SemVer version for the whole repository** (`vX.Y.Z`). The Action, the harness (`config.harness_version`, today the constant `"0.0.1"`, review finding M7), the ranked image tag and any npm package share it. Leaderboard identity is per release (`_harness.json`), so independently versioned packages would add nothing but confusion.
+2. **The public API covered by SemVer:** Action inputs and outputs; CLI flags and exit codes; the `report@N` schema; the GDP protocol version; the scenario YAML schema.
+   - Corpus changes are **minor**. They change `corpus_hash` and mark old results "stale", and the release notes must say so.
+   - Scoring changes that move any reference score are **minor** while the version is 0.x and **major** from 1.0 on.
+3. **Start at `v0.1.0`.** `v1.0.0` waits until Season 1 is ranked and at least one external guardrail is on the board. Pre-1.0 is the honest signal for an unproven tool; that is an owner decision.
+4. **Mechanism:** the vitest pattern ([publish.yml](https://github.com/vitest-dev/vitest/blob/main/.github/workflows/publish.yml)):
+   - The maintainer runs `pnpm release:prepare X.Y.Z`. It syncs every `package.json` version, regenerates `CHANGELOG.md` from Conventional Commits with a small in-repo generator (`scripts/release/changelog.mjs`; git-cliff is an acceptable swap, but it is one more binary dependency), and opens PR `chore(release): vX.Y.Z`.
+   - On merge, `release.yml` detects the release commit and enters the **`release` environment** (required reviewer: owner; main only).
+   - It builds the artefacts and creates the tag. It **creates a draft Release**, uploads the assets (`sbom.spdx.json`, plus the CLI tarball if ADR-022 option B is chosen) and their `*.sigstore.json` attestation bundles, then publishes.
+   - It moves the major tag (`v0`, later `v1`) to the release commit.
+5. **Immutable releases are enabled** on the repo ([GA 2025-10-28](https://github.blog/changelog/2025-10-28-immutable-releases-are-now-generally-available/)). A published release's tag and assets can't change, and GitHub creates a release attestation automatically. The draft-then-publish order is required because assets can't be added after publication.
+   - The moving major tag is not a release, so it stays movable. A tag ruleset restricts `v*` create, update and delete to the release workflow's identity.
+   - Whether a GitHub App token or `GITHUB_TOKEN` with a ruleset bypass is needed is **unverified**. vitest uses a GitHub App, which is an owner decision.
+6. **Rejected alternatives:**
+   - **Changesets** is built for independently versioned published packages and adds a file per PR.
+   - **release-please** needs an App or PAT for its PRs to trigger CI, and adds a bot.
+   - Hand-made tags have no reviewable step.
+   - All three are viable; this one has the fewest moving parts for one maintainer.
+7. **After every release**, a follow-up PR adds the release commit to `results/_harness.json` (CODEOWNERS path). It can't happen in the same commit because the SHA isn't known before merge.
+8. **The SBOM** comes from GitHub's dependency-graph SBOM API (SPDX, no new tool), with an `actions/attest` SBOM predicate attached.
+
+**Consequences:**
+- The Signed-Releases check is satisfied by the attestation bundles uploaded as `*.sigstore.json` (checks.md lists that suffix). Whether Scorecard also counts GitHub's automatic release attestation is unverified.
+- The SBOM check gets a release asset.
+
+## ADR-022 Distribution: the Action plus a clone at launch; npm deferred, and if ever, one bundled CLI package
+**Status:** Proposed (Bolt 7, U24-E for the Action; U24-G conditional on the owner's decision).
+
+**Context:**
+- **The premise that "the Action vendors its own deps" is wrong.** `action.yml:134-137` runs `pnpm install --frozen-lockfile` from the npm registry inside `github.action_path` on every consumer run. That is lockfile-pinned with integrity hashes and runs no install scripts, but it pulls **dev** dependencies too (vitest, biome, typescript) and costs one registry round-trip per run.
+- Every package is `private: true`, with `exports` pointing at `src/*.ts`, and the bin spawns `tsx`.
+- `x402-redteam` is unclaimed on npm (registry 404 on 2026-10-07).
+
+**Decision:**
+1. **Launch with no npm package.** Supported routes are the Action (`uses: <org>/x402-redteam@v0`) and `git clone` plus pnpm. README drops `npx` (US1) until option B ships. That removes a whole publishing surface (tokens, trusted publisher, name squatting) for a tool whose users are CI pipelines.
+2. **Harden the Action's install now:** `pnpm install --frozen-lockfile --prod --ignore-scripts` (`tsx` is already a runtime dependency of the CLI), timed in self-test.
+3. **Option B (U24-G), post-launch and only if wanted:** a single non-private package `x402-redteam`:
+   - an esbuild bundle of cli, driver, adversary, capture, scorer and schema into `dist/`, with `@x402/*`, `viem` and `hono` kept as exact-pinned dependencies;
+   - the bin runs `dist/` without `tsx`, and CI smoke-tests the **built** artefact;
+   - published from `release.yml` by **npm trusted publishing** (OIDC; npm CLI ≥ 11.5.1, Node ≥ 22.14; provenance automatic for public packages from public repos; then "disallow tokens") ([npm docs](https://docs.npmjs.com/trusted-publishers), [GA 2025-07-31](https://github.blog/changelog/2025-07-31-npm-trusted-publishing-with-oidc-is-generally-available/)). Classic tokens were revoked on 2025-12-09.
+   - Whether a trusted publisher can be configured **before** a package's first publish is **unverified**. The docs only say a new configuration must publish within 2 days.
+   - The same bundle could later let the Action skip `pnpm install` entirely.
+4. **Name protection:** if the owner wants the npm name held, publish a real `0.x` from option B. Don't publish a placeholder, which npm's policy discourages.
+
+## ADR-023 Ranked container image: build once per release, publish to GHCR by digest, attest and SBOM
+**Status:** Proposed (Bolt 7, U24-F). Amends ADR-011 (full) and the U19 "build fresh every run" choice.
+
+**Context:**
+- `ranked-run.yml` builds `.github/ranked/Dockerfile` on every run. The base image is digest-pinned, but `apt-get update && apt-get install curl ca-certificates procps` is **not reproducible**, so two ranked runs at the same harness commit execute different images, and nothing records which one ran.
+- github/github-mcp-server's [docker-publish.yml](https://github.com/github/github-mcp-server/blob/main/.github/workflows/docker-publish.yml) is the reference pattern: build-push-action, metadata-action tags, and cosign signing by digest.
+
+**Decision:**
+1. `release.yml` builds the image once per release: `linux/amd64` only (the age tarball and runners are amd64), BuildKit `--sbom=true --provenance=mode=max`.
+2. It pushes `ghcr.io/<org>/x402-redteam-ranked:vX.Y.Z` and attests the **digest** with `actions/attest` (`push-to-registry: true`).
+3. The release notes and `results/_harness.json` record the digest.
+4. `ranked-run.yml` and `rank.yml` **pull by digest**, and verify it with `gh attestation verify oci://…@sha256:… --signer-workflow <org>/x402-redteam/.github/workflows/release.yml` before running. The Tier 1/2 attestation's subject metadata records the image digest.
+5. The image is public. It contains no secrets (the seed and age key are injected at run time). cosign signing in addition to GitHub attestations is optional; both are Sigstore. I'm not recommending a second signing path.
+
+**Consequences:** "Which binary produced this ranked score?" gets a verifiable answer, and that strengthens the leaderboard more than any badge.
+
+## ADR-024 "Deployment" has four meanings, each behind an environment
+**Status:** Proposed (Bolt 7, U24-E, U24-F, U24-H).
+
+**Decision:** There is no server. Deployment means exactly four things:
+
+| Deploy | Trigger | Environment | Protection |
+|---|---|---|---|
+| Release (tag, GitHub Release, major tag, GHCR image, npm if ADR-022 B) | release commit on main | `release` | required reviewer: owner; deployment branch: `main`; secrets: none (OIDC only) |
+| Ranked run (Tier 1) | manual `workflow_dispatch` by a maintainer | `ranked` | required reviewers; `main` only; holds `SEASON_SEED` and `AGE_KEY`. "Prevent self-review" **can't** be enabled with one maintainer, because the person who dispatches also approves. Disclosed in GOVERNANCE.md |
+| Leaderboard publication | merge to main of a `results/**` PR | none (CODEOWNERS plus `verify-results`) | until there is a second maintainer, the guarantee is the re-verification CI check, not human review |
+| Pages (optional, ADR-026) | push to main | `github-pages` | main only |
+
+- **No scheduled real ranked runs.** They would burn approvals and expose secret-bearing jobs on a timer. The nightly dummy-season dry run (ADR-018) keeps the pipeline exercised.
+- **Rollback:** releases are immutable, so a bad release is superseded by `vX.Y.(Z+1)`, the major tag moves back, and the bad release is marked in its notes. A bad image digest is removed from `_harness.json`, and results produced with it are moved to "Rejected" with a reason.
+
+## ADR-025 Publish a targeted history rewrite, not an orphan commit
+**Status:** Proposed (Bolt 7, U24-H). Replaces the CLAUDE.md "orphan commit" rule once it is executed and verified.
+
+**Context, measured 2026-10-07 without printing any sensitive text:**
+- The sensitive strings are four lines of `aidlc-docs/audit.md`: three held-out redactions (commit 4250300) and one personal entry (commit 13fc9b3).
+- They were **introduced in 4 commits** but are **present in the tree snapshots of 10, 9, 1 and 82 commits** respectively, because the log is append-only. "3 known commits" understates the exposure. Only commit SHAs and counts were printed.
+- There is one branch (`main`), no tags, no stash, one worktree and no remote.
+- Nothing has been pushed, so the usual costs of a rewrite don't apply: there are no other clones, no PR refs, no forks and no GitHub caches.
+- An orphan commit destroys the commit-level evidence the independent review counted: 128 commits, 88 % of source commits travelling with tests, and the merge and order evidence (review §5.1–5.2).
+
+**Decision:** Rewrite with `git filter-repo --sensitive-data-removal` (≥ 2.47) on a **fresh mirror clone**, never on the working repo. Push only from the verified clone. The procedure and verification are in U24-H. In summary:
+1. **Replace each original line with its redacted form as it appears in HEAD.** Then the rewritten history converges on today's text, and **the rewritten HEAD tree hash must equal today's HEAD tree hash**. That is a strong, mechanical proof that only history changed.
+2. **Build the denylist automatically** from the held-out corpus (ids, hosts, canaries) plus the four original lines and distinctive tokens. It lives outside the repo, mode 600, and is never printed.
+3. **Verification:** zero denylist hits across `git cat-file --batch-all-objects` (blobs and commit messages), in the rewritten mirror and again in a fresh `--no-local` clone of it. Author, date, subject and trailer listings are identical before and after. `fsck` passes. `pnpm install && pnpm test` passes on HEAD.
+   - **Plus a "removed lines" review:** every line that ever existed in any version of `aidlc-docs/**` or `CLAUDE.md` but isn't in HEAD is listed privately and checked against the denylist. It is a small set, because audit.md is append-only.
+4. After the push, the same scan runs on a clone from GitHub. The original local repository is archived offline by the owner and is never pushed.
+
+**Rejected alternatives:**
+- **An orphan commit:** loses the proof of work for no added safety once the verification above passes.
+- **Publishing `aidlc-docs/` separately:** the process docs are the evidence.
+
+**Residual risk:** held-out text paraphrased in a form no denylist token matches. The removed-lines review and the HEAD-tree-equality check bound it to text that is **still in HEAD**, and HEAD is already covered by the existing held-out rule.
+
+## ADR-026 Measurability: what an outsider can check, and launch targets
+**Status:** Proposed (Bolt 7). Targets are estimates.
+
+| Signal | How an outsider checks it | Launch target | Day 90 / later |
+|---|---|---|---|
+| OpenSSF Scorecard | `api.scorecard.dev` badge plus the published run | **≥ 7.5** (estimate below) | ≥ 8.0 once "Maintained" counts (repos < 90 days old can't pass it); ≥ 9 only with a second human reviewer |
+| OpenSSF Best Practices | bestpractices.dev badge | **passing** | **silver** once access continuity (a second person able to administer) and ≥ 80 % coverage hold. **Gold is not reachable solo** (two-person review, bus factor ≥ 2). [criteria](https://www.bestpractices.dev/en/criteria/1) |
+| CI | workflow badge on `main` | green; E2E nightly green 7 days in a row before launch | — |
+| Coverage | CI job summary plus the badge source (owner decision: Codecov OIDC or a self-hosted JSON) | measured, thresholds enforced; target ≥ 80 % statements | ≥ 85 % |
+| CodeQL / zizmor | Security tab (public), SARIF | 0 open high or critical alerts | — |
+| Provenance | `gh attestation verify` commands in README "Verify a release" (release assets, image digest, npm `--provenance` if published) | every release attested | — |
+| Reproducibility | README command reproduces `results/*.json` byte-for-byte (minus timing and commit) | documented and CI-checked (leaderboard diff) | — |
+
+**Scorecard estimate at launch:**
+- Dangerous-Workflow 10, Binary-Artifacts 10, Token-Permissions 10, Vulnerabilities 10, Dependency-Update-Tool 10, Signed-Releases 10 (after the first release), License 10, CI-Tests 10, SAST 10, Security-Policy 10, SBOM 10.
+- Pinned-Dependencies about 9, Packaging 10 only if a publish workflow is detected (unverified for GHCR-only), Fuzzing 10 if property-based tests exist, CII-Best-Practices 5.
+- Code-Review 0, Contributors 0, Maintained 0, Branch-Protection about 3.
+- Weighted, that comes to **about 7.7**, or about 7.3 without the fuzzing points.
+
+**Fuzzing:** Scorecard detects fast-check for JS/TS. Add fast-check property tests **only where they earn their keep**: canonicaliser round-trip and order-independence, scorer monotonicity, USD/atomic conversion. These are real determinism invariants, not badge filler.
+
+**Don't add:** a badge wall. README shows six badges: CI, Scorecard, Best Practices, coverage, latest release, licence.
+
+**Pages:** **premature.** LEADERBOARD.md renders on GitHub, and a second surface before the first external entry is pure upkeep. Revisit with an external entry and a custom domain (owner decision).
+
+## ADR-027 Held-out leak guard
+**Status:** Proposed (Bolt 7, U24-A).
+
+**Context:** The worst operational failure for this project is a Season leak through a commit. It nearly happened once (audit 2026-10-04). GitHub custom secret patterns aren't assumed to be available.
+
+**Decision:**
+1. **A local pre-commit and pre-push hook**, `scripts/heldout-guard.mjs`, reads a denylist from `$X402_HELDOUT_DIR/.denylist`, which a maintainer regenerates from the held-out corpus. It fails on any match in staged content or in the commit message. It is a silent no-op when the file is absent, so contributors are unaffected. It's installed by `pnpm prepare-hooks` (opt-in; no husky dependency).
+2. **A CI job on push to main and on maintainer PRs:**
+   - Tokens from changed files are HMAC'd with the secret `HELDOUT_GUARD_KEY`, held in a dedicated `guard` environment with no reviewers so the `ranked` secrets are never exposed to this job, and compared to a committed list of HMACs (`.github/heldout-guard.hmac`).
+   - Without the key, the HMAC list reveals nothing, even though ids are short words. Fork PRs can't see the key, so the job skips on forks and runs again on main after merge.
+   - The committed HMAC list rotates each season.
+3. The orchestrator's audit discipline (counts only) remains the primary control. This is a backstop.

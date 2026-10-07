@@ -183,3 +183,100 @@ Gate G7 (Bolt 6 done) → G8 (public launch: user decides publishing)
 10. **Audit offering:**
     - the deliverable (private report plus ledger review), pricing, the liability disclaimer and terms;
     - whether audited closed-source guardrails may display an "audited" badge (proposed: no leaderboard rank).
+
+## Bolt 7 — Release engineering and open-source operations (designed 2026-10-07, senior-architect; Proposed, gate G8)
+
+ADRs: ADR-017 to ADR-027 (`adr/decisions.md`). Unit designs: `construction/U24-*/`.
+
+**Renumbering note:** earlier docs point MPP, push-mode and session rails, and the driver authority-grant intent at "Bolt 7" (ADR-014 §5, audit 2026-10-04). Those move to **Bolt 8**. Owner to confirm (D11).
+
+### Recommended shape
+- **There is no server.** Deployment means four things, each behind an environment (ADR-024): an immutable GitHub Release, a GHCR ranked image pulled by digest, a leaderboard merge, and optional Pages.
+- **One repo-wide version**, starting at v0.1.0.
+- **Releases are cut by a merged "chore(release)" PR plus a `release` environment approval**, and carry an SBOM and Sigstore attestation bundles.
+- **No npm at launch.**
+- **History:** a verified `filter-repo` rewrite instead of the orphan commit.
+- **CI:** one required check, `ci-ok`, with path-gated E2E on PRs and a nightly matrix.
+- **Supply chain:** Dependabot with a cooldown over SHA pins on current Node-24-runtime majors, plus CodeQL, zizmor, actionlint and Scorecard.
+- **Honesty about solo operation and AI review in GOVERNANCE.md** is the credibility move. Scorecard can't be maxed solo, and we won't game it.
+
+### Challenges to the current repo and to the framing
+1. **The H3/M5 fixes are partial.**
+   - The 27 pins are genuine SHAs (5 of 8 distinct actions checked against upstream tags; all 5 match), but they pin superseded majors. `checkout@v4.4.0` runs on `node20`, which GitHub removes from runners this autumn.
+   - `verify-results.yml` still sets Node 20.
+   - Node 22 has about 6 months of support left.
+   - Commits ea5ce93, 9250098 and c878966 have **no audit.md entry**, a process breach.
+2. **"The Action vendors its own deps" is false.** It runs `pnpm install` from the registry, dev dependencies included, on every consumer run.
+3. **"3 commits" understates the history exposure.** The sensitive lines are present in the snapshots of up to 82 commits. A rewrite is still cheap because nothing has been pushed.
+4. **Changesets doesn't fit, and npm publishing isn't needed now.** Pages is premature.
+5. **The real professionalism gap is people, not badges.**
+   - One person holds the season seed, dispatches ranked runs and approves them.
+   - CODEOWNERS and environment self-review protections are unenforceable solo.
+   - Scorecard Code-Review and Contributors stay at 0, and Best Practices Gold is unreachable.
+   - A second human maintainer is worth more than any workflow.
+6. **E2E on PRs is affordable** (public repo minutes; verify at org creation). Gate on paths, not on schedule.
+
+### Units
+| Unit | Scope (one line) | Executor | Phase |
+|---|---|---|---|
+| U24-A | SECURITY, CoC 3.0, GOVERNANCE (AI-review disclosure), SUPPORT, issue/PR templates, CODEOWNERS default, `pr-hygiene.yml` (Conventional title plus DCO), held-out leak guard (local hook plus HMAC CI) | Sonnet | 0b |
+| U24-B | Node 24 primary / 22.14 floor, exact `@types/node` and `tsx`, `minimumReleaseAge`, ranked base digest, one code-unit canonicaliser (L7) | Sonnet | 0a (first, alone) |
+| U24-C | `ci.yml` rewrite (changes → fast / e2e / self-test → `ci-ok`), self-test as `workflow_call`, `nightly.yml` (Node 22/24/26, macOS, Python, audit, ranked dry run), coverage thresholds | Sonnet | 0b |
+| U24-D | Pin bump to current majors, `actions/attest`, Dependabot (cooldown), CodeQL, Scorecard, zizmor plus actionlint, `pins.test.ts` | Sonnet | 0b |
+| U24-E | Single version source, `harness_version` from package.json, changelog generator, `release:prepare`, `release.yml` (draft → immutable publish, SBOM, attestations, major tag), Action `--prod` install plus branding, README install/verify/badges, RELEASING.md | Sonnet | 0c |
+| U24-F | `release-image.yml` (GHCR, BuildKit SBOM/provenance, attest by digest), rank/ranked-run pull-and-verify by digest, `_harness.json` object form | Sonnet | 0c |
+| U24-G | (conditional on D5) bundled `x402-redteam` npm package with trusted publishing | Sonnet | 3 |
+| U24-H | Denylist, `filter-repo` rewrite plus verification, placeholders, first push, repo settings, rulesets, environments, Phase 2 evidence | **Orchestrator only** | 1 → 2 |
+
+At most 3 Sonnet agents run concurrently (0b: A, C, D; 0c: E, F). Developer commands are all under 3 min (`pnpm lint/typecheck/test`, `test:coverage` under 2 min). **Orchestrator-only:**
+- E2E and reference-result regeneration (U24-B, U24-E);
+- verifying the SHAs and the base-image digest;
+- the denylist and HMAC list;
+- anything with GitHub settings, pushing, tags or releases;
+- the first runs of CodeQL, zizmor and Scorecard.
+
+### Phase plan
+- **Phase 0 (no org needed):** 0a U24-B → 0b U24-A, U24-C, U24-D (merge C before D: shared `action-yaml.test.ts`) → 0c U24-E, U24-F. Everything is static; no workflow executes.
+- **Phase 1 (org name decided, empty repo created, nothing pushed):** U24-H §0–5: edit CLAUDE.md, denylist, pre-scan, rewrite, verify, substitute placeholders.
+- **Phase 2 (after the owner's push go-ahead):** U24-H §6–8: push; settings, rulesets and environments; first CI, nightly and Scorecard; U22 real-runner checklist; rank.yml dry run; `v0.1.0` release plus image; Best Practices "passing". Gate **G8**.
+- **Phase 3 (post-launch):** U24-G if D5; Pages if D9; Silver badge once there is a second maintainer and coverage is at least 80 %; Bolt 8 (MPP etc.).
+
+### File ownership (Bolt 7; one owner per file per phase; "A → B" = passes after A merges)
+| Path | Owner |
+|---|---|
+| `package.json` | U24-B (engines, devDeps) → U24-A (`prepare-hooks` script) and U24-C (`test:coverage`), with the lines merged by the orchestrator → U24-E (version, release scripts) |
+| `packages/*/package.json`, `examples/*/package.json` | U24-B (`@types/node`) → U24-E (`version`) → U24-G (cli only) |
+| `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.node-version` | U24-B → U24-C (coverage dependency only) |
+| `packages/schema/src/canonical.ts`, all `localeCompare` call sites | U24-B |
+| `packages/cli/src/run.ts` (line 564), `packages/cli/src/version.ts` | U24-E |
+| `packages/leaderboard/**` (harness allowlist reader) | U24-B (canonicaliser) → U24-F |
+| `action.yml` | U24-B (`node-version`) → U24-D (pins) → U24-E (install, branding) |
+| `.github/workflows/ci.yml`, `self-test.yml`, `nightly.yml`, `vitest.config.ts` (coverage) | U24-B (`node-version`) → U24-C. The `workflow_call` line for release goes to the orchestrator |
+| `.github/workflows/{codeql,scorecard,zizmor}.yml`, `.github/dependabot.yml`, `.github/zizmor.yml`, `packages/cli/test/pins.test.ts` | U24-D |
+| `.github/workflows/{rank,ranked-run}.yml`, `.github/ranked/**`, `release-image.yml`, `results/_harness.json`, `docs/seasons.md` | U24-B (Dockerfile FROM) → U24-D (pins) → U24-F |
+| `.github/workflows/verify-results.yml` | U24-B (node) → U24-D (pins) |
+| `.github/workflows/release.yml`, `scripts/release/**`, `CHANGELOG.md`, `docs/RELEASING.md` | U24-E |
+| `.github/workflows/{pr-hygiene,heldout-guard}.yml`, `scripts/{pr-hygiene,heldout-guard,heldout-guard-ci}.mjs`, `.githooks/**`, `.github/heldout-guard.hmac` (empty) | U24-A (the HMAC contents come from the orchestrator in U24-H) |
+| `scripts/ci-changes.mjs` | U24-C |
+| `scripts/ranked/**` | U24-F |
+| `SECURITY.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `SUPPORT.md`, `.github/ISSUE_TEMPLATE/**`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/CODEOWNERS` | U24-A → U24-H (placeholders) |
+| `CONTRIBUTING.md` | U24-A ("Development workflow" section) and U24-E (leaderboard tag examples): separate sections, merged sequentially |
+| `README.md` | U24-E (badges, Install, Verify a release, Versioning) |
+| `packages/cli/test/action-yaml.test.ts` | U24-C → U24-D (pin assertions only) |
+| `packages/cli/test/ranked-workflows.test.ts` | U24-D (pin assertions) → U24-F |
+| `CLAUDE.md`, `aidlc-docs/**`, `results/*.json`, `LEADERBOARD.md` | orchestrator |
+
+### Decisions only the owner can make (needed at G8; items 1–4 block Phase 1/2)
+1. **D1 Org and repo name:** create them and give the push go-ahead. "x402" trademark use is still open from the G7 list.
+2. **D2 History:** approve the ADR-025 rewrite (recommended) or keep the orphan-commit rule. Archive or destroy the original local repo afterwards.
+3. **D3 Public contacts:** the security and CoC contact address (a role address, not a personal inbox), the SUPPORT and commercial-audit contact, and whether to use Discussions.
+4. **D4 People:** recruit a second maintainer or reviewer before Season 1 is ranked (recommended). Until then, accept and publicly disclose solo self-approval of `ranked` and `release`. Name a successor with org-owner access (Best Practices `access_continuity`; Silver blocker).
+5. **D5 npm:** none at launch (recommended), or option B post-launch (U24-G). Whether to hold the name with a real 0.x.
+6. **D6 Release identity:** a GitHub App for tags and the major-tag move (vitest pattern; recommended if ruleset bypass for `GITHUB_TOKEN` proves impossible) vs `GITHUB_TOKEN`.
+7. **D7 Image:** a public GHCR image (recommended), or private, which breaks outsider verification.
+8. **D8 Version:** `v0.1.0` first (recommended) vs `v1.0.0`. What triggers 1.0.
+9. **D9 Coverage badge and Pages:** Codecov (third party, OIDC) vs self-hosted coverage JSON; Pages now (not recommended) or later; a custom domain.
+10. **D10 Tools:** allow `uvx git-filter-repo==2.47.0` (and optionally `uvx zizmor`) locally. Both are ephemeral, with no global install, but CLAUDE.md requires asking.
+11. **D11 Naming:** the old Bolt 7 scope (MPP, push-mode, session rails, authority-grant intent) moves to Bolt 8.
+12. **D12 Signing:** set up an SSH signing key for maintainer commits, and whether to require signed commits in the ruleset (recommended, with squash-only).
+13. **D13 Best Practices:** the owner's account submits the self-assessment, and the owner affirms the answers.
