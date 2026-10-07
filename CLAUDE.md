@@ -17,7 +17,7 @@ An open-source harness that runs x402-paying agents through hostile scenarios an
   4. The orchestrator re-runs every check, merges, and logs.
 - **Contract changes** to `aidlc-docs/inception/application-design.md` need `senior-architect` sign-off and an audit entry.
 
-## Commands (Node 20, pnpm 10 via corepack; the system pnpm 7 is broken on Node 20)
+## Commands (Node 22 in CI and the ranked image; Node 20.19+ works locally; pnpm 10 via corepack — the system pnpm 7 is broken on Node 20)
 ```
 pnpm install --frozen-lockfile
 pnpm lint          # biome

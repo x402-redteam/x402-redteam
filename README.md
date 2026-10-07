@@ -220,7 +220,7 @@ that honors standard proxy env vars does.
 
 **Per-language recipes** (verified on this repo's dev host, Node 20.19.5):
 
-- **Node 20 (this repo's own runtime):** the global `fetch` does **not** honor `HTTP_PROXY` on its
+- **Node 20–22 (this repo's supported runtimes):** the global `fetch` does **not** honor `HTTP_PROXY` on its
   own, and `NODE_USE_ENV_PROXY=1` alone was **not sufficient on Node 20.19.5** (confirmed by
   probing this harness's own forward proxy — a bare fetch to a proxy-mode URL failed with a DNS
   error, meaning it never reached the proxy). Check your Node version, and when in doubt, install

@@ -141,5 +141,5 @@ pnpm leaderboard                          # offline; reads results/_verified.jso
 pnpm leaderboard -- --verify-attestations # maintainer-only: calls `gh attestation verify`
 ```
 
-Node ≥ 20, pnpm 10 (pinned via `packageManager` + corepack). Dependencies are pinned to exact
+Node ≥ 22, pnpm 10 (pinned via `packageManager` + corepack). Dependencies are pinned to exact
 versions throughout the workspace; please keep new ones exact too.
