@@ -13,6 +13,6 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 5 — Measurement validity (G6 approved)
 - [x] U14 — agent startup timeout (load-flake fix)
 - [x] Bolt 6 — pre-launch units complete; G7 awaits org, seed and real-runner checks
-- [-] Bolt 7 — release engineering: pre-org units U24-A…F in progress; U24-G deferred; U24-H after the org exists
+- [-] Bolt 7 — release engineering: U24-A…F merged; U24-G deferred; U24-H waits for the GitHub org
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped
