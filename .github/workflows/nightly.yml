@@ -1,0 +1,146 @@
+name: Nightly
+
+# ADR-018 §3: the checks too slow or too broad for every pull request. A failure opens or
+# updates one "Nightly failure" issue.
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # Unit tests on the supported Node range (22 is the floor, 24 primary, 26 current) on
+  # Linux, plus Node 24 on macOS, where `*.localhost` resolution and process handling
+  # differ and contributors run the suite. Windows is unsupported.
+  unit-matrix:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 22
+          - os: ubuntu-latest
+            node: 24
+          - os: ubuntu-latest
+            node: 26
+          - os: macos-latest
+            node: 24
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  # The whole E2E suite in one invocation, as documented for `pnpm test:e2e`.
+  e2e-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:e2e
+
+  # Builds the examples/agents-py uv venv from its lockfile and runs the Python agent
+  # test against it. X402_REQUIRE_PY_VENV=1 makes that test fail, not skip, when the venv
+  # is missing.
+  python-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: pnpm install --frozen-lockfile
+      - name: Build the uv venv from uv.lock
+        working-directory: examples/agents-py
+        run: uv sync --frozen
+      - name: Run the python-agent test
+        env:
+          X402_REQUIRE_PY_VENV: "1"
+        run: pnpm vitest run --project agents python-agent
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: pnpm audit --prod --audit-level high
+
+  # Ranked dry run against a dummy season (test seed, 3-scenario dummy corpus, no
+  # secrets), so the provenance pipeline is exercised every night.
+  # TODO(U24-F): ranked-run.yml needs the `ranked` environment, its secrets and the
+  # ranked image today, so this job is a placeholder until U24-F provides a secret-free
+  # dummy-season entry point to call here.
+  ranked-dry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Ranked dry run (placeholder)
+        run: echo "::notice::ranked dry run is not wired yet; it needs a secret-free dummy-season entry point"
+
+  # Opens one "Nightly failure" issue, or comments on it if it is already open, when a
+  # run on main has a failed or cancelled job.
+  report:
+    needs: [unit-matrix, e2e-full, python-agent, audit, ranked-dry]
+    if: always() && github.ref == 'refs/heads/main' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Create or update the Nightly failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly failure"
+          body="Nightly run failed: $RUN_URL"
+          number=$(gh issue list --state open --search "in:title $title" --json number,title \
+            --jq '.[] | select(.title == "Nightly failure") | .number' | head -n 1)
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
