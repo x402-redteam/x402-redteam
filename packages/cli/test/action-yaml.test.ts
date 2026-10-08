@@ -272,10 +272,10 @@ describe("workflow hardening (ADR-018 §4)", () => {
     });
   }
 
-  it("ci.yml groups pull requests by ref and gives each push its own group", () => {
+  it("ci.yml groups pull requests by ref, gives each push its own group and separates release calls", () => {
     const wf = readWorkflow(".github/workflows/ci.yml");
     expect(wf.concurrency?.group).toBe(
-      `ci-\${{ github.event_name == 'push' && github.sha || github.ref }}`,
+      `ci-\${{ github.workflow }}-\${{ github.event_name == 'push' && github.sha || github.ref }}`,
     );
     expect(wf.concurrency?.["cancel-in-progress"]).toBe(`\${{ github.ref != 'refs/heads/main' }}`);
   });
@@ -286,9 +286,11 @@ describe("workflow hardening (ADR-018 §4)", () => {
     expect(wf.concurrency?.["cancel-in-progress"]).toBe(`\${{ github.ref != 'refs/heads/main' }}`);
   });
 
-  it("self-test.yml groups by ref and caller event and never cancels a run on main", () => {
+  it("self-test.yml groups by caller workflow, push sha or ref, and caller event, and never cancels a run on main", () => {
     const wf = readWorkflow(".github/workflows/self-test.yml");
-    expect(wf.concurrency?.group).toBe(`self-test-\${{ github.ref }}-\${{ github.event_name }}`);
+    expect(wf.concurrency?.group).toBe(
+      `self-test-\${{ github.workflow }}-\${{ github.event_name == 'push' && github.sha || github.ref }}-\${{ github.event_name }}`,
+    );
     expect(wf.concurrency?.["cancel-in-progress"]).toBe(`\${{ github.ref != 'refs/heads/main' }}`);
   });
 });
@@ -296,9 +298,14 @@ describe("workflow hardening (ADR-018 §4)", () => {
 describe("ci.yml gating (ADR-018 §1-2)", () => {
   const ci = () => readWorkflow(".github/workflows/ci.yml");
 
-  it("runs on pull_request, push to main and manual dispatch only", () => {
+  it("runs on pull_request, push to main, manual dispatch and calls from release.yml only", () => {
     const on = triggers(ci());
-    expect(Object.keys(on).sort()).toEqual(["pull_request", "push", "workflow_dispatch"]);
+    expect(Object.keys(on).sort()).toEqual([
+      "pull_request",
+      "push",
+      "workflow_call",
+      "workflow_dispatch",
+    ]);
     expect((on.push as { branches: string[] }).branches).toEqual(["main"]);
   });
 

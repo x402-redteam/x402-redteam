@@ -45,9 +45,9 @@ The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** 
    ```yaml
    jobs:
      rank:
-       uses: ORG_PLACEHOLDER/x402-redteam/.github/workflows/rank.yml@v1.0.0 # pin a real release tag
+       uses: ORG_PLACEHOLDER/x402-redteam/.github/workflows/rank.yml@v0.1.0 # pin a real release tag
        with:
-         harness-ref: v1.0.0 # the same release tag, vMAJOR.MINOR.PATCH (rank.yml rejects anything else)
+         harness-ref: v0.1.0 # the same release tag, vMAJOR.MINOR.PATCH (rank.yml rejects anything else)
          guardrail-cmd: "node my-guardrail.js" # your GDP guardrail (ADR-010)
          guardrail-id: your-guardrail-id
    ```

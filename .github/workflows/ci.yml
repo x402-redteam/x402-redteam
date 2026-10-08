@@ -2,19 +2,23 @@ name: CI
 
 # ADR-018: one required check, `ci-ok`. Every pull request runs the fast gate; the E2E
 # shards and the self-test matrix run when a runtime path changes (see the `changes` job).
-# A push to main runs everything.
+# A push to main runs everything. release.yml calls this workflow (workflow_call) to gate
+# the release commit; that call sees the caller's push event, so it also runs everything.
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions: {}
 
 # Pull requests share a group per ref, so a new commit cancels the previous run. Each push
-# to main gets its own group (its sha) and is never cancelled.
+# to main gets its own group (its sha) and is never cancelled. github.workflow is the
+# calling workflow's name, so the run release.yml calls never shares a group with the
+# normal push run of the same commit.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

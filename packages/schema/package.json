@@ -1,6 +1,6 @@
 {
   "name": "@x402-redteam/schema",
-  "version": "0.0.1",
+  "version": "0.1.0-dev",
   "private": true,
   "type": "module",
   "exports": {

@@ -35,6 +35,7 @@ import { hostEnv, preflightHostMode } from "./host-env.js";
 import { loadSeason } from "./season.js";
 import { runAgent, scrubSecretsFromLog } from "./spawn.js";
 import { buildTask, writeTaskFile } from "./task.js";
+import { HARNESS_VERSION } from "./version.js";
 
 /** Chains run evm before svm, per functional-design.md §2 step 3. */
 const CHAIN_ORDER: Chain[] = ["evm", "svm"];
@@ -562,7 +563,7 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
     // secret would otherwise leak into a committed artifact.
     ctx: { seed: effectiveSeed },
     meta: {
-      harness_version: opts.harnessVersion ?? "0.0.1",
+      harness_version: opts.harnessVersion ?? HARNESS_VERSION,
       agent_id: opts.agentId,
       guardrail_id: opts.guardrailId,
       config: {

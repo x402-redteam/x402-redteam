@@ -1,0 +1,206 @@
+name: Release
+
+# ADR-021, ADR-024: a push to main whose head commit is the squash-merged release PR
+# ("chore(release): vX.Y.Z") runs the full CI gate on that commit, waits for approval in
+# the `release` environment, then publishes an immutable GitHub Release with an SBOM and
+# Sigstore attestation bundles, moves the major tag and builds the ranked image.
+# Every other push to main stops after `detect`. See docs/RELEASING.md.
+#
+# Re-running the workflow is safe: when a published release for the version already points
+# at this commit, the release job skips building and publishing, and the major-tag and
+# image jobs run on their own.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.detect.outputs.release }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect the release commit
+        id: detect
+        run: |
+          COMMIT_SUBJECT="$(git log -1 --format=%s HEAD)"
+          export COMMIT_SUBJECT
+          node scripts/release/detect.mjs
+
+  # The full CI gate (ci.yml) on the exact release commit.
+  verify:
+    needs: detect
+    if: needs.detect.outputs.release == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: [detect, verify]
+    if: needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      pull-requests: read
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Check the version and that the commit came from a release PR
+        run: |
+          actual="$(node scripts/release/version.mjs --check)"
+          if [ "$actual" != "$VERSION" ]; then
+            echo "::error::package.json version $actual does not match the release commit ($VERSION)"
+            exit 1
+          fi
+          heads="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '.[] | select(.merged_at != null and .base.ref == "main") | .head.ref')"
+          if ! printf '%s\n' "$heads" | grep -q '^release/v'; then
+            echo "::error::$GITHUB_SHA was not merged from a release/v* pull request (heads: ${heads:-none})"
+            exit 1
+          fi
+
+      # A published release for this version that already points at this commit means an
+      # earlier run got that far: skip to the major-tag and image jobs. Anything else that
+      # already exists for the version (a draft, a release or tag at another commit) stops.
+      - name: Check for an existing release or tag
+        id: existing
+        run: |
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq .object.sha 2>/dev/null || true)"
+          draft="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [ -z "$tag_sha" ] && [ -z "$draft" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$draft" = "false" ] && [ "$tag_sha" = "$GITHUB_SHA" ]; then
+            echo "v$VERSION is already published at $GITHUB_SHA; skipping build and publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$draft" = "true" ]; then
+            echo "::error::a draft release v$VERSION exists; delete it and re-run"
+            exit 1
+          else
+            echo "::error::v$VERSION already exists at ${tag_sha:-an unknown commit}, not $GITHUB_SHA"
+            exit 1
+          fi
+
+      # The dependency-graph SBOM describes the default branch when this step runs, which
+      # is the release commit unless main has moved on since.
+      - name: Build the release assets
+        if: steps.existing.outputs.skip == 'false'
+        run: |
+          mkdir -p dist
+          node scripts/release/notes.mjs "$VERSION" > dist/notes.md
+          git archive --format=tar.gz --prefix="x402-redteam-$VERSION/" \
+            -o "dist/x402-redteam-$VERSION.tar.gz" "$GITHUB_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" --jq .sbom > dist/sbom.spdx.json
+          echo "SOURCE_ASSET=dist/x402-redteam-$VERSION.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Attest provenance of the release assets
+        id: provenance
+        if: steps.existing.outputs.skip == 'false'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ env.SOURCE_ASSET }}
+            dist/sbom.spdx.json
+
+      - name: Attest the SBOM for the source archive
+        id: sbom
+        if: steps.existing.outputs.skip == 'false'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ env.SOURCE_ASSET }}
+          sbom-path: dist/sbom.spdx.json
+
+      - name: Write the attestation bundles next to the assets
+        if: steps.existing.outputs.skip == 'false'
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom.outputs.bundle-path }}
+        run: |
+          cp "$PROVENANCE_BUNDLE" "$SOURCE_ASSET.sigstore.json"
+          cp "$PROVENANCE_BUNDLE" dist/sbom.spdx.json.sigstore.json
+          cp "$SBOM_BUNDLE" "$SOURCE_ASSET.sbom.sigstore.json"
+
+      # Assets can't be added to an immutable release after publication, so the release is
+      # created as a draft with every asset attached, then published.
+      - name: Create the draft release with its assets
+        if: steps.existing.outputs.skip == 'false'
+        run: |
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --notes-file dist/notes.md \
+            "$SOURCE_ASSET" \
+            "$SOURCE_ASSET.sigstore.json" \
+            "$SOURCE_ASSET.sbom.sigstore.json" \
+            dist/sbom.spdx.json \
+            dist/sbom.spdx.json.sigstore.json
+
+      - name: Publish the release
+        if: steps.existing.outputs.skip == 'false'
+        run: gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  # The major tag (v0, later v1) is what `uses: <org>/x402-redteam@v0` resolves. It is not
+  # a release, so it stays movable. A job of its own so a failed move re-runs alone; updated
+  # through the REST API so no git credentials are written to disk.
+  major-tag:
+    needs: [detect, release]
+    if: needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Move the major tag to the release commit
+        run: |
+          major="v${VERSION%%.*}"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$major" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$major" \
+              -f sha="$GITHUB_SHA" -F force=true > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$major" -f sha="$GITHUB_SHA" > /dev/null
+          fi
+          echo "$major -> $GITHUB_SHA"
+
+  # The ranked container image for this release (ADR-023), built, pushed and attested by
+  # release-image.yml. Its digest is in that job's summary and goes into
+  # results/_harness.json in the follow-up PR.
+  image:
+    needs: [detect, release]
+    if: needs.detect.outputs.release == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/release-image.yml
+    with:
+      version: ${{ needs.detect.outputs.version }}
