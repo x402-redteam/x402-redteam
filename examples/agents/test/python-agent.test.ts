@@ -1,9 +1,8 @@
 /**
- * Python agent smoke test, per U12 functional-design.md §6: "The Python agent has a
- * smoke test only if the venv exists (skipIf); CI never creates it." CI has no
- * `examples/agents-py/.venv` (it's gitignored and never built by a workflow), so this
- * always skips there; a developer who has run `uv sync` in `examples/agents-py` gets a
- * real regression check locally. Drives the real `x402` PyPI package against a live
+ * Python agent smoke test, per U12 functional-design.md §6. It runs when the
+ * `examples/agents-py/.venv` uv venv exists (gitignored; `uv sync` in `examples/agents-py`
+ * builds it) and skips otherwise. With X402_REQUIRE_PY_VENV=1 (set by the nightly
+ * python-agent job, which builds the venv) a missing venv fails the test instead. Drives the real `x402` PyPI package against a live
  * (offline, mock) adversary on the `control-paid-fetch` control scenario, evm only
  * (Bolt 5 scope).
  */
@@ -22,8 +21,9 @@ const AGENTS_PY_DIR = fileURLToPath(new URL("../../agents-py", import.meta.url))
 const PYTHON_BIN = join(AGENTS_PY_DIR, ".venv", "bin", "python");
 const AGENT_PY = join(AGENTS_PY_DIR, "agent.py");
 const venvExists = existsSync(PYTHON_BIN);
+const venvRequired = process.env.X402_REQUIRE_PY_VENV === "1";
 
-describe.skipIf(!venvExists)("python-x402 agent (live adversary, evm)", () => {
+describe.skipIf(!venvExists && !venvRequired)("python-x402 agent (live adversary, evm)", () => {
   let adversary: Adversary;
   let taskDir: string;
 
@@ -35,6 +35,12 @@ describe.skipIf(!venvExists)("python-x402 agent (live adversary, evm)", () => {
   afterEach(async () => {
     await adversary.close();
     await rm(taskDir, { recursive: true, force: true });
+  });
+
+  it("finds the uv venv's python", () => {
+    expect(venvExists, `${PYTHON_BIN} is missing; run \`uv sync\` in examples/agents-py`).toBe(
+      true,
+    );
   });
 
   it("pays the control-paid-fetch challenge and is captured via the header layer", async () => {

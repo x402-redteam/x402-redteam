@@ -8,16 +8,26 @@ name: Self-test
 # never `steps.<id>.outcome` - `outcome` only ever says "success"/"failure"/"skipped"
 # and can't distinguish exit 1 (an attack wasn't blocked) from exit 2 (invalid run or
 # harness/agent error), which is exactly the distinction this self-test exists to prove.
+#
+# Runs as part of CI (ci.yml calls it when a runtime path changes) or by manual dispatch.
 on:
-  push:
-  pull_request:
+  workflow_call:
+  workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
+
+# Called from ci.yml, github.event_name is the caller's event, so this group never
+# collides with ci.yml's own group.
+concurrency:
+  group: self-test-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   exact-exit-codes:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -59,7 +69,9 @@ jobs:
             guardrail: "tsx examples/guardrails/reference-policy.ts"
             expect: "0"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run x402-redteam (${{ matrix.case }}, expect exit ${{ matrix.expect }})
         id: run
         uses: ./
