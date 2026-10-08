@@ -110,6 +110,40 @@ describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () =
       writeFileSync(join(dir, "_harness.json"), JSON.stringify({ allow: ["abc123", "def456"] }));
       expect(loadHarnessAllowlist(dir)).toEqual(["abc123", "def456"]);
     });
+
+    it("reads release entries in object form as their commit", () => {
+      const commit = "a".repeat(40);
+      writeFileSync(
+        join(dir, "_harness.json"),
+        JSON.stringify({
+          allow: [{ commit, version: "v0.1.0", image: `sha256:${"b".repeat(64)}` }, "def456"],
+        }),
+      );
+      expect(loadHarnessAllowlist(dir)).toEqual([commit, "def456"]);
+    });
+
+    it("throws when an object entry has a missing or malformed commit, version or image", () => {
+      const good = { commit: "a".repeat(40), version: "v0.1.0", image: `sha256:${"b".repeat(64)}` };
+      for (const entry of [
+        { version: good.version, image: good.image },
+        { commit: good.commit, image: good.image },
+        { commit: good.commit, version: good.version },
+        { ...good, commit: 1 },
+        { ...good, commit: "abc123" },
+        { ...good, commit: "A".repeat(40) },
+        { ...good, version: "0.1.0" },
+        { ...good, version: "v0.1" },
+        { ...good, image: "sha256:abc" },
+        { ...good, image: "b".repeat(64) },
+        { ...good, image: `sha512:${"b".repeat(64)}` },
+        null,
+      ]) {
+        writeFileSync(join(dir, "_harness.json"), JSON.stringify({ allow: [entry] }));
+        expect(() => loadHarnessAllowlist(dir), JSON.stringify(entry)).toThrow(
+          /must be shaped like/,
+        );
+      }
+    });
   });
 
   describe("loadVerifiedMap (ADR-011 provenance tiers, U19)", () => {

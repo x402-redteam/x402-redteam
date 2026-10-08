@@ -114,7 +114,8 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
 
 /**
  * `results/_harness.json`'s `{ "allow": [...] }` release allowlist (ADR-011 "Harness
- * identity") - this package doesn't own `results/**` (units-of-work.md: U19), so it
+ * identity"), as the list of allowed harness commits. Each entry is either a plain commit
+ * string or a `HarnessRelease` object (ADR-023), whose `commit` is what counts here - this package doesn't own `results/**` (units-of-work.md: U19), so it
  * never writes this file; it only reads whatever is (or isn't yet) there.
  *
  * Code review round 1, item 3: a *missing* file silently defaults to `["*"]` (U19
@@ -149,11 +150,47 @@ export function loadHarnessAllowlist(dir: string): string[] {
     parsed === null ||
     !("allow" in parsed) ||
     !Array.isArray((parsed as { allow: unknown }).allow) ||
-    !(parsed as { allow: unknown[] }).allow.every((v) => typeof v === "string")
+    !(parsed as { allow: unknown[] }).allow.every(
+      (v) => typeof v === "string" || isHarnessRelease(v),
+    )
   ) {
-    throw new Error(`${HARNESS_ALLOWLIST_FILENAME} must be shaped like {"allow": string[]}`);
+    throw new Error(
+      `${HARNESS_ALLOWLIST_FILENAME} must be shaped like {"allow": (string | {"commit", "version", "image"})[]}`,
+    );
   }
-  return (parsed as { allow: string[] }).allow;
+  return (parsed as { allow: Array<string | HarnessRelease> }).allow.map((v) =>
+    typeof v === "string" ? v : v.commit,
+  );
+}
+
+/**
+ * One released harness in `results/_harness.json`'s object form: the release commit, its
+ * `vX.Y.Z` tag and the `sha256:` digest of the ranked image built from it. The ranked
+ * workflows resolve the image from this form (`scripts/ranked/resolve-image.mjs`); the
+ * leaderboard only needs the commit.
+ */
+export interface HarnessRelease {
+  commit: string;
+  version: string;
+  image: string;
+}
+
+const RELEASE_COMMIT = /^[0-9a-f]{40}$/;
+const RELEASE_VERSION = /^v\d+\.\d+\.\d+$/;
+const RELEASE_IMAGE = /^sha256:[0-9a-f]{64}$/;
+
+/** Same entry rules as `scripts/ranked/resolve-image.mjs`. */
+function isHarnessRelease(value: unknown): value is HarnessRelease {
+  if (typeof value !== "object" || value === null) return false;
+  const { commit, version, image } = value as Record<string, unknown>;
+  return (
+    typeof commit === "string" &&
+    RELEASE_COMMIT.test(commit) &&
+    typeof version === "string" &&
+    RELEASE_VERSION.test(version) &&
+    typeof image === "string" &&
+    RELEASE_IMAGE.test(image)
+  );
 }
 
 const VERIFIED_FILENAME = "_verified.json";

@@ -21,6 +21,7 @@ const EXPECTED: Record<string, string[]> = {
   ".github/ISSUE_TEMPLATE/scenario.yml": ["ORG_PLACEHOLDER"],
   ".github/workflows/pr-hygiene.yml": ["OWNER_HANDLE"],
   ".github/workflows/rank.yml": ["ORG_PLACEHOLDER"],
+  ".github/workflows/ranked-run.yml": ["ORG_PLACEHOLDER"],
   "CODE_OF_CONDUCT.md": ["OWNER_CONTACT"],
   "CONTRIBUTING.md": ["ORG_PLACEHOLDER"],
   "GOVERNANCE.md": ["OWNER_HANDLE", "OWNER_SUCCESSION_PLAN"],
