@@ -16,10 +16,11 @@ on:
 
 permissions: {}
 
-# Called from ci.yml, github.event_name is the caller's event, so this group never
-# collides with ci.yml's own group.
+# Called from ci.yml, github.event_name and github.workflow are the top-level caller's, so
+# this group never collides with ci.yml's own group, and a push gets its own group (its
+# sha): a later push to main can't replace the self-test queued for a release commit.
 concurrency:
-  group: self-test-${{ github.ref }}-${{ github.event_name }}
+  group: self-test-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

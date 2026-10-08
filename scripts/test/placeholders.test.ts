@@ -11,7 +11,13 @@ import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const SELF = "scripts/test/placeholders.test.ts";
-const TOKENS = ["ORG_PLACEHOLDER", "OWNER_HANDLE", "OWNER_CONTACT", "OWNER_SUCCESSION_PLAN"];
+const TOKENS = [
+  "ORG_PLACEHOLDER",
+  "OWNER_HANDLE",
+  "OWNER_CONTACT",
+  "OWNER_SUCCESSION_PLAN",
+  "BEST_PRACTICES_PROJECT_ID",
+];
 
 const EXPECTED: Record<string, string[]> = {
   ".github/CODEOWNERS": ["ORG_PLACEHOLDER", "OWNER_HANDLE"],
@@ -25,6 +31,7 @@ const EXPECTED: Record<string, string[]> = {
   "CODE_OF_CONDUCT.md": ["OWNER_CONTACT"],
   "CONTRIBUTING.md": ["ORG_PLACEHOLDER"],
   "GOVERNANCE.md": ["OWNER_HANDLE", "OWNER_SUCCESSION_PLAN"],
+  "README.md": ["ORG_PLACEHOLDER", "BEST_PRACTICES_PROJECT_ID"],
   "SECURITY.md": ["ORG_PLACEHOLDER", "OWNER_CONTACT"],
   "SUPPORT.md": ["OWNER_CONTACT"],
   "docs/seasons.md": ["ORG_PLACEHOLDER"],

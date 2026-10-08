@@ -474,7 +474,8 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
       expect(doc.permissions).toEqual({});
       expect(Object.keys(doc.jobs)).toEqual(["image"]);
       const job = doc.jobs.image as Job;
-      expect(job.environment).toBe("release");
+      // Gated by the caller: release.yml runs it only after the approved release job.
+      expect(job.environment).toBeUndefined();
       expect(job.permissions).toEqual({
         contents: "read",
         packages: "write",

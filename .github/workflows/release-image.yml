@@ -11,6 +11,8 @@ name: release-image
 #   --signer-workflow <org>/x402-redteam/.github/workflows/release-image.yml` succeeds.
 # - The harness commit is baked in through the HARNESS_COMMIT build arg (the caller's
 #   commit, which is the release commit), so ranked reports carry it as harness_commit.
+# - No environment of its own: release.yml calls it only after its approved `release`
+#   job, so a release needs one approval.
 # - Tags: vX.Y.Z, vX.Y and vX; never `latest`. Ranked workflows ignore tags and pull by
 #   the digest recorded in results/_harness.json.
 # - No build cache, so a release build never consumes state another workflow wrote.
@@ -35,7 +37,6 @@ jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: release
     permissions:
       contents: read
       packages: write

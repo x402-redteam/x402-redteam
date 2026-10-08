@@ -1,6 +1,9 @@
 name: "x402-redteam"
 description: "Red-team an x402-paying agent (or a GDP guardrail, ADR-010) against a corpus of hostile payment scenarios, and upload the findings as SARIF."
 author: "x402-redteam contributors"
+branding:
+  icon: "shield"
+  color: "red"
 
 # Permissions this action needs from the *caller's* job or workflow (a composite action
 # can't grant its own - it only uses what the caller's GITHUB_TOKEN already has):
@@ -135,10 +138,12 @@ runs:
       shell: bash
       run: corepack enable
 
+    # Production dependencies only (ADR-022 §2): lockfile-pinned, integrity-checked, and no
+    # dependency install scripts run.
     - name: Install harness dependencies
       shell: bash
       working-directory: ${{ github.action_path }}
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --prod --ignore-scripts
 
     # Invokes the CLI's bin script directly (rather than `pnpm -C <action_path>
     # exec x402-redteam run`) because `pnpm -C`/`--dir` also redirects the cwd
@@ -146,9 +151,11 @@ runs:
     # relative paths against this action's own checkout instead of the
     # caller's repo. Running `node <action_path>/.../bin/x402-redteam.mjs`
     # with the step's `working-directory` set to the workspace keeps the
-    # agent's own cwd correct; the action's node_modules/.bin is appended to
-    # PATH so a plain `tsx ...`-style agent command (as in this repo's own
-    # examples/agents) still resolves without the caller vendoring tsx.
+    # agent's own cwd correct; the action's node_modules/.bin and the CLI
+    # package's node_modules/.bin (where the production install puts tsx, a
+    # runtime dependency of the CLI) are appended to PATH so a plain
+    # `tsx ...`-style agent command (as in this repo's own examples/agents)
+    # still resolves without the caller vendoring tsx.
     #
     # U12 (Review 1, M7): every `inputs.*` value is passed through `env:` and read back
     # as a quoted shell variable ("$AGENT_CMD", not `${{ inputs.agent }}`) instead of
@@ -190,7 +197,7 @@ runs:
         PASS_ENV: ${{ inputs.pass-env }}
       run: |
         set +e
-        export PATH="$PATH:$ACTION_PATH/node_modules/.bin"
+        export PATH="$PATH:$ACTION_PATH/node_modules/.bin:$ACTION_PATH/packages/cli/node_modules/.bin"
         pass_env_args=()
         if [ -n "$PASS_ENV" ]; then
           pass_env_args=(--pass-env "$PASS_ENV")
