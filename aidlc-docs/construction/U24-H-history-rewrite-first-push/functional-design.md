@@ -63,7 +63,7 @@ Replace `ORG_PLACEHOLDER`, `OWNER_HANDLE` and `OWNER_CONTACT` (D1/D3) everywhere
   - `ranked`: reviewers per D4, branch main, secrets `SEASON_SEED` and `AGE_KEY` (owner enters them; the orchestrator never sees the values);
   - `guard`: secret `HELDOUT_GUARD_KEY`;
   - `github-pages`: only if D9.
-- Commit `.github/heldout-guard.hmac`, generated privately from the denylist with `HELDOUT_GUARD_KEY`. That's a separate PR: the first PR through the new ruleset, and it doubles as the ruleset's smoke test.
+- Commit `.github/heldout-guard.hmac`, generated privately with `HELDOUT_GUARD_KEY` from a **separate** held-out token file that holds held-out corpus tokens only (scenario ids and distinctive host labels). Never feed it `denylist.txt`: that file also holds the personal account number and bank detail, and short numeric tokens in a committed hash list can be brute-forced and stay in git history permanently. Personal data lives only in the local, uncommitted history-rewrite files. That's a separate PR: the first PR through the new ruleset, and it doubles as the ruleset's smoke test.
 - **Actions:** "allow only SHA-pinned actions" (org policy, if available; unverified), default workflow permissions read-only, and "Allow GitHub Actions to create and approve pull requests" off.
 
 ## 8. Phase 2 evidence to collect (feeds G8)
