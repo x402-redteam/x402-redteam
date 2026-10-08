@@ -38,9 +38,6 @@ const MINIMUM_MAJOR: Record<string, number> = {
   "github/codeql-action": 4,
 };
 
-/** Workflows whose pins move to the majors above together with their job restructure. */
-const MAJOR_CHECK_DEFERRED = new Set([`${WORKFLOW_DIR}/ci.yml`, `${WORKFLOW_DIR}/self-test.yml`]);
-
 const PIN_PATTERN =
   /^(?<repo>[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?<subpath>\/[A-Za-z0-9_./-]+)?@(?<sha>[0-9a-f]{40}) # (?<version>v\d+\.\d+\.\d+)$/;
 
@@ -123,7 +120,7 @@ describe("action pins", () => {
   });
 
   it("every action is on a node24-runtime major or newer", () => {
-    const outdated = REMOTE_USES.filter((u) => !MAJOR_CHECK_DEFERRED.has(u.file)).flatMap((u) => {
+    const outdated = REMOTE_USES.flatMap((u) => {
       const groups = PIN_PATTERN.exec(u.value)?.groups;
       if (!groups) return [];
       const minimum = MINIMUM_MAJOR[groups.repo as string];

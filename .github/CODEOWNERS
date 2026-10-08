@@ -1,3 +1,7 @@
+# Default owner for everything. With one maintainer this records ownership only; it cannot be
+# enforced as a required review (see GOVERNANCE.md).
+*                        @OWNER_HANDLE
+
 # Security review HIGH-5 / re-review N3: results/_verified.json, _harness.json,
 # _seasons.json and _meta.json gate Tier 1/2 acceptance (or, for _meta.json, which ids
 # the leaderboard will even consider as a reference entry alongside the hardcoded

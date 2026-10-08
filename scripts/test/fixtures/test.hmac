@@ -1,0 +1,4 @@
+# Test fixture: HMAC-SHA256 of the synthetic tokens "zzcanary" and "zz-swap-9" under the
+# key "x402-redteam-test-key-00000000000000000". Not derived from any held-out content.
+21da528b03199bb7f39c2920ffc9126e2dd80c3affd59538a8a9c29a2e9e16b7
+412424aa818388e28c4758d495ac38b06ad5d18f109c96ec5ca22d13e2b2b435

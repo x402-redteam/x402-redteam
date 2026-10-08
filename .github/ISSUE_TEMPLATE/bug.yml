@@ -1,0 +1,48 @@
+name: Bug report
+description: The harness, scorer, CLI or leaderboard did something wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues (missed payment capture, leaderboard forgery, workflow injection, held-out leakage) go through [private reporting](https://github.com/ORG_PLACEHOLDER/x402-redteam/security/advisories/new), not here.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The release tag or package version you installed, or the commit SHA you built from (`git rev-parse HEAD`).
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: exit-code
+    attributes:
+      label: Exit code
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: report.json excerpt
+      description: The relevant part of `report.json` (scenario entries, summary). Leave out anything private to your agent.
+      render: json
+  - type: input
+    id: environment
+    attributes:
+      label: OS and Node version
+      placeholder: Ubuntu 24.04, Node 24.x
+    validations:
+      required: true

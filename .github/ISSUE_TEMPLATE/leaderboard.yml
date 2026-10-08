@@ -1,0 +1,34 @@
+name: Leaderboard submission (Tier 2)
+description: Track a Tier 2 "Verified (public corpus)" result submission.
+labels: [leaderboard]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Follow [Getting a Tier 2 result](https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/CONTRIBUTING.md#getting-a-tier-2-verified-public-corpus-result) first. This issue tracks the PR that adds your `results/<id>.json` and attestation bundle.
+  - type: input
+    id: guardrail-id
+    attributes:
+      label: Guardrail id
+      description: The `guardrail-id` you passed to rank.yml.
+    validations:
+      required: true
+  - type: input
+    id: run
+    attributes:
+      label: Workflow run URL
+      description: The run in your public repo that called rank.yml and produced the attestation.
+    validations:
+      required: true
+  - type: input
+    id: harness-ref
+    attributes:
+      label: Harness release tag
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: input
+    id: pr
+    attributes:
+      label: Results PR
+      description: Link once opened.

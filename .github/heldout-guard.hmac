@@ -1,0 +1,3 @@
+# HMAC-SHA256 digests (hex, one per line) of held-out tokens, keyed with the
+# HELDOUT_GUARD_KEY secret of the `guard` environment. Generated privately by a maintainer
+# with `node scripts/heldout-guard-ci.mjs --generate`; rotated each season.

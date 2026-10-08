@@ -16,7 +16,8 @@
     "format": "biome format --write .",
     "typecheck": "pnpm -r typecheck",
     "leaderboard": "tsx packages/leaderboard/src/main.ts",
-    "x402-redteam": "node packages/cli/bin/x402-redteam.mjs"
+    "x402-redteam": "node packages/cli/bin/x402-redteam.mjs",
+    "prepare-hooks": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

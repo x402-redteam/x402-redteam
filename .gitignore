@@ -13,3 +13,7 @@ out/
 examples/agents-py/.venv/
 examples/agents-py/__pycache__/
 
+# Held-out leak guard denylist (scripts/heldout-guard.mjs). It belongs in the held-out
+# directory outside the repository; never commit one.
+.denylist
+
