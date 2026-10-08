@@ -1,0 +1,57 @@
+# Weekly, grouped update PRs with a release-age cooldown. Security updates bypass the
+# cooldown. Each update PR is reviewed and merged by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    # "/" covers the composite action.yml at the repo root.
+    directories:
+      - "/"
+      - "/.github/workflows"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    ignore:
+      # TypeScript stays on 6.x.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # @types/node tracks the Node 24 runtime major.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # All @x402/* packages move together in one PR, which re-runs the ADR-007
+      # integration tests before merge.
+      x402:
+        patterns:
+          - "@x402/*"
+      dev:
+        dependency-type: development
+        exclude-patterns:
+          - "@x402/*"
+      prod:
+        dependency-type: production
+        exclude-patterns:
+          - "@x402/*"
+    labels:
+      - dependencies
+
+  - package-ecosystem: docker
+    directory: "/.github/ranked"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
