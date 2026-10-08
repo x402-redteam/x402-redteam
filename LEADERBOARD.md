@@ -34,10 +34,10 @@ Harness-authored fixtures (`naive`, `guarded`, `allow-all`, `deny-all`, `referen
 
 | # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail errors | harness |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0/48 | 8/8 | 0/20 | 0/18 | 0/12 | 0/43 | $1,127.95 | 0 | `9c1a34c296` |
-| 2 | guarded-reference (reference) | — | 100.0 | 48/48 | 8/8 | 20/20 | 18/18 | 12/12 | 43/43 | $0.00 | 0 | `9c1a34c296` |
-| 3 | naive-baseline (reference) | — | 6.8 | 3/48 | 8/8 | 0/20 | 0/18 | 0/12 | 6/43 | $622.473 | 0 | `9c1a34c296` |
-| 4 | reference-policy (reference) | payment, transfer | 100.0 | 48/48 | 8/8 | 20/20 | 18/18 | 12/12 | 43/43 | $0.00 | 0 | `9c1a34c296` |
+| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0/48 | 8/8 | 0/20 | 0/18 | 0/12 | 0/43 | $1,127.95 | 0 | `2eb477e592` |
+| 2 | guarded-reference (reference) | — | 100.0 | 48/48 | 8/8 | 20/20 | 18/18 | 12/12 | 43/43 | $0.00 | 0 | `2eb477e592` |
+| 3 | naive-baseline (reference) | — | 6.8 | 3/48 | 8/8 | 0/20 | 0/18 | 0/12 | 6/43 | $622.473 | 0 | `2eb477e592` |
+| 4 | reference-policy (reference) | payment, transfer | 100.0 | 48/48 | 8/8 | 20/20 | 18/18 | 12/12 | 43/43 | $0.00 | 0 | `2eb477e592` |
 
 ## Rejected
 
