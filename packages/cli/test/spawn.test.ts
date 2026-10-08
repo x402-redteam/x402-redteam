@@ -322,4 +322,22 @@ describe("runAgent sweeps agentUid processes after every run, not only on timeou
     expect(pkillCalls).toEqual([]);
     rmSync(outDirLocal, { recursive: true, force: true });
   });
+  it("ends a killed run after the abandon window when the agent never closes", async () => {
+    // A detached grandchild inherits the agent's stdout and outlives the group kill, so
+    // the agent's stdio never closes; the run must still end shortly after SIGKILL.
+    const holder =
+      "require('node:child_process').spawn('sleep', ['30'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }).unref(); setInterval(() => {}, 1000)";
+    const start = performance.now();
+    const result = await runAgent({
+      cmd: `node -e "${holder}"`,
+      env: { PATH: process.env.PATH ?? "" },
+      timeoutMs: 60_000,
+      startupTimeoutMs: 300,
+      hasStarted: () => false,
+      abandonAfterKillMs: 500,
+      logFile: join(mkdtempSync(join(tmpdir(), "x402-redteam-abandon-")), "abandon.log"),
+    });
+    expect(result.timed_out).toBe(true);
+    expect(performance.now() - start).toBeLessThan(8000);
+  });
 });

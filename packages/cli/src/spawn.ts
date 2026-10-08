@@ -108,6 +108,14 @@ export interface RunAgentOptions {
    */
   startupTimeoutMs?: number;
   hasStarted?: () => boolean;
+  /**
+   * How long to wait for the agent to close after its group has been sent SIGKILL
+   * before the run is ended without it (default 10 s). A process the OS holds in an
+   * uninterruptible state (for example while a launch-time security scan runs) cannot
+   * act on SIGKILL, and the suite must not wait on it; the next run gets a fresh
+   * adversary on a fresh port, so an abandoned process cannot reach it.
+   */
+  abandonAfterKillMs?: number;
   /** Absolute path; the agent's stdout/stderr are both appended here. */
   logFile: string;
 }
@@ -143,6 +151,7 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
+    let abandonTimer: NodeJS.Timeout | undefined;
     let settled = false;
 
     // Sends `signal` to the whole process group `detached: true` put `child` in - never
@@ -166,7 +175,10 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     const kill = (): void => {
       timedOut = true;
       if (signalGroup("SIGTERM")) {
-        killTimer = setTimeout(() => signalGroup("SIGKILL"), 2000);
+        killTimer = setTimeout(() => {
+          signalGroup("SIGKILL");
+          abandonTimer = setTimeout(() => finish(null), opts.abandonAfterKillMs ?? 10_000);
+        }, 2000);
       }
     };
 
@@ -199,6 +211,7 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       if (startupTimer) clearTimeout(startupTimer);
       if (startupPoll) clearInterval(startupPoll);
       if (killTimer) clearTimeout(killTimer);
+      if (abandonTimer) clearTimeout(abandonTimer);
       // Measurement integrity: the whole process group goes down at the end of every
       // run, the same way it does on a timeout - not only when this run actually timed
       // out. The direct child has already closed by the time `finish` runs, but that
