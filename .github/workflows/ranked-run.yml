@@ -9,6 +9,11 @@ name: ranked-run
 # output is the redacted report plus its attestation — agent/guardrail logs are never
 # uploaded (ADR-011 "Do not": "Put agent or guardrail logs into uploaded artifacts").
 #
+# ADR-023: the container is the release image built by release-image.yml. Its digest is
+# resolved from results/_harness.json on the commit this workflow runs from, its
+# attestation is verified, and it is pulled and run by digest. A second attestation over
+# report.redacted.json records that digest and the harness commit.
+#
 # NOT verified live (CLAUDE.md: no docker/age/act/actionlint installed here, no network
 # from this worktree) — statically authored and YAML-checked only. `age` is installed
 # only inside .github/ranked/Dockerfile's image build, never on this runner's host.
@@ -49,6 +54,9 @@ jobs:
     # repo's own settings, restricted to the `main` branch (docs/seasons.md) — never
     # remove this line.
     environment: ranked
+    env:
+      HARNESS_REPO: ORG_PLACEHOLDER/x402-redteam
+      RANKED_IMAGE: ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked
     steps:
       # Security review HIGH-8: harness-ref/guardrail-ref must be a 40-hex-char commit
       # SHA, or a release tag (`vMAJOR.MINOR.PATCH`) - never a branch, and never a
@@ -74,14 +82,52 @@ jobs:
           path: harness
           persist-credentials: false
 
-      # Recorded via GITHUB_ENV (read back below through its own `env:` mapping - never
-      # spliced into a run: block as a `${{ }}` expression) so the container built below
-      # carries this checkout's own commit, letting a run's own `config.harness_commit`
-      # be this harness's real identity rather than "unknown" (`.dockerignore` excludes
-      # `.git` from the image on purpose). Works whether `harness-ref` above resolved a
-      # tag or a raw commit SHA.
+      # Recorded via GITHUB_ENV (read back by later steps as a plain environment
+      # variable - never spliced into a run: block as a `${{ }}` expression). Works
+      # whether `harness-ref` above resolved a tag or a raw commit SHA; the resolver
+      # below requires the allowlisted release to name this same commit.
       - name: Resolve the checked-out harness's own commit
         run: echo "HARNESS_COMMIT=$(git -C harness rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # The release allowlist as of the commit this workflow runs from (the `ranked`
+      # environment only admits `main`).
+      - name: Checkout the harness release allowlist
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: allowlist
+          persist-credentials: false
+          sparse-checkout: |
+            results/_harness.json
+            scripts/ranked/resolve-image.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the ranked image digest for harness-ref
+        env:
+          HARNESS_REF: ${{ inputs.harness-ref }}
+          HARNESS_JSON: allowlist/results/_harness.json
+        run: |
+          digest="$(node allowlist/scripts/ranked/resolve-image.mjs)"
+          echo "RANKED_IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+
+      # The image must carry an attestation signed by this harness's release-image.yml at
+      # the commit checked out above, from a run on main, on a GitHub-hosted runner. The
+      # bundle is read from the registry, where release-image.yml pushed it.
+      - name: Verify the ranked image attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: refs/heads/main
+        run: |
+          gh attestation verify "oci://$RANKED_IMAGE@$RANKED_IMAGE_DIGEST" \
+            --bundle-from-oci \
+            --repo "$HARNESS_REPO" \
+            --signer-workflow "$HARNESS_REPO/.github/workflows/release-image.yml" \
+            --signer-digest "$HARNESS_COMMIT" \
+            --source-digest "$HARNESS_COMMIT" \
+            --source-ref "$RELEASE_REF" \
+            --deny-self-hosted-runners
+
+      - name: Pull the ranked image by digest
+        run: docker pull "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST"
 
       # ADR-011 "Seasons": the held-out corpus lives in a private repo, age-encrypted
       # at rest. Parameterized per task constraints ("the org name is not decided") via
@@ -103,15 +149,6 @@ jobs:
           ref: ${{ inputs.guardrail-ref }}
           path: guardrail
           persist-credentials: false
-
-      - name: Build the ranked-run image (age is installed here, not on this host)
-        env:
-          HARNESS_COMMIT: ${{ env.HARNESS_COMMIT }}
-        run: |
-          docker build -t x402-redteam-ranked \
-            --build-arg HARNESS_COMMIT="$HARNESS_COMMIT" \
-            -f harness/.github/ranked/Dockerfile \
-            harness
 
       # Security review HIGH-3/HIGH-8: every input reaches the container only via `-e`
       # (its own env), never spliced into this script's text.
@@ -148,7 +185,7 @@ jobs:
             -v "$PWD/heldout-encrypted:/heldout-encrypted:ro" \
             -v "$PWD/guardrail:/guardrail:ro" \
             -v "$RUNNER_TEMP/out:/out" \
-            x402-redteam-ranked \
+            "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST" \
             --agent-uid 2001 \
             --guardrail "$GUARDRAIL_ENTRYPOINT" \
             --season-seed-env SEASON_SEED \
@@ -165,6 +202,18 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/out/report.redacted.json
+
+      - name: Write the ranked image predicate
+        run: |
+          jq -n --arg image "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST" --arg commit "$HARNESS_COMMIT" \
+            '{image: $image, harness_commit: $commit}' > "$RUNNER_TEMP/ranked-image.json"
+
+      - name: Attest which image produced report.redacted.json
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/out/report.redacted.json
+          predicate-type: https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
+          predicate-path: ${{ runner.temp }}/ranked-image.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

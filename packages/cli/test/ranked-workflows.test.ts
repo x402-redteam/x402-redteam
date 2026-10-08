@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 /**
  * ADR-011 (U19): `rank.yml`, `ranked-run.yml` and `verify-results.yml` parse as YAML -
@@ -289,42 +290,254 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
     expect(text).toContain("--owner");
   });
 
-  /** Returns one step's own block (its `- name:` line through the next top-level
-   * `- name:` or end of file), for asserting on that step's `env:`/`run:` text in
-   * isolation from every other step. */
-  function stepBlockContaining(text: string, marker: string): string {
-    const markerIndex = text.indexOf(marker);
-    expect(markerIndex).toBeGreaterThanOrEqual(0);
-    const start = text.lastIndexOf("\n      - name:", markerIndex);
-    const rest = text.slice(start + 1);
-    const nextIndex = rest.indexOf("\n      - name:", 1);
-    return nextIndex === -1 ? rest : rest.slice(0, nextIndex);
-  }
-
   it("the ranked Dockerfile declares a HARNESS_COMMIT build arg exported as X402_HARNESS_COMMIT", () => {
     const text = readFileSync(resolve(REPO_ROOT, ".github/ranked/Dockerfile"), "utf8");
     expect(text).toMatch(/^ARG HARNESS_COMMIT/m);
     expect(text).toMatch(/^ENV X402_HARNESS_COMMIT=\$\{HARNESS_COMMIT\}/m);
   });
 
-  it("rank.yml passes the checked-out harness's own commit as a HARNESS_COMMIT build arg via env, with no GitHub expression inside the run block", () => {
-    const text = readWorkflow(".github/workflows/rank.yml");
-    const block = stepBlockContaining(text, "docker build -t x402-redteam-ranked");
-    expect(block).toMatch(/HARNESS_COMMIT:\s*\$\{\{\s*env\.HARNESS_COMMIT\s*\}\}/);
-    expect(block).toContain('--build-arg HARNESS_COMMIT="$HARNESS_COMMIT"');
-    const runLines = block.slice(block.indexOf("run:"));
-    expect(runLines).not.toMatch(/\$\{\{/);
+  it("the ranked Dockerfile labels the image with its source, revision and version build args", () => {
+    const text = readFileSync(resolve(REPO_ROOT, ".github/ranked/Dockerfile"), "utf8");
+    expect(text).toMatch(/^ARG IMAGE_SOURCE/m);
+    expect(text).toMatch(/^ARG IMAGE_VERSION/m);
+    expect(text).toMatch(/org\.opencontainers\.image\.source="\$\{IMAGE_SOURCE\}"/);
+    expect(text).toMatch(/org\.opencontainers\.image\.revision="\$\{HARNESS_COMMIT\}"/);
+    expect(text).toMatch(/org\.opencontainers\.image\.version="\$\{IMAGE_VERSION\}"/);
   });
 
-  it("ranked-run.yml passes the checked-out harness's own commit as a HARNESS_COMMIT build arg via env, with no GitHub expression inside the run block", () => {
-    const text = readWorkflow(".github/workflows/ranked-run.yml");
-    expect(text).toContain(
-      'echo "HARNESS_COMMIT=$(git -C harness rev-parse HEAD)" >> "$GITHUB_ENV"',
+  interface Step {
+    name?: string;
+    uses?: string;
+    run?: string;
+    env?: Record<string, string>;
+    with?: Record<string, unknown>;
+  }
+  interface Job {
+    permissions?: Record<string, string>;
+    env?: Record<string, string>;
+    environment?: string;
+    outputs?: Record<string, string>;
+    steps: Step[];
+  }
+  interface Workflow {
+    permissions?: unknown;
+    on: Record<string, { inputs?: Record<string, unknown>; outputs?: Record<string, unknown> }>;
+    jobs: Record<string, Job>;
+  }
+
+  function parseWorkflow(relativePath: string): Workflow {
+    return parse(readWorkflow(relativePath)) as Workflow;
+  }
+
+  function stepIndex(steps: Step[], predicate: (step: Step) => boolean, label: string): number {
+    const index = steps.findIndex(predicate);
+    expect(index, label).toBeGreaterThanOrEqual(0);
+    return index;
+  }
+
+  const RANKED_JOBS: Array<[string, string]> = [
+    [".github/workflows/rank.yml", "run"],
+    [".github/workflows/ranked-run.yml", "ranked-run"],
+  ];
+
+  for (const [file, jobName] of RANKED_JOBS) {
+    it(`${file} never builds an image and runs only the image pulled by digest`, () => {
+      const text = readWorkflow(file);
+      expect(text).not.toMatch(/docker build/);
+      expect(text).not.toMatch(/\bx402-redteam-ranked \\$/m);
+      const job = parseWorkflow(file).jobs[jobName] as Job;
+      expect(job.env?.RANKED_IMAGE).toBe("ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked");
+      expect(job.env?.HARNESS_REPO).toBe("ORG_PLACEHOLDER/x402-redteam");
+      const runs = job.steps.map((step) => step.run ?? "").join("\n");
+      expect(runs).toContain('docker pull "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST"');
+      const dockerRuns = runs.match(/docker run[\s\S]*?--agent-uid 2001/g) ?? [];
+      expect(dockerRuns.length).toBe(1);
+      expect(dockerRuns[0]).toContain('"$RANKED_IMAGE@$RANKED_IMAGE_DIGEST"');
+      expect(runs).not.toMatch(/docker (pull|run)[^\n]*:v\d/);
+    });
+
+    it(`${file} resolves the digest with resolve-image.mjs, verifies the attestation, pulls, then runs`, () => {
+      const steps = (parseWorkflow(file).jobs[jobName] as Job).steps;
+      const commit = stepIndex(
+        steps,
+        (s) => (s.run ?? "").includes("HARNESS_COMMIT=") && (s.run ?? "").includes("GITHUB_ENV"),
+        "harness commit",
+      );
+      const allowlist = stepIndex(
+        steps,
+        (s) =>
+          (s.uses ?? "").startsWith("actions/checkout@") &&
+          String(s.with?.["sparse-checkout"] ?? "").includes("results/_harness.json"),
+        "allowlist checkout",
+      );
+      const resolveStep = stepIndex(
+        steps,
+        (s) => (s.run ?? "").includes("scripts/ranked/resolve-image.mjs"),
+        "resolve",
+      );
+      const verify = stepIndex(
+        steps,
+        (s) => (s.run ?? "").includes("gh attestation verify"),
+        "verify",
+      );
+      const pull = stepIndex(steps, (s) => (s.run ?? "").includes("docker pull"), "pull");
+      const run = stepIndex(steps, (s) => (s.run ?? "").includes("docker run"), "run");
+      expect(commit).toBeLessThan(resolveStep);
+      expect(allowlist).toBeLessThan(resolveStep);
+      expect(resolveStep).toBeLessThan(verify);
+      expect(verify).toBeLessThan(pull);
+      expect(pull).toBeLessThan(run);
+
+      const resolveEnv = steps[resolveStep]?.env ?? {};
+      expect(resolveEnv.HARNESS_REF).toMatch(/^\$\{\{\s*inputs\.harness-ref\s*\}\}$/);
+      expect(resolveEnv.HARNESS_JSON).toMatch(/results\/_harness\.json$/);
+      expect(steps[allowlist]?.with?.["persist-credentials"]).toBe(false);
+
+      const verifyStep = steps[verify] as Step;
+      expect(verifyStep.run).toContain('"oci://$RANKED_IMAGE@$RANKED_IMAGE_DIGEST"');
+      expect(verifyStep.run).toContain('--repo "$HARNESS_REPO"');
+      expect(verifyStep.run).toContain(
+        '--signer-workflow "$HARNESS_REPO/.github/workflows/release-image.yml"',
+      );
+      expect(verifyStep.run).toContain('--source-digest "$HARNESS_COMMIT"');
+      expect(verifyStep.run).toContain('--signer-digest "$HARNESS_COMMIT"');
+      expect(verifyStep.run).toContain('--source-ref "$RELEASE_REF"');
+      expect(verifyStep.env?.RELEASE_REF).toBe("refs/heads/main");
+      expect(verifyStep.run).toContain("--bundle-from-oci");
+      expect(verifyStep.run).toContain("--deny-self-hosted-runners");
+    });
+
+    it(`${file} keeps every GitHub expression out of its run: scripts`, () => {
+      const doc = parseWorkflow(file);
+      for (const job of Object.values(doc.jobs)) {
+        for (const step of job.steps) {
+          if (typeof step.run === "string") expect(step.run, step.name).not.toContain("${{");
+        }
+      }
+    });
+
+    it(`${file} attests the report a second time with a predicate naming the image digest`, () => {
+      const doc = parseWorkflow(file);
+      const steps = Object.values(doc.jobs).flatMap((job) => job.steps);
+      const custom = steps.filter(
+        (s) => (s.uses ?? "").startsWith("actions/attest@") && s.with?.["predicate-type"],
+      );
+      expect(custom.length).toBe(1);
+      expect(String(custom[0]?.with?.["predicate-path"])).toMatch(/ranked-image\.json$/);
+      const writer = steps.find((s) => (s.run ?? "").includes("ranked-image.json"));
+      expect(writer?.run).toContain("{image: $image, harness_commit: $commit}");
+    });
+  }
+
+  it("rank.yml passes the image digest to the attest job, which alone holds id-token", () => {
+    const doc = parseWorkflow(".github/workflows/rank.yml");
+    expect(doc.jobs.run?.outputs?.["ranked-image"]).toMatch(
+      /steps\.resolve\.outputs\.ranked-image/,
     );
-    const block = stepBlockContaining(text, "docker build -t x402-redteam-ranked");
-    expect(block).toMatch(/HARNESS_COMMIT:\s*\$\{\{\s*env\.HARNESS_COMMIT\s*\}\}/);
-    expect(block).toContain('--build-arg HARNESS_COMMIT="$HARNESS_COMMIT"');
-    const runLines = block.slice(block.indexOf("run:"));
-    expect(runLines).not.toMatch(/\$\{\{/);
+    expect(doc.jobs.run?.permissions).toEqual({ contents: "read" });
+    expect(doc.jobs.attest?.permissions).toEqual({
+      contents: "read",
+      "id-token": "write",
+      attestations: "write",
+    });
+    const writer = doc.jobs.attest?.steps.find((s) => (s.run ?? "").includes("ranked-image.json"));
+    expect(writer?.env?.RANKED_IMAGE_REF).toMatch(/needs\.run\.outputs\.ranked-image/);
+    expect(writer?.run).toContain("@sha256:[0-9a-f]{64}$");
+  });
+
+  it("rank.yml reads the allowlist from the harness repo's default branch and runs the resolver from the tag checkout", () => {
+    const steps = parseWorkflow(".github/workflows/rank.yml").jobs.run?.steps ?? [];
+    const allowlist = steps.find((s) =>
+      String(s.with?.["sparse-checkout"] ?? "").includes("results/_harness.json"),
+    );
+    expect(allowlist?.with?.repository).toBe("ORG_PLACEHOLDER/x402-redteam");
+    expect(allowlist?.with?.ref).toBeUndefined();
+    expect(String(allowlist?.with?.["sparse-checkout"]).trim()).toBe("results/_harness.json");
+    const resolveStep = steps.find((s) => (s.run ?? "").includes("resolve-image.mjs"));
+    expect(resolveStep?.run).toContain(
+      "node .x402-redteam-harness/scripts/ranked/resolve-image.mjs",
+    );
+  });
+
+  describe("release-image.yml", () => {
+    const FILE = ".github/workflows/release-image.yml";
+
+    it("is a workflow_call-only workflow with a version input and image/digest outputs", () => {
+      const doc = parseWorkflow(FILE);
+      expect(Object.keys(doc.on)).toEqual(["workflow_call"]);
+      expect(Object.keys(doc.on.workflow_call?.inputs ?? {})).toEqual(["version"]);
+      expect(Object.keys(doc.on.workflow_call?.outputs ?? {}).sort()).toEqual(["digest", "image"]);
+    });
+
+    it("grants nothing at the top level and only the minimal permissions to its one job", () => {
+      const doc = parseWorkflow(FILE);
+      expect(doc.permissions).toEqual({});
+      expect(Object.keys(doc.jobs)).toEqual(["image"]);
+      const job = doc.jobs.image as Job;
+      expect(job.environment).toBe("release");
+      expect(job.permissions).toEqual({
+        contents: "read",
+        packages: "write",
+        "id-token": "write",
+        attestations: "write",
+      });
+      expect(job.outputs?.digest).toMatch(/steps\.build\.outputs\.digest/);
+    });
+
+    it("builds linux/amd64 with SBOM, max provenance and the release commit as HARNESS_COMMIT", () => {
+      const steps = (parseWorkflow(FILE).jobs.image as Job).steps;
+      const build = steps.find((s) => (s.uses ?? "").startsWith("docker/build-push-action@"));
+      expect(build?.with?.platforms).toBe("linux/amd64");
+      expect(build?.with?.push).toBe(true);
+      expect(build?.with?.sbom).toBe(true);
+      expect(build?.with?.provenance).toBe("mode=max");
+      expect(build?.with?.file).toBe(".github/ranked/Dockerfile");
+      expect(build?.with?.["cache-from"]).toBeUndefined();
+      expect(build?.with?.["cache-to"]).toBeUndefined();
+      const args = String(build?.with?.["build-args"]);
+      expect(args).toMatch(/^HARNESS_COMMIT=\$\{\{\s*github\.sha\s*\}\}$/m);
+      expect(args).toMatch(/^IMAGE_VERSION=/m);
+      expect(args).toMatch(/^IMAGE_SOURCE=/m);
+    });
+
+    it("tags vX.Y.Z, vX.Y and vX, never latest", () => {
+      const steps = (parseWorkflow(FILE).jobs.image as Job).steps;
+      const meta = steps.find((s) => (s.uses ?? "").startsWith("docker/metadata-action@"));
+      const tags = String(meta?.with?.tags);
+      expect(tags).toContain("pattern=v{{version}}");
+      expect(tags).toContain("pattern=v{{major}}.{{minor}}");
+      expect(tags).toContain("pattern=v{{major}},");
+      expect(tags).not.toMatch(/latest/);
+      expect(String(meta?.with?.flavor)).toMatch(/latest=false/);
+    });
+
+    it("attests the pushed digest by name and pushes the attestation to the registry", () => {
+      const steps = (parseWorkflow(FILE).jobs.image as Job).steps;
+      const buildIndex = steps.findIndex((s) =>
+        (s.uses ?? "").startsWith("docker/build-push-action@"),
+      );
+      const attestIndex = steps.findIndex((s) => (s.uses ?? "").startsWith("actions/attest@"));
+      expect(buildIndex).toBeGreaterThanOrEqual(0);
+      expect(attestIndex).toBeGreaterThan(buildIndex);
+      const attest = steps[attestIndex] as Step;
+      expect(attest.with?.["subject-digest"]).toMatch(/steps\.build\.outputs\.digest/);
+      expect(attest.with?.["subject-name"]).toMatch(/steps\.name\.outputs\.image/);
+      expect(attest.with?.["push-to-registry"]).toBe(true);
+      expect(attest.with?.["subject-path"]).toBeUndefined();
+    });
+
+    it("logs in to GHCR with the job token, checks out without persisted credentials and keeps GitHub expressions out of run: scripts", () => {
+      const steps = (parseWorkflow(FILE).jobs.image as Job).steps;
+      const login = steps.find((s) => (s.uses ?? "").startsWith("docker/login-action@"));
+      expect(login?.with?.registry).toBe("ghcr.io");
+      expect(login?.with?.password).toMatch(/secrets\.GITHUB_TOKEN/);
+      const checkout = steps.find((s) => (s.uses ?? "").startsWith("actions/checkout@"));
+      expect(checkout?.with?.["persist-credentials"]).toBe(false);
+      for (const step of steps) {
+        if (typeof step.run === "string") expect(step.run, step.name).not.toContain("${{");
+      }
+      const summary = steps.find((s) => (s.run ?? "").includes("GITHUB_STEP_SUMMARY"));
+      expect(summary?.run).toContain("$IMAGE@$DIGEST");
+    });
   });
 });

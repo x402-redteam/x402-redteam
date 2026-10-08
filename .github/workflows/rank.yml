@@ -19,12 +19,16 @@ name: rank
 #   directly into a `run:` shell script — a crafted `guardrail-cmd` or `guardrail-id`
 #   string can't break out of its intended single value this way.
 # - the guardrail itself runs inside the same container image `ranked-run.yml` uses
-#   (`.github/ranked/Dockerfile`), under a non-runner uid (`--agent-uid 2001`), with a
-#   root-owned output directory — the runner's own filesystem never sees the
-#   guardrail's writes except the final `report.json` this job copies out.
+#   (ADR-023: the release image built by `release-image.yml`, resolved from the harness
+#   repo's `results/_harness.json`, its attestation verified, and pulled by digest),
+#   under a non-runner uid (`--agent-uid 2001`), with a root-owned output directory —
+#   the runner's own filesystem never sees the guardrail's writes except the final
+#   `report.json` this job copies out.
 # - attestation happens in a **separate** job (`attest`), the only one with
 #   `id-token: write`/`attestations: write` — `run` itself never holds those
 #   permissions, so a compromised guardrail command can't forge its own attestation.
+#   Besides the provenance attestation, `attest` signs a second statement over the same
+#   `report.json` whose predicate names the image digest and harness commit that ran.
 #
 # NOT verified live (CLAUDE.md: no `act`/actionlint/docker, no network from this
 # worktree) — statically authored and YAML-checked only. Dry-run once a real org/repo
@@ -56,8 +60,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      HARNESS_REPO: ORG_PLACEHOLDER/x402-redteam
+      RANKED_IMAGE: ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked
     outputs:
       guardrail-id: ${{ inputs.guardrail-id }}
+      ranked-image: ${{ steps.resolve.outputs.ranked-image }}
+      harness-commit: ${{ steps.resolve.outputs.harness-commit }}
     steps:
       # Security re-review 3c: harness-ref must be a vX.Y.Z release tag - never a raw
       # commit SHA or a branch (unlike ranked-run.yml's harness-ref/guardrail-ref,
@@ -102,22 +111,57 @@ jobs:
             echo "::error::checked-out HEAD ($actual) does not match tag $HARNESS_REF's own commit ($expected) - refusing to run (possible branch/tag name collision)"
             exit 2
           fi
-          # Recorded for the next step (via GITHUB_ENV, read back through its own
-          # `env:` mapping - never spliced into a run: block as a `${{ }}` expression)
-          # so the container this job builds carries the same commit this step just
-          # verified, letting a run's own `config.harness_commit` be this harness's
-          # real identity rather than "unknown" (`.dockerignore` excludes `.git` from
-          # the image on purpose).
+          # Recorded via GITHUB_ENV (read back by later steps as a plain environment
+          # variable - never spliced into a run: block as a GitHub expression): the
+          # resolver below requires the allowlisted release to name this same commit,
+          # and the attestation check requires the image to have been built from it.
           echo "HARNESS_COMMIT=$actual" >> "$GITHUB_ENV"
 
-      - name: Build the ranked-run image (same image ranked-run.yml uses)
+      # The release allowlist lives on the harness repo's default branch: a release's
+      # image digest is recorded there after the release tag already exists. Only the
+      # data file comes from there; the resolver runs from the verified tag checkout.
+      - name: Checkout the harness release allowlist
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORG_PLACEHOLDER/x402-redteam
+          path: .x402-redteam-allowlist
+          persist-credentials: false
+          sparse-checkout: |
+            results/_harness.json
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve the ranked image digest for harness-ref
+        id: resolve
         env:
-          HARNESS_COMMIT: ${{ env.HARNESS_COMMIT }}
+          HARNESS_REF: ${{ inputs.harness-ref }}
+          HARNESS_JSON: .x402-redteam-allowlist/results/_harness.json
         run: |
-          docker build -t x402-redteam-ranked \
-            --build-arg HARNESS_COMMIT="$HARNESS_COMMIT" \
-            -f .x402-redteam-harness/.github/ranked/Dockerfile \
-            .x402-redteam-harness
+          digest="$(node .x402-redteam-harness/scripts/ranked/resolve-image.mjs)"
+          echo "RANKED_IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          {
+            echo "ranked-image=$RANKED_IMAGE@$digest"
+            echo "harness-commit=$HARNESS_COMMIT"
+          } >> "$GITHUB_OUTPUT"
+
+      # The image must carry an attestation signed by this harness's release-image.yml at
+      # the commit checked out above, from a run on main, on a GitHub-hosted runner. The
+      # bundle is read from the registry, where release-image.yml pushed it.
+      - name: Verify the ranked image attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: refs/heads/main
+        run: |
+          gh attestation verify "oci://$RANKED_IMAGE@$RANKED_IMAGE_DIGEST" \
+            --bundle-from-oci \
+            --repo "$HARNESS_REPO" \
+            --signer-workflow "$HARNESS_REPO/.github/workflows/release-image.yml" \
+            --signer-digest "$HARNESS_COMMIT" \
+            --source-digest "$HARNESS_COMMIT" \
+            --source-ref "$RELEASE_REF" \
+            --deny-self-hosted-runners
+
+      - name: Pull the ranked image by digest
+        run: docker pull "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST"
 
       # Security review HIGH-3: guardrail-cmd/guardrail-id reach the container only via
       # `-e` (the container's own env), never spliced into this script's text. The
@@ -140,7 +184,7 @@ jobs:
             -v "$PWD:/workspace:ro" \
             -v "$RUNNER_TEMP/out:/out" \
             -w /workspace \
-            x402-redteam-ranked \
+            "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST" \
             --agent-uid 2001 \
             --guardrail "$GUARDRAIL_CMD" \
             --guardrail-id "$GUARDRAIL_ID" \
@@ -177,3 +221,22 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: out/report.json
+
+      - name: Write the ranked image predicate
+        env:
+          RANKED_IMAGE_REF: ${{ needs.run.outputs.ranked-image }}
+          HARNESS_COMMIT: ${{ needs.run.outputs.harness-commit }}
+        run: |
+          if ! printf '%s' "$RANKED_IMAGE_REF" | grep -qE '^ghcr\.io/[^@]+@sha256:[0-9a-f]{64}$'; then
+            echo "::error::ranked image reference '$RANKED_IMAGE_REF' is not pinned by digest"
+            exit 2
+          fi
+          jq -n --arg image "$RANKED_IMAGE_REF" --arg commit "$HARNESS_COMMIT" \
+            '{image: $image, harness_commit: $commit}' > ranked-image.json
+
+      - name: Attest which image produced report.json
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: out/report.json
+          predicate-type: https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
+          predicate-path: ranked-image.json
