@@ -1,0 +1,3 @@
+#!/bin/sh
+# Held-out leak guard on the commit message (ADR-027). No-op without a local denylist.
+exec node scripts/heldout-guard.mjs --message-file "$1"

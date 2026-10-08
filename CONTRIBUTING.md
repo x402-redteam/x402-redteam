@@ -1,5 +1,32 @@
 # Contributing
 
+## Development workflow
+
+1. Branch from `main` (or fork) and open a pull request. `main` only changes through PRs.
+2. Give the PR a [Conventional Commit](https://www.conventionalcommits.org/) title,
+   `type(scope)!: subject`, with type one of `feat`, `fix`, `docs`, `chore`, `ci`, `build`,
+   `refactor`, `test`, `perf`, `revert`, `corpus`, `season`. PRs are squash-merged and the
+   title becomes the commit subject, so individual commit messages are free-form.
+3. Sign off every commit (`git commit -s`) to certify the
+   [Developer Certificate of Origin](https://developercertificate.org/). The `Signed-off-by`
+   email must match the commit author email. There is no CLA.
+4. Run the checks before pushing:
+
+   ```bash
+   pnpm install --frozen-lockfile
+   pnpm lint && pnpm typecheck && pnpm test
+   pnpm test:e2e   # only if you changed packages/, corpus/ or examples/ (slow)
+   ```
+
+   The `pr-hygiene` check verifies the title and sign-offs; CI runs the rest.
+5. Optional: `pnpm prepare-hooks` points git at `.githooks/`, which runs the held-out leak
+   guard on commit and push. It does nothing unless you hold a held-out denylist, so it is
+   only useful to maintainers.
+
+Never put held-out corpus content in an issue, PR, commit or file. If you have a scenario
+idea that should stay out of the public corpus, report it privately (see
+[SECURITY.md](SECURITY.md)).
+
 ## Submit a guardrail result to the leaderboard (provenance tiers, ADR-011)
 
 The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** See

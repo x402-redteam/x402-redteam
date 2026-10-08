@@ -1,0 +1,48 @@
+name: heldout-guard
+
+# Backstop against held-out corpus content reaching the repository (ADR-027 §2). Tokens from
+# changed files and commit messages are HMAC'd with HELDOUT_GUARD_KEY and compared to
+# .github/heldout-guard.hmac; see scripts/heldout-guard-ci.mjs. The key lives in the `guard`
+# environment, which holds no other secret. Fork PRs cannot read it, so the job runs only
+# for same-repository PRs and again on push to main after merge. On PRs the script and the
+# HMAC list come from the base commit, so a PR cannot weaken the check that judges it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: heldout-guard-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  guard:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: guard
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Compare changed tokens to the HMAC list
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git show "$BASE_SHA:scripts/heldout-guard-ci.mjs" > "$RUNNER_TEMP/g.mjs"
+            git show "$BASE_SHA:.github/heldout-guard.hmac" > "$RUNNER_TEMP/g.hmac"
+            node "$RUNNER_TEMP/g.mjs" --base "$BASE_SHA" --hmac-file "$RUNNER_TEMP/g.hmac"
+          else
+            node scripts/heldout-guard-ci.mjs --base "$BASE_SHA"
+          fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HELDOUT_GUARD_KEY: ${{ secrets.HELDOUT_GUARD_KEY }}
+          BASE_SHA: ${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}

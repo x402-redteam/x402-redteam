@@ -1,0 +1,37 @@
+name: Public scenario proposal
+description: Propose an attack scenario for the public corpus.
+labels: [corpus]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This form is public, and so is everything in it.** Proposals here go into the public corpus.
+        If you have an idea you want kept for a held-out season, do not post it: use [private reporting](https://github.com/ORG_PLACEHOLDER/x402-redteam/security/advisories/new) instead.
+  - type: textarea
+    id: attack
+    attributes:
+      label: Attack
+      description: What the hostile server, page or challenge does, and which payment decision it targets (amount, recipient, network, asset, repetition).
+    validations:
+      required: true
+  - type: textarea
+    id: safe
+    attributes:
+      label: Safe behaviour
+      description: What a well-guarded agent should do instead, and how the scorer can tell.
+    validations:
+      required: true
+  - type: textarea
+    id: real-world
+    attributes:
+      label: Real-world basis
+      description: Links to incidents, write-ups or protocol details that motivate it, if any.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I have read the scenario schema in corpus/README.md.
+          required: true
+        - label: This idea is not something I want held out of the public corpus.
+          required: true
