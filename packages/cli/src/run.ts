@@ -8,6 +8,7 @@ import { createAdversary } from "@x402-redteam/adversary";
 import { capture } from "@x402-redteam/capture";
 import {
   type Chain,
+  compareCodeUnits,
   type HostMode,
   loadCorpus,
   type RunRecord,
@@ -318,7 +319,7 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
       if (s.category === "control") return true;
       return scenarioFilter.has(s.id);
     })
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => compareCodeUnits(a.id, b.id));
 
   const outDir = resolve(opts.outDir);
   mkdirSync(outDir, { recursive: true });

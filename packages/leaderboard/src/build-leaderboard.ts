@@ -1,4 +1,6 @@
 import {
+  canonicalize,
+  compareCodeUnits,
   type ReachClass,
   ReachClassSchema,
   type RunRecord,
@@ -161,25 +163,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Thrown for every acceptance-check failure (functional-design.md §3); its message
  * becomes the entry's "Rejected" reason. */
 class RejectedError extends Error {}
-
-/**
- * Recursively sorts object keys (arrays keep element order), independent of
- * `@x402-redteam/scorer`'s internal (unexported) `canonicalize` - a generic,
- * scorer-agnostic utility, not a duplicate of scoring logic, used only so the
- * re-score deep-equal check (below) isn't fooled by two structurally-equal objects
- * built with different key insertion order.
- */
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (isRecord(value)) {
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-      out[key] = canonicalize(value[key]);
-    }
-    return out;
-  }
-  return value;
-}
 
 /**
  * The projection of a `Report` that re-scoring must reproduce exactly: everything the
@@ -866,7 +849,7 @@ function renderRankedSection(rows: GuardrailRow[]): string[] {
     bySeasonId.set(seasonId, list);
   }
   const sections: string[] = [...header];
-  for (const seasonId of [...bySeasonId.keys()].sort((a, b) => a.localeCompare(b, "en"))) {
+  for (const seasonId of [...bySeasonId.keys()].sort(compareCodeUnits)) {
     // biome-ignore lint/style/noNonNullAssertion: seasonId came from bySeasonId's own keys.
     const seasonRows = bySeasonId.get(seasonId)!.map((row, i) => ({ ...row, rank: i + 1 }));
     sections.push(
@@ -1121,7 +1104,7 @@ export function buildLeaderboard(
   ) => {
     if (b.safetyScore !== a.safetyScore) return b.safetyScore - a.safetyScore;
     if (a.unauthorizedUsd !== b.unauthorizedUsd) return a.unauthorizedUsd - b.unauthorizedUsd;
-    return a.id.localeCompare(b.id, "en");
+    return compareCodeUnits(a.id, b.id);
   };
 
   const ranked = rankedItems
@@ -1142,14 +1125,14 @@ export function buildLeaderboard(
     .flatMap(({ id, report }) => toAgentScenarioRows(id, report, meta, reachClassByScenario))
     .sort(
       (a, b) =>
-        a.agentId.localeCompare(b.agentId, "en") || a.scenarioId.localeCompare(b.scenarioId, "en"),
+        compareCodeUnits(a.agentId, b.agentId) || compareCodeUnits(a.scenarioId, b.scenarioId),
     );
 
   // ORCHESTRATOR RULING: reference rows are sorted by id only - `rank` is a display
   // ordinal, not a ranking (they're never ranked, regardless of safety score).
   const reference = referenceItems
     .map(({ id, report }) => toGuardrailRow(id, report, meta))
-    .sort((a, b) => a.id.localeCompare(b.id, "en"))
+    .sort((a, b) => compareCodeUnits(a.id, b.id))
     .map((row, i) => ({ rank: i + 1, ...row }));
 
   const stale = staleEntries
@@ -1161,9 +1144,9 @@ export function buildLeaderboard(
           ? report.config.harness_commit
           : "unknown",
     }))
-    .sort((a, b) => a.id.localeCompare(b.id, "en"));
+    .sort((a, b) => compareCodeUnits(a.id, b.id));
 
-  rejected.sort((a, b) => a.id.localeCompare(b.id, "en"));
+  rejected.sort((a, b) => compareCodeUnits(a.id, b.id));
 
   return {
     ranked,

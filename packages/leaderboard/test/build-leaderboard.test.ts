@@ -1247,17 +1247,12 @@ describe("buildLeaderboard: rendering", () => {
     expect(markdown).not.toContain("b".repeat(40));
   });
 
-  it("sorts with a fixed 'en' locale, independent of the host's default locale", () => {
-    // A direct, source-level sanity check that every sort callsite passes a locale - not
-    // a meaningful cross-locale behavioural test (that needs a non-"en" host locale this
-    // test can't control), but it does fail if a `.localeCompare(` callsite regresses to
-    // the zero-argument, host-locale-dependent form.
+  it("sorts with the locale-independent code-unit comparator", () => {
+    // Every string ordering in the leaderboard goes through compareCodeUnits from
+    // @x402-redteam/schema, so LEADERBOARD.md is identical under any host locale.
     const source = readFileSync(new URL("../src/build-leaderboard.ts", import.meta.url), "utf8");
-    const calls = [...source.matchAll(/\.localeCompare\(([^)]*)\)/g)].map((m) => m[1] ?? "");
-    expect(calls.length).toBeGreaterThan(0);
-    for (const args of calls) {
-      expect(args).toMatch(/["']en["']\s*$/);
-    }
+    expect(source).not.toContain("localeCompare");
+    expect(source).toContain("compareCodeUnits");
   });
 });
 

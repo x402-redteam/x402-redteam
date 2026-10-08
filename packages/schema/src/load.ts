@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { compareCodeUnits } from "./canonical.js";
 import {
   type Chain,
   type ChallengeSpec,
@@ -487,7 +488,9 @@ function walkYamlFiles(dir: string): string[] {
  * subdirectories by category). Files are visited in a deterministic order.
  */
 export function loadCorpus(dir: string): Scenario[] {
-  const files = walkYamlFiles(dir).sort((a, b) => relative(dir, a).localeCompare(relative(dir, b)));
+  const files = walkYamlFiles(dir).sort((a, b) =>
+    compareCodeUnits(relative(dir, a), relative(dir, b)),
+  );
   // Lint rule 6: `<dir>/decoy-domains.txt`, read once and shared across every scenario
   // in this corpus (a decoy domain is a corpus-wide, user-approved allow-list entry, not
   // a per-scenario one).
