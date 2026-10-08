@@ -68,7 +68,7 @@ jobs:
           done
 
       - name: Checkout the harness at a pinned ref
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.harness-ref }}
           path: harness
@@ -89,7 +89,7 @@ jobs:
       # once that private repo exists (docs/seasons.md). `HELDOUT_DEPLOY_KEY` is a
       # read-only deploy key secret, scoped to that repo only.
       - name: Checkout the held-out corpus (private repo, read-only deploy key)
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ vars.HELDOUT_REPO }}
           ssh-key: ${{ secrets.HELDOUT_DEPLOY_KEY }}
@@ -97,7 +97,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout the guardrail under test at a pinned commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.guardrail-repo }}
           ref: ${{ inputs.guardrail-ref }}
@@ -162,11 +162,11 @@ jobs:
       # report (with runs[]) is kept as an encrypted artifact for disputes, never
       # uploaded here in the clear.
       - name: Attest report.redacted.json provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/out/report.redacted.json
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: report-redacted-${{ inputs.guardrail-id }}
           path: ${{ runner.temp }}/out/report.redacted.json
