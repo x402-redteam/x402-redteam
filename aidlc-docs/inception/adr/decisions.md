@@ -483,6 +483,8 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 
 **Consequences:** "Which binary produced this ranked score?" gets a verifiable answer, and that strengthens the leaderboard more than any badge.
 
+> **Amendment (U24-F):** the attestation signer is `.github/workflows/release-image.yml`, not `release.yml`: for a reusable workflow the certificate names the called workflow. Ranked runs verify with `--signer-workflow …/release-image.yml`, `--source-ref refs/heads/main`, `--source-digest` and `--signer-digest` set to the harness commit, `--deny-self-hosted-runners` and `--bundle-from-oci`.
+
 ## ADR-024 "Deployment" has four meanings, each behind an environment
 **Status:** Proposed (Bolt 7, U24-E, U24-F, U24-H).
 
