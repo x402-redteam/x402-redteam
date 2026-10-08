@@ -6,13 +6,7 @@
 #
 # NOT built or run here (no docker in this worktree, per task constraints) - statically
 # authored only. Dry-run once the org/private corpus repo exist (docs/seasons.md).
-#
-# Security review LOW: pin this base image by digest, not just tag, before the first
-# real build - `node:20-bookworm-slim@sha256:<resolve offline-unavailable digest here>`.
-# Not resolved here (no network/docker in this worktree); resolve via `docker pull
-# node:20-bookworm-slim && docker inspect --format '{{index .RepoDigests 0}}'
-# node:20-bookworm-slim` once docker is available, then replace the line below.
-FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 
 # age: https://github.com/FiloSottile/age - pinned release tarball, verified against its
 # own published sha256 at build time (fails the image build if it doesn't match, so a

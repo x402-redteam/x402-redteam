@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
+import { canonicalize } from "@x402-redteam/schema";
 import type { VerifiedEntry, VerifiedMap } from "./provenance.js";
 
 /**
@@ -20,23 +21,12 @@ import type { VerifiedEntry, VerifiedMap } from "./provenance.js";
  * freshly-read copy of it can differ in incidental formatting (trailing newline, key
  * order) without differing in content, and this hash must agree on both.
  */
-function canonicalizeForHash(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalizeForHash);
-  if (typeof value === "object" && value !== null) {
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      out[key] = canonicalizeForHash((value as Record<string, unknown>)[key]);
-    }
-    return out;
-  }
-  return value;
-}
 
 /** Security review HIGH-5: sha256 of `data`'s canonicalized JSON - see
- * `canonicalizeForHash`'s doc comment for why this isn't a raw-byte hash. */
+ * the doc comment above for why this isn't a raw-byte hash. */
 export function contentHash(data: unknown): string {
   return createHash("sha256")
-    .update(JSON.stringify(canonicalizeForHash(data)))
+    .update(JSON.stringify(canonicalize(data)))
     .digest("hex");
 }
 

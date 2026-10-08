@@ -20,7 +20,7 @@
     "viem": "2.57.1"
   },
   "devDependencies": {
-    "@types/node": "^20.19.0",
+    "@types/node": "24.19.1",
     "@x402-redteam/adversary": "workspace:*",
     "tsx": "4.23.15",
     "typescript": "6.0.3"

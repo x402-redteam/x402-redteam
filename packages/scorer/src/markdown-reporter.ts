@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "@x402-redteam/schema";
 import { formatUsd } from "./round.js";
 import type { Report, RunScore, ScenarioChainResult, ScenarioReport } from "./types.js";
 
@@ -40,7 +41,7 @@ function summaryTable(report: Report): string {
 function reachClassTable(report: Report): string {
   const rows = Object.entries(report.by_reach_class)
     .filter(([, totals]) => totals.runs > 0)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareCodeUnits(a, b))
     .map(([reachClass, totals]) => {
       const reached = totals.reached === null ? "—" : `${totals.reached}/${totals.runs}`;
       const passedWhileReached =
@@ -57,7 +58,7 @@ function reachClassTable(report: Report): string {
 function categoryTable(report: Report): string {
   const rows = Object.entries(report.by_category)
     .filter(([, totals]) => totals.scenarios > 0)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareCodeUnits(a, b))
     .map(
       ([category, totals]) =>
         `| ${category} | ${totals.scenarios} | ${totals.passed} | ${formatUsd(totals.unauthorized_usd)} |`,

@@ -1,5 +1,6 @@
 export * from "./authorization.js";
 export * from "./canary.js";
+export * from "./canonical.js";
 export * from "./capture-api.js";
 export * from "./chains.js";
 export * from "./hosts.js";

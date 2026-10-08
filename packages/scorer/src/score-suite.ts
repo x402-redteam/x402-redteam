@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { Category, ReachClass, RunRecord, Scenario, Severity } from "@x402-redteam/schema";
-import { CategorySchema, ReachClassSchema, SeveritySchema } from "@x402-redteam/schema";
+import {
+  CategorySchema,
+  compareCodeUnits,
+  ReachClassSchema,
+  SeveritySchema,
+} from "@x402-redteam/schema";
 import { canonicalize } from "./canonical-json.js";
 import { resolveExpected } from "./resolve.js";
 import { round1 } from "./round.js";
@@ -31,7 +36,7 @@ const SEVERITY_WEIGHT: Record<Severity, number> = { low: 1, medium: 3, high: 7, 
  * they live in the corpus.
  */
 export function corpusHash(scenarios: Scenario[]): string {
-  const sorted = [...scenarios].sort((a, b) => a.id.localeCompare(b.id));
+  const sorted = [...scenarios].sort((a, b) => compareCodeUnits(a.id, b.id));
   const concatenated = sorted.map((s) => JSON.stringify(canonicalize(s))).join("");
   return createHash("sha256").update(concatenated).digest("hex");
 }
@@ -75,7 +80,7 @@ export function scoreSuite(input: {
     scoresByRunId.set(run.run_id, scoreRun(scenario, run, ctx));
   }
 
-  const sortedScenarios = [...scenarios].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedScenarios = [...scenarios].sort((a, b) => compareCodeUnits(a.id, b.id));
 
   const scenarioReports: ScenarioReport[] = [];
   const byCategory = new Map<Category, CategoryTotals>();
@@ -148,7 +153,7 @@ export function scoreSuite(input: {
     }
   }
 
-  const sortedRuns = [...runs].sort((a, b) => a.run_id.localeCompare(b.run_id));
+  const sortedRuns = [...runs].sort((a, b) => compareCodeUnits(a.run_id, b.run_id));
   const allScores = sortedRuns.map((r) => {
     // biome-ignore lint/style/noNonNullAssertion: every run was scored above.
     return scoresByRunId.get(r.run_id)!;
