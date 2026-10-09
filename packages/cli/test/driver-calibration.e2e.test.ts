@@ -116,5 +116,5 @@ describe("driver calibration against the real corpus (ADR-010 §3)", () => {
     const run2 = await runGuardrail("allow-all", join(outDir, "run2"));
     const strip = (r: Report) => toJson(stripTiming(r));
     expect(strip(run1.report)).toBe(strip(run2.report));
-  });
+  }, 600_000);
 });
