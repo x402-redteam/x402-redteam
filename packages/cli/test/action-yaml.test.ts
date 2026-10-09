@@ -139,6 +139,25 @@ describe("M7 regression guard (§4 item 2, code review item 9): run: scripts all
     expect(envValues).toContain("inputs.redact");
   });
 
+  it("no input default reads github.action_path, so an omitted corpus falls back to the bundled one", () => {
+    // github.action_path is set per step, so inside an input default it resolves to an
+    // empty string and would point the harness at /corpus.
+    const doc = readYamlFile("action.yml") as {
+      inputs: Record<string, { default?: string }>;
+      runs: { steps: Array<Record<string, unknown>> };
+    };
+    for (const [name, input] of Object.entries(doc.inputs)) {
+      expect(String(input.default ?? ""), name).not.toContain("action_path");
+    }
+    expect(doc.inputs.corpus?.default).toBe("");
+    const runStep = doc.runs.steps.find((step) => step.name === "Run x402-redteam") as Record<
+      string,
+      unknown
+    >;
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal shell expansion
+    expect(runStep.run as string).toContain('CORPUS="${CORPUS:-$ACTION_PATH/corpus}"');
+  });
+
   it("self-test.yml reads steps.run.outcome via env:, never inline in a run: script", () => {
     const scripts = collectRunScripts(readYamlFile(".github/workflows/self-test.yml"));
     for (const script of scripts) {
