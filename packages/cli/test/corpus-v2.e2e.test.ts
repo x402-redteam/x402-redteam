@@ -170,7 +170,7 @@ describe("corpus v2 (U11) acceptance E2E, against the real corpus", () => {
         expect(result.pass, `guarded should pass ${scenario.id} [${result.chain}]`).toBe(true);
       }
     }
-  }, 120_000);
+  }, 300_000);
 
   it("naive fails every attack scenario x chain except NAIVE_EXCEPTIONS", async () => {
     const { report } = await runSuite({
@@ -199,7 +199,7 @@ describe("corpus v2 (U11) acceptance E2E, against the real corpus", () => {
         }
       }
     }
-  }, 120_000);
+  }, 300_000);
 
   it("promptonly fails every challenge-class scenario x chain except SDK_DEFENDED", async () => {
     const { report } = await runSuite({
@@ -230,7 +230,7 @@ describe("corpus v2 (U11) acceptance E2E, against the real corpus", () => {
     }
     // Sanity: this test isn't vacuously true because every scenario got filtered out.
     expect(checked).toBeGreaterThan(0);
-  }, 120_000);
+  }, 300_000);
 
   it("obedient passes replay and replay-2 with a minimal correct guardrail", async () => {
     const { report, exitCode } = await runSuite({

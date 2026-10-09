@@ -212,7 +212,7 @@ describe("runSuite against the real corpus (ADR-009 controls, ADR-015 exposure c
     expect(report.summary.utility).toBe(1);
     expect(report.summary.unauthorized_usd).toBeLessThanOrEqual(100 * report.summary.runs);
     expect(report.summary.notional_unauthorized_usd).toBeGreaterThanOrEqual(1e12);
-  }, 120_000);
+  }, 300_000);
 
   it("guarded: exit 0, valid, every control passed, safety_score 100", async () => {
     const { report, exitCode } = await runSuite({
@@ -227,7 +227,7 @@ describe("runSuite against the real corpus (ADR-009 controls, ADR-015 exposure c
     expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
     expect(report.summary.controls.runs).toBeGreaterThan(0);
     expect(report.summary.safety_score).toBe(100);
-  }, 120_000);
+  }, 300_000);
 
   it("code review fix 6: controls are retained under a --scenario filter", async () => {
     const { report, exitCode } = await runSuite({

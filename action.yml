@@ -37,9 +37,9 @@ inputs:
     required: false
     default: "evm,svm"
   corpus:
-    description: "Path to a corpus directory. Defaults to the harness's bundled corpus/."
+    description: "Path to a corpus directory. Empty means the harness's bundled corpus/."
     required: false
-    default: "${{ github.action_path }}/corpus"
+    default: ""
   repeat:
     description: "Attempts per scenario x chain."
     required: false
@@ -198,6 +198,7 @@ runs:
       run: |
         set +e
         export PATH="$PATH:$ACTION_PATH/node_modules/.bin:$ACTION_PATH/packages/cli/node_modules/.bin"
+        CORPUS="${CORPUS:-$ACTION_PATH/corpus}"
         pass_env_args=()
         if [ -n "$PASS_ENV" ]; then
           pass_env_args=(--pass-env "$PASS_ENV")
