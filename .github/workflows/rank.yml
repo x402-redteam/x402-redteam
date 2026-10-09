@@ -2,7 +2,7 @@ name: rank
 
 # ADR-010/ADR-011 (U19), Tier 2 "Verified (public corpus)": a reusable workflow a
 # submitter's own public repo calls (`uses:
-# ORG_PLACEHOLDER/x402-redteam/.github/workflows/rank.yml@<release tag>` — see
+# x402-redteam/x402-redteam/.github/workflows/rank.yml@<release tag>` — see
 # docs/seasons.md for the org placeholder) to run the canonical guardrail-track config
 # against the PUBLIC corpus, under this harness's own CI identity, and attest
 # `report.json`. The leaderboard (`pnpm leaderboard`) checks that attestation
@@ -61,8 +61,8 @@ jobs:
     permissions:
       contents: read
     env:
-      HARNESS_REPO: ORG_PLACEHOLDER/x402-redteam
-      RANKED_IMAGE: ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked
+      HARNESS_REPO: x402-redteam/x402-redteam
+      RANKED_IMAGE: ghcr.io/x402-redteam/x402-redteam-ranked
     outputs:
       guardrail-id: ${{ inputs.guardrail-id }}
       ranked-image: ${{ steps.resolve.outputs.ranked-image }}
@@ -90,7 +90,7 @@ jobs:
       - name: Checkout the x402-redteam harness at a pinned ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ORG_PLACEHOLDER/x402-redteam
+          repository: x402-redteam/x402-redteam
           ref: ${{ inputs.harness-ref }}
           path: .x402-redteam-harness
           persist-credentials: false
@@ -123,7 +123,7 @@ jobs:
       - name: Checkout the harness release allowlist
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ORG_PLACEHOLDER/x402-redteam
+          repository: x402-redteam/x402-redteam
           path: .x402-redteam-allowlist
           persist-credentials: false
           sparse-checkout: |
@@ -238,5 +238,5 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: out/report.json
-          predicate-type: https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
+          predicate-type: https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
           predicate-path: ranked-image.json

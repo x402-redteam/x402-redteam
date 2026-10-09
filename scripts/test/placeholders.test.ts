@@ -1,8 +1,6 @@
 /**
- * Inventory of the owner placeholders still in the repository, replaced once the GitHub
- * organization, handle and contacts are decided. The expected map is explicit: adding or
- * removing a placeholder anywhere means updating it here, so the full list stays visible.
- * aidlc-docs/ (design records) and this file are excluded.
+ * The repository carries no unresolved owner placeholders. aidlc-docs/ (design records)
+ * and this file are excluded.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -19,25 +17,7 @@ const TOKENS = [
   "BEST_PRACTICES_PROJECT_ID",
 ];
 
-const EXPECTED: Record<string, string[]> = {
-  ".github/CODEOWNERS": ["ORG_PLACEHOLDER", "OWNER_HANDLE"],
-  ".github/ISSUE_TEMPLATE/bug.yml": ["ORG_PLACEHOLDER"],
-  ".github/ISSUE_TEMPLATE/config.yml": ["ORG_PLACEHOLDER"],
-  ".github/ISSUE_TEMPLATE/leaderboard.yml": ["ORG_PLACEHOLDER"],
-  ".github/ISSUE_TEMPLATE/scenario.yml": ["ORG_PLACEHOLDER"],
-  ".github/workflows/pr-hygiene.yml": ["OWNER_HANDLE"],
-  ".github/workflows/rank.yml": ["ORG_PLACEHOLDER"],
-  ".github/workflows/ranked-run.yml": ["ORG_PLACEHOLDER"],
-  "CODE_OF_CONDUCT.md": ["OWNER_CONTACT"],
-  "CONTRIBUTING.md": ["ORG_PLACEHOLDER"],
-  "GOVERNANCE.md": ["OWNER_HANDLE", "OWNER_SUCCESSION_PLAN"],
-  "README.md": ["ORG_PLACEHOLDER", "BEST_PRACTICES_PROJECT_ID"],
-  "SECURITY.md": ["ORG_PLACEHOLDER", "OWNER_CONTACT"],
-  "SUPPORT.md": ["OWNER_CONTACT"],
-  "docs/seasons.md": ["ORG_PLACEHOLDER"],
-  "packages/cli/test/ranked-workflows.test.ts": ["ORG_PLACEHOLDER"],
-  "packages/leaderboard/src/provenance.ts": ["ORG_PLACEHOLDER"],
-};
+const EXPECTED: Record<string, string[]> = {};
 
 function placeholderMap(): Record<string, string[]> {
   const files = execFileSync("git", ["ls-files", "-z"], { cwd: REPO_ROOT })
@@ -59,7 +39,7 @@ function placeholderMap(): Record<string, string[]> {
 }
 
 describe("owner placeholders", () => {
-  it("appear exactly in the expected files", () => {
+  it("are all resolved", () => {
     expect(placeholderMap()).toEqual(EXPECTED);
   });
 });

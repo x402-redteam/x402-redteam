@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         **This form is public, and so is everything in it.** Proposals here go into the public corpus.
-        If you have an idea you want kept for a held-out season, do not post it: use [private reporting](https://github.com/ORG_PLACEHOLDER/x402-redteam/security/advisories/new) instead.
+        If you have an idea you want kept for a held-out season, do not post it: use [private reporting](https://github.com/x402-redteam/x402-redteam/security/advisories/new) instead.
   - type: textarea
     id: attack
     attributes:

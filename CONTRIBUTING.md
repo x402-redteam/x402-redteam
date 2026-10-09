@@ -45,16 +45,13 @@ The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** 
    ```yaml
    jobs:
      rank:
-       uses: ORG_PLACEHOLDER/x402-redteam/.github/workflows/rank.yml@v0.1.0 # pin a real release tag
+       uses: x402-redteam/x402-redteam/.github/workflows/rank.yml@v0.1.0 # pin a real release tag
        with:
          harness-ref: v0.1.0 # the same release tag, vMAJOR.MINOR.PATCH (rank.yml rejects anything else)
          guardrail-cmd: "node my-guardrail.js" # your GDP guardrail (ADR-010)
          guardrail-id: your-guardrail-id
    ```
 
-   (`ORG_PLACEHOLDER` — the harness's own org/repo isn't decided yet; see
-   [`docs/seasons.md`](docs/seasons.md#the-org-placeholder) for the one place this gets
-   updated once it is.)
 
 2. That workflow runs the canonical guardrail-track config against the public corpus and
    attests `report.json` under GitHub's own build provenance. Download the attestation

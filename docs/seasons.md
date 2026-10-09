@@ -128,7 +128,7 @@ runner itself (ADR-023):
    digest and runs it by digest. Tags are never used.
 5. **Attest the result.** Besides the usual provenance attestation, each ranked run signs
    a second attestation over its report with predicate type
-   `https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result`
+   `https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result`
    and predicate `{"image": "ghcr.io/<org>/x402-redteam-ranked@sha256:…",
    "harness_commit": "<40 hex>"}`. `report.json` itself is unchanged.
 
@@ -137,7 +137,7 @@ To check a result yourself:
 ```sh
 # Which image produced this report?
 gh attestation verify results/<id>.json --repo <org>/x402-redteam \
-  --predicate-type https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result \
+  --predicate-type https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result \
   --format json --jq '.[].verificationResult.statement.predicate'
 # Was that image built by this repository's release workflow, from that commit on main?
 gh attestation verify oci://ghcr.io/<org>/x402-redteam-ranked@sha256:<digest> \
@@ -153,22 +153,15 @@ gh attestation verify oci://ghcr.io/<org>/x402-redteam-ranked@sha256:<digest> \
 Removing a bad image means deleting its entry from `results/_harness.json` (ADR-024);
 results produced with it move to "Rejected".
 
-## The org placeholder
+## Repository layout
 
-The GitHub org/repo layout (a public harness repo, a private held-out corpus repo, and
-the `ranked` environment with maintainer-only reviewers) is a Phase C user decision that
-hasn't happened yet — **nothing has been created or pushed**. Every place this repo's
-own workflows need to name that layout uses one of two parameterized forms instead of a
-hardcoded org name, so there is exactly one place to update once the org exists:
-
-- `.github/workflows/rank.yml` and `.github/workflows/ranked-run.yml` name the harness
-  repo and its image as `ORG_PLACEHOLDER/x402-redteam` and
-  `ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked` (job-level `HARNESS_REPO` and
-  `RANKED_IMAGE`, plus `rank.yml`'s harness checkouts). Replace both once the public repo
-  exists; the image path must be lowercase, because GHCR image names are.
-- `.github/workflows/ranked-run.yml`'s held-out corpus checkout uses the repository
-  variable `vars.HELDOUT_REPO` (format `org/repo`) — set it once in the repo's own
-  Settings → Secrets and variables → Actions, after the private corpus repo exists.
+- The public harness repository is `x402-redteam/x402-redteam`; its ranked image is
+  `ghcr.io/x402-redteam/x402-redteam-ranked`. `rank.yml` and `ranked-run.yml` name both
+  in the job-level `HARNESS_REPO` and `RANKED_IMAGE` (and in `rank.yml`'s harness
+  checkouts). GHCR image names are lowercase.
+- The held-out corpus lives in a private repository named by the repository variable
+  `vars.HELDOUT_REPO` (format `org/repo`), set under Settings → Secrets and variables →
+  Actions. `ranked-run.yml` checks it out only inside the `ranked` environment.
 
 ## Season log
 

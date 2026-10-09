@@ -23,7 +23,7 @@
  * module - it's a GitHub Actions YAML file, not TypeScript) and is checked against it
  * by `packages/cli/test/ranked-workflows.test.ts`.
  */
-export const HARNESS_ORG_REPO = "ORG_PLACEHOLDER/x402-redteam";
+export const HARNESS_ORG_REPO = "x402-redteam/x402-redteam";
 
 /** Security review HIGH-6: `gh attestation verify --source-ref` - both signer
  * workflows only ever run from `main` (`ranked-run.yml` is `workflow_dispatch` on the

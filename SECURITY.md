@@ -7,8 +7,8 @@ is a vulnerability even if nothing crashes.
 ## Reporting
 
 Use **GitHub private vulnerability reporting**:
-[Report a vulnerability](https://github.com/ORG_PLACEHOLDER/x402-redteam/security/advisories/new).
-If you cannot use it, email OWNER_CONTACT.
+[Report a vulnerability](https://github.com/x402-redteam/x402-redteam/security/advisories/new).
+If you cannot use it, open a public issue that asks the maintainer to contact you, without any details of the problem.
 
 **Do not open a public issue, discussion or PR** for a vulnerability, and never for anything
 that reveals held-out corpus content (scenario ideas you think a season uses included).

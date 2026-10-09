@@ -1,11 +1,10 @@
 # x402-redteam
 
-[![CI](https://github.com/ORG_PLACEHOLDER/x402-redteam/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ORG_PLACEHOLDER/x402-redteam/actions/workflows/ci.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ORG_PLACEHOLDER/x402-redteam/badge)](https://scorecard.dev/viewer/?uri=github.com/ORG_PLACEHOLDER/x402-redteam)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/BEST_PRACTICES_PROJECT_ID/badge)](https://www.bestpractices.dev/projects/BEST_PRACTICES_PROJECT_ID)
-[![Coverage](https://img.shields.io/badge/coverage-CI%20job%20summary-blue)](https://github.com/ORG_PLACEHOLDER/x402-redteam/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ORG_PLACEHOLDER/x402-redteam)](https://github.com/ORG_PLACEHOLDER/x402-redteam/releases/latest)
-[![License](https://img.shields.io/github/license/ORG_PLACEHOLDER/x402-redteam)](LICENSE)
+[![CI](https://github.com/x402-redteam/x402-redteam/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/x402-redteam/x402-redteam/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/x402-redteam/x402-redteam/badge)](https://scorecard.dev/viewer/?uri=github.com/x402-redteam/x402-redteam)
+[![Coverage](https://img.shields.io/badge/coverage-CI%20job%20summary-blue)](https://github.com/x402-redteam/x402-redteam/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/x402-redteam/x402-redteam)](https://github.com/x402-redteam/x402-redteam/releases/latest)
+[![License](https://img.shields.io/github/license/x402-redteam/x402-redteam)](LICENSE)
 
 A red-team harness for AI agents that pay for resources over the [x402](https://x402.org) payment
 protocol. It runs your agent — plus whatever spend guardrail you've bolted onto it — through a
@@ -35,12 +34,12 @@ into a corpus you can run against any agent, on both EVM and Solana test rails, 
 
 There is no npm package. Two supported routes:
 
-- **GitHub Action:** `uses: ORG_PLACEHOLDER/x402-redteam@v0` (the `v0` tag follows the latest
+- **GitHub Action:** `uses: x402-redteam/x402-redteam@v0` (the `v0` tag follows the latest
   0.x release; pin a full commit SHA for reproducible runs). The Action runs on Node 24, so it
   needs a Node 24-capable runner: GitHub-hosted runners are fine; older self-hosted runners and
   GitHub Enterprise Server are not supported. See [GitHub Action](#github-action).
 - **Clone:** Node 22.14 or newer and pnpm 10 (via `corepack enable`), then
-  `git clone https://github.com/ORG_PLACEHOLDER/x402-redteam.git && cd x402-redteam && pnpm install --frozen-lockfile`.
+  `git clone https://github.com/x402-redteam/x402-redteam.git && cd x402-redteam && pnpm install --frozen-lockfile`.
   Check out a release tag (`git checkout v0.1.0`) to run a released version.
 
 ## 60-second quickstart
@@ -508,7 +507,7 @@ release commit unless `main` moved on before the release job ran. With the
 [GitHub CLI](https://cli.github.com/):
 
 ```bash
-REPO=ORG_PLACEHOLDER/x402-redteam
+REPO=x402-redteam/x402-redteam
 V=0.1.0
 
 # The release itself: GitHub's release attestation for the tag and its assets.
@@ -535,7 +534,7 @@ The ranked container image is attested by digest. Take the digest from
 `results/_harness.json`:
 
 ```bash
-gh attestation verify "oci://ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked@sha256:<digest>" \
+gh attestation verify "oci://ghcr.io/x402-redteam/x402-redteam-ranked@sha256:<digest>" \
   --repo "$REPO" --signer-workflow "$REPO/.github/workflows/release-image.yml"
 ```
 

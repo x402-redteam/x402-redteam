@@ -12,5 +12,6 @@ Free support is best effort from a single maintainer, with no response-time comm
 
 ## Commercial audits
 
-Paid audits of an x402-paying agent or guardrail, run on your own infrastructure: contact
-OWNER_CONTACT.
+Paid audits of an x402-paying agent or guardrail, run on your own infrastructure: open a
+[discussion](https://github.com/x402-redteam/x402-redteam/discussions) and the maintainer will
+follow up privately.

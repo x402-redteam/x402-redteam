@@ -84,7 +84,7 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
 
   it("security review HIGH-3: rank.yml's harness org/repo is a single hard-coded placeholder, not an input", () => {
     const text = readWorkflow(".github/workflows/rank.yml");
-    expect(text).toContain("repository: ORG_PLACEHOLDER/x402-redteam");
+    expect(text).toContain("repository: x402-redteam/x402-redteam");
   });
 
   it("security review HIGH-3: rank.yml splits run (no attestation permissions) from a separate attest job", () => {
@@ -346,8 +346,8 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
       expect(text).not.toMatch(/docker build/);
       expect(text).not.toMatch(/\bx402-redteam-ranked \\$/m);
       const job = parseWorkflow(file).jobs[jobName] as Job;
-      expect(job.env?.RANKED_IMAGE).toBe("ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked");
-      expect(job.env?.HARNESS_REPO).toBe("ORG_PLACEHOLDER/x402-redteam");
+      expect(job.env?.RANKED_IMAGE).toBe("ghcr.io/x402-redteam/x402-redteam-ranked");
+      expect(job.env?.HARNESS_REPO).toBe("x402-redteam/x402-redteam");
       const runs = job.steps.map((step) => step.run ?? "").join("\n");
       expect(runs).toContain('docker pull "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST"');
       const dockerRuns = runs.match(/docker run[\s\S]*?--agent-uid 2001/g) ?? [];
@@ -450,7 +450,7 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
     const allowlist = steps.find((s) =>
       String(s.with?.["sparse-checkout"] ?? "").includes("results/_harness.json"),
     );
-    expect(allowlist?.with?.repository).toBe("ORG_PLACEHOLDER/x402-redteam");
+    expect(allowlist?.with?.repository).toBe("x402-redteam/x402-redteam");
     expect(allowlist?.with?.ref).toBeUndefined();
     expect(String(allowlist?.with?.["sparse-checkout"]).trim()).toBe("results/_harness.json");
     const resolveStep = steps.find((s) => (s.run ?? "").includes("resolve-image.mjs"));

@@ -55,8 +55,8 @@ jobs:
     # remove this line.
     environment: ranked
     env:
-      HARNESS_REPO: ORG_PLACEHOLDER/x402-redteam
-      RANKED_IMAGE: ghcr.io/ORG_PLACEHOLDER/x402-redteam-ranked
+      HARNESS_REPO: x402-redteam/x402-redteam
+      RANKED_IMAGE: ghcr.io/x402-redteam/x402-redteam-ranked
     steps:
       # Security review HIGH-8: harness-ref/guardrail-ref must be a 40-hex-char commit
       # SHA, or a release tag (`vMAJOR.MINOR.PATCH`) - never a branch, and never a
@@ -212,7 +212,7 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/out/report.redacted.json
-          predicate-type: https://github.com/ORG_PLACEHOLDER/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
+          predicate-type: https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
           predicate-path: ${{ runner.temp }}/ranked-image.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

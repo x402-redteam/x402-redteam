@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/ORG_PLACEHOLDER/x402-redteam/security/advisories/new
+    url: https://github.com/x402-redteam/x402-redteam/security/advisories/new
     about: Private reporting for vulnerabilities and anything involving held-out corpus content. Never open a public issue for these.
   - name: Ask a question
-    url: https://github.com/ORG_PLACEHOLDER/x402-redteam/discussions
+    url: https://github.com/x402-redteam/x402-redteam/discussions
     about: Usage questions and ideas go to Discussions.

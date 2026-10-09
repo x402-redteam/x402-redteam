@@ -1,6 +1,6 @@
 # Governance
 
-x402-redteam is a **maintainer-led** project with one maintainer, @OWNER_HANDLE. This page says
+x402-redteam is a **maintainer-led** project with one maintainer, @lnhunt11. This page says
 who decides what, how the code is actually produced, and what that does and does not
 guarantee.
 
@@ -8,7 +8,7 @@ guarantee.
 
 | Role | Who | Responsibilities |
 |---|---|---|
-| Maintainer | @OWNER_HANDLE | Merges to `main`, cuts releases, owns the roadmap and final decisions, handles security reports ([SECURITY.md](SECURITY.md)) and Code of Conduct reports. |
+| Maintainer | @lnhunt11 | Merges to `main`, cuts releases, owns the roadmap and final decisions, handles security reports ([SECURITY.md](SECURITY.md)) and Code of Conduct reports. |
 | Ranked-run operator | the maintainer | Approves runs in the `ranked` environment (`.github/workflows/ranked-run.yml`) and commits the resulting reports and attestations. |
 | Season-key custodian | the maintainer | Holds each season's seed, `age` key and held-out corpus offline, publishes the seed commitment, and reveals the seed and corpus at season end ([docs/seasons.md](docs/seasons.md)). Also holds the held-out guard key. |
 | Contributor | anyone | Opens issues, proposes public scenarios, submits PRs and Tier 2 results ([CONTRIBUTING.md](CONTRIBUTING.md)). |
@@ -51,9 +51,9 @@ the outcome there. Everything else is decided in the PR that makes the change.
 
 ## Access continuity
 
-OWNER_SUCCESSION_PLAN (pending an owner decision: who receives admin access to the
-organization, the `ranked` and `guard` environments and the season keys if the maintainer
-becomes unavailable).
+No successor is designated yet. The maintainer holds sole admin access to the organization,
+the `ranked` and `guard` environments and the season keys. Naming a second organization
+owner who can take these over is an open item before ranked seasons run at scale.
 
 ## Becoming a maintainer
 
