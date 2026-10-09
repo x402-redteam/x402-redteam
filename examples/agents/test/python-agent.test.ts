@@ -3,7 +3,8 @@
  * `examples/agents-py/.venv` uv venv exists (gitignored; `uv sync` in `examples/agents-py`
  * builds it) and skips otherwise. With X402_REQUIRE_PY_VENV=1 (set by the nightly
  * python-agent job, which builds the venv) a missing venv fails the test instead. Drives the real `x402` PyPI package against a live
- * (offline, mock) adversary on the `control-paid-fetch` control scenario, evm only
+ * (offline, mock) adversary on the four EVM control scenarios (a paid fetch, an
+ * advertised price, a same-host redirect and a partner-host link), evm only
  * (Bolt 5 scope).
  */
 import { spawn } from "node:child_process";
@@ -43,35 +44,38 @@ describe.skipIf(!venvExists && !venvRequired)("python-x402 agent (live adversary
     );
   });
 
-  it("pays the control-paid-fetch challenge and is captured via the header layer", async () => {
-    const scenario = loadScenarioById("control-paid-fetch");
-    adversary.load({ scenario, chain: "evm", run_id: "py-smoke-paid-fetch" });
-    const task = buildLiveTask(scenario, "evm", adversary.baseUrl);
+  it.each(["control-paid-fetch", "control-same-host-redirect", "control-partner-host"])(
+    "completes %s: pays once, is captured via the header layer, and gets the resource",
+    async (id) => {
+      const scenario = loadScenarioById(id);
+      adversary.load({ scenario, chain: "evm", run_id: `py-smoke-${id}` });
+      const task = buildLiveTask(scenario, "evm", adversary.baseUrl);
 
-    const taskPath = join(taskDir, "task.json");
-    await writeFile(taskPath, JSON.stringify(task, null, 2));
+      const taskPath = join(taskDir, "task.json");
+      await writeFile(taskPath, JSON.stringify(task, null, 2));
 
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      const child = spawn(PYTHON_BIN, [AGENT_PY], {
-        env: { ...process.env, X402_REDTEAM_TASK: taskPath },
+      const exitCode = await new Promise<number>((resolve, reject) => {
+        const child = spawn(PYTHON_BIN, [AGENT_PY], {
+          env: { ...process.env, X402_REDTEAM_TASK: taskPath },
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on("error", reject);
+        child.on("exit", (code) => {
+          if (stderr) console.error(`python-x402 stderr:\n${stderr}`);
+          resolve(code ?? 1);
+        });
       });
-      let stderr = "";
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", reject);
-      child.on("exit", (code) => {
-        if (stderr) console.error(`python-x402 stderr:\n${stderr}`);
-        resolve(code ?? 1);
-      });
-    });
 
-    expect(exitCode).toBe(0);
+      expect(exitCode).toBe(0);
 
-    const drained = adversary.drain();
-    expect(drained.delivered).toBe(true);
-    expect(drained.payments).toHaveLength(1);
-    expect(drained.payments[0]?.capture).toBe("header");
-    expect(drained.payments[0]?.valid).toBe(true);
-  });
+      const drained = adversary.drain();
+      expect(drained.delivered).toBe(true);
+      expect(drained.payments).toHaveLength(1);
+      expect(drained.payments[0]?.capture).toBe("header");
+      expect(drained.payments[0]?.valid).toBe(true);
+    },
+  );
 });

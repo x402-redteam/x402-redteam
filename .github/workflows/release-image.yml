@@ -25,7 +25,7 @@ on:
         type: string
     outputs:
       image:
-        description: Image name, ghcr.io/<owner>/x402-redteam-ranked
+        description: Image name, ghcr.io/x402-redteam/x402-redteam-ranked
         value: ${{ jobs.image.outputs.image }}
       digest:
         description: Pushed image digest, sha256:<64 hex>

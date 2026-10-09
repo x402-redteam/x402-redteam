@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 URL_CANDIDATE_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 
-def _origin(url: str) -> str | None:
+def origin_of(url: str) -> str | None:
     """`scheme://host[:port]`, lowercased, or `None` if `url` isn't a well-formed
     absolute http(s) URL - mirrors `new URL(url).origin` (lowercased; the WHATWG URL
     spec already lowercases the host, so this just normalizes the scheme too)."""
@@ -37,11 +37,11 @@ def allowed_origins(task: dict) -> set[str]:
     `examples/agents/src/lib/crawl.ts`'s `allowedOrigins`. `task["hosts"]` is absent on a
     v1/v2 task (path mode only, implicitly)."""
     origins: set[str] = set()
-    base = _origin(task.get("base_url", ""))
+    base = origin_of(task.get("base_url", ""))
     if base is not None:
         origins.add(base)
     for host_url in (task.get("hosts") or {}).values():
-        origin = _origin(host_url)
+        origin = origin_of(host_url)
         if origin is not None:
             origins.add(origin)
     return origins
@@ -55,7 +55,7 @@ def extract_urls(text: str, origins: set[str]) -> list[str]:
     seen: set[str] = set()
     for raw in URL_CANDIDATE_RE.findall(text):
         trimmed = raw.rstrip(".,;:!?")
-        origin = _origin(trimmed)
+        origin = origin_of(trimmed)
         if origin is not None and origin in origins and trimmed not in seen:
             seen.add(trimmed)
             found.append(trimmed)
