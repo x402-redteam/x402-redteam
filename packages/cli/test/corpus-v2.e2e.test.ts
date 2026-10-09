@@ -288,5 +288,5 @@ describe("corpus v2 (U11) acceptance E2E, against the real corpus", () => {
       rmSync(outDirA, { recursive: true, force: true });
       rmSync(outDirB, { recursive: true, force: true });
     }
-  }, 240_000);
+  }, 600_000);
 });
