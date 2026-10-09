@@ -136,10 +136,7 @@
     }
   },
   "config": {
-    "chains": [
-      "evm",
-      "svm"
-    ],
+    "chains": ["evm", "svm"],
     "controls_included": true,
     "driver": null,
     "fail_on": "low",
