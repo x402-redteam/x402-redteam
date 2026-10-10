@@ -1,6 +1,6 @@
 # AI-DLC State — x402-redteam
 
-Profile: lightweight AI-DLC (MVP route) · Orchestrator: Opus · Lead developer: Sonnet
+Profile: lightweight AI-DLC (MVP route) · Orchestrator: Opus · Lead developer: Opus (owner instruction, Bolt 7)
 Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 
 ## Phases
@@ -13,6 +13,7 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 5 — Measurement validity (G6 approved)
 - [x] U14 — agent startup timeout (load-flake fix)
 - [x] Bolt 6 — pre-launch units complete; G7 awaits org, seed and real-runner checks
-- [-] Bolt 7 — release engineering: U24-A…F merged; U24-G deferred; U24-H waits for the GitHub org
+- [x] Bolt 7 — release engineering: U24-A…F merged; U24-G deferred; U24-H done (public repo, settings, first PRs)
+- [-] Bolt 8 — third-party autonomous agents: U25-A built-in Claude agent run, U25-B AgentKit adapter; x402-over-MCP next
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped

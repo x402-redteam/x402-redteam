@@ -32,7 +32,7 @@ pnpm x402-redteam run --agent "tsx examples/agents/src/guarded.ts"   # expect ex
 A unit is "done" only when install, lint, typecheck, test and test:e2e all pass, and the two E2E runs above behave as expected.
 
 ## Hard rules
-- **No real funds and no network.** Only use seed-derived test keys. *Sole exception (user decision G5):* manual, non-CI runs of `examples/agents` LLM agent may call the Anthropic API (key via `--pass-env ANTHROPIC_API_KEY`, `claude-sonnet-5`, ≈$5 cap per session). Tests never touch public RPCs or facilitators. The mock Solana RPC and the mock facilitator live in `packages/adversary`.
+- **No real funds and no network.** Only use seed-derived test keys. *Sole exception (user decision G5):* manual, non-CI runs of the `examples/agents` LLM agent and the `examples/third-party/` adapters may call the Anthropic API (key via `--pass-env ANTHROPIC_API_KEY`, `claude-sonnet-5` or `claude-sonnet-5-5`, ≈$5 cap per session; Bolt 8 cap $20, G8). Third-party code runs keyless and sandboxed (ADR-029); its results stay outside the repo (ADR-028). Tests never touch public RPCs or facilitators. The mock Solana RPC and the mock facilitator live in `packages/adversary`.
 - **Never run customer agents on our infrastructure** (ADR-005).
 - **Determinism**: `report.json` minus `timing` must be byte-identical across runs. Keep agent-chosen randomness (nonces, `raw`) out of it; it belongs in `out/runs/*.json`.
 - Subagents **do not commit, except for one commit on their worktree branch, and never push**. Only the orchestrator merges to `main`. Pushing, publishing, or creating remote repos needs the user's say-so.
