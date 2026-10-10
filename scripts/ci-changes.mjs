@@ -8,6 +8,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const RUNTIME_PREFIXES = ["packages/", "corpus/", "examples/"];
+/** Third-party adapters (U25, ADR-028/029) sit outside the workspace and CI and run only
+ * by hand, so changing one never needs the heavy suites. */
+const NON_RUNTIME_PREFIXES = ["examples/third-party/"];
 const RUNTIME_FILES = new Set([
   "action.yml",
   "package.json",
@@ -25,6 +28,7 @@ const ROOT_TSCONFIG = /^tsconfig(\.[^/]+)?\.json$/;
 /** True when a change to this repo-relative path must run the heavy suites. */
 export function isRuntimePath(path) {
   const p = path.startsWith("./") ? path.slice(2) : path;
+  if (NON_RUNTIME_PREFIXES.some((prefix) => p.startsWith(prefix))) return false;
   return (
     RUNTIME_FILES.has(p) ||
     ROOT_TSCONFIG.test(p) ||

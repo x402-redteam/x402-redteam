@@ -48,6 +48,9 @@ describe("isRuntimePath", () => {
     "docs/package.json",
     "tsconfig.json.bak",
     "scripts/other.mjs",
+    "examples/third-party/agentkit/src/agent.ts",
+    "examples/third-party/agentkit/pnpm-lock.yaml",
+    "./examples/third-party/agentkit/package.json",
     "",
   ])("%s is not a runtime path", (path) => {
     expect(isRuntimePath(path)).toBe(false);

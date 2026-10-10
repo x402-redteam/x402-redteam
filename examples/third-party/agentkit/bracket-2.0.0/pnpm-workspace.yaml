@@ -1,0 +1,11 @@
+# Standalone project, deliberately outside the harness's pnpm workspace (U25 §3.2).
+# Having its own pnpm-workspace.yaml stops pnpm from adopting the repo root's workspace.
+packages: []
+minimumReleaseAge: 4320
+overrides:
+  "@x402/core": 2.0.0
+  "@x402/evm": 2.0.0
+  "@x402/fetch": 2.0.0
+  "@x402/svm": 2.0.0
+  # The capture shim's own workspace:* dependency, resolved from the same checkout.
+  "@x402-redteam/schema": file:../../../../packages/schema

@@ -6,7 +6,9 @@ export default defineConfig({
     // agent-loop tests, tool-handler tests against a live adversary) runs under the
     // root `pnpm test` / `pnpm test:all`, same as every packages/* project.
     // "scripts" holds the unit tests for the repository scripts (PR hygiene, held-out guard).
-    projects: ["packages/*", "examples/*", "scripts"],
+    // examples/third-party holds hand-run adapters with their own lockfiles (U25); their
+    // canary tests are run from inside each adapter, never by the root suite or CI.
+    projects: ["packages/*", "examples/*", "!examples/third-party", "scripts"],
     // Used by `pnpm test:coverage` (unit tests only, same excludes as `pnpm test`).
     coverage: {
       provider: "v8",
