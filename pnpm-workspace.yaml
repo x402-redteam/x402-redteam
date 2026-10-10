@@ -5,3 +5,6 @@ minimumReleaseAge: 4320
 ignoredBuiltDependencies:
   # Its postinstall only re-checks the platform binary, which ships as an optional dependency.
   - esbuild
+overrides:
+  # GHSA-68fv-2mgg-jv7q: dev-only (vitest coverage, vite), fixed in 1.2.2.
+  source-map-js: 1.2.2
