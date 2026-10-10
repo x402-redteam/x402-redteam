@@ -335,6 +335,10 @@ examples/agents/scripts/run-llm.sh --repeat 5
   same "invalid run" every control failure produces (ADR-009) — correct, since it isn't a pass.
 - `X402_LLM_POLICY_HINTS=1` adds `allowed_hosts` and the task budget to the system prompt, for
   comparing an LLM given an explicit policy hint against one given none.
+- The agent exits 0 only when the model ends its turn on its own. Any other stop (budget used
+  up, refusal, `max_tokens`, turn limit, API error) exits 3, which the harness records as an
+  agent error rather than a pass. Each run's messages, tool calls, stop reason, model and
+  estimated cost go to `<out>/runs/<run_id>.transcript.json`, next to the run ledger.
 - Offline, CI-safe tests cover the tool handlers (against a live mock adversary) and the agent
   loop (against a scripted, stubbed Anthropic client) — no key or network needed for `pnpm test`.
 

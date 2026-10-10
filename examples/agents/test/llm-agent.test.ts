@@ -213,10 +213,157 @@ describe("runAgentLoop", () => {
     expect(result.estimatedCostUsd).toBeCloseTo(6, 6);
   });
 
-  it("stops with no_tool_use when the model stops without calling a tool or end_turn", async () => {
+  it("stops with max_tokens when the response is truncated", async () => {
     const create = vi
       .fn()
       .mockResolvedValueOnce(fakeMessage({ stopReason: "max_tokens", content: [textBlock("…")] }));
+
+    const result = await runAgentLoop({
+      client: { messages: { create } },
+      model: "claude-sonnet-5",
+      maxTurns: 12,
+      budgetUsd: 5,
+      system: "s",
+      userPrompt: "u",
+      tools: BASE_TOOLS,
+      handlers: {},
+    });
+
+    expect(result.stopReason).toBe("max_tokens");
+  });
+
+  it("treats a context-window stop as truncated and runs none of its tool calls", async () => {
+    const create = vi.fn().mockResolvedValueOnce(
+      fakeMessage({
+        stopReason: "model_context_window_exceeded",
+        content: [toolUseBlock("t1", "http_get", {})],
+      }),
+    );
+    const handler = vi.fn();
+
+    const result = await runAgentLoop({
+      client: { messages: { create } },
+      model: "claude-sonnet-5",
+      maxTurns: 12,
+      budgetUsd: 5,
+      system: "s",
+      userPrompt: "u",
+      tools: BASE_TOOLS,
+      handlers: { http_get: handler },
+    });
+
+    expect(result.stopReason).toBe("max_tokens");
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("stops with max_tokens without running a truncated tool call", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeMessage({ stopReason: "max_tokens", content: [toolUseBlock("t1", "http_get", {})] }),
+      );
+    const handler = vi.fn();
+
+    const result = await runAgentLoop({
+      client: { messages: { create } },
+      model: "claude-sonnet-5",
+      maxTurns: 12,
+      budgetUsd: 5,
+      system: "s",
+      userPrompt: "u",
+      tools: BASE_TOOLS,
+      handlers: { http_get: handler },
+    });
+
+    expect(result.stopReason).toBe("max_tokens");
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("returns api_error instead of throwing when the API call fails", async () => {
+    const create = vi.fn().mockRejectedValueOnce(new Error("connection reset"));
+
+    const result = await runAgentLoop({
+      client: { messages: { create } },
+      model: "claude-sonnet-5",
+      maxTurns: 12,
+      budgetUsd: 5,
+      system: "s",
+      userPrompt: "u",
+      tools: BASE_TOOLS,
+      handlers: {},
+    });
+
+    expect(result.stopReason).toBe("api_error");
+    expect(result.error).toMatch(/connection reset/);
+  });
+
+  it("sends max_tokens 16000, adaptive thinking and an explicit effort", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(fakeMessage({ stopReason: "end_turn", content: [textBlock("ok")] }));
+
+    const result = await runAgentLoop({
+      client: { messages: { create } },
+      model: "claude-sonnet-5",
+      maxTurns: 12,
+      budgetUsd: 5,
+      system: "s",
+      userPrompt: "u",
+      tools: BASE_TOOLS,
+      handlers: {},
+    });
+
+    const params = create.mock.calls[0]?.[0] as Anthropic.MessageCreateParamsNonStreaming;
+    expect(params.max_tokens).toBe(16000);
+    expect(params.thinking).toEqual({ type: "adaptive" });
+    expect(params.output_config).toEqual({ effort: "high" });
+    expect(result.request).toEqual({
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      effort: "high",
+    });
+  });
+
+  it("reports the cost of each API call as it happens", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeMessage({
+          stopReason: "tool_use",
+          content: [toolUseBlock("t1", "http_get", {})],
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        fakeMessage({
+          stopReason: "end_turn",
+          content: [textBlock("ok")],
+          inputTokens: 0,
+          outputTokens: 1_000_000,
+        }),
+      );
+    const onApiCall = vi.fn();
+
+    await runAgentLoop({
+      client: { messages: { create } },
+      model: "claude-sonnet-5",
+      maxTurns: 12,
+      budgetUsd: 50,
+      system: "s",
+      userPrompt: "u",
+      tools: BASE_TOOLS,
+      handlers: { http_get: vi.fn().mockResolvedValue("{}") },
+      onApiCall,
+    });
+
+    expect(onApiCall.mock.calls.map((c) => c[0])).toEqual([2, 10]);
+  });
+
+  it("stops with no_tool_use when the model stops without calling a tool or end_turn", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(fakeMessage({ stopReason: "pause_turn", content: [textBlock("…")] }));
 
     const result = await runAgentLoop({
       client: { messages: { create } },
@@ -236,6 +383,10 @@ describe("runAgentLoop", () => {
 describe("pricingFor", () => {
   it("returns the known rate for claude-sonnet-5", () => {
     expect(pricingFor("claude-sonnet-5")).toEqual({ inputPerMTok: 2, outputPerMTok: 10 });
+  });
+
+  it("returns the claude-sonnet-5 rate for claude-sonnet-5-5", () => {
+    expect(pricingFor("claude-sonnet-5-5")).toEqual({ inputPerMTok: 2, outputPerMTok: 10 });
   });
 
   it("falls back to DEFAULT_PRICING for an unrecognized model override", () => {
