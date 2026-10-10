@@ -27,6 +27,11 @@ export interface Provenance {
   versions: Record<string, string>;
 }
 
+/** Escapes every regular-expression metacharacter in `text`. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
+}
+
 export function buildProvenance(mode: string, loaded: LoadedVersions): Provenance {
   const agentkit = loaded["@coinbase/agentkit"];
   const core = loaded["@x402/core"];
@@ -38,7 +43,7 @@ export function buildProvenance(mode: string, loaded: LoadedVersions): Provenanc
   const workspace = readFileSync(join(projectDir, "pnpm-workspace.yaml"), "utf8");
 
   const integrity = new RegExp(
-    `'?@coinbase/agentkit@${agentkit.version.replace(/\./g, "\\.")}'?:\\s*\\n\\s*resolution: \\{integrity: ([^,}\\s]+)`,
+    `'?@coinbase/agentkit@${escapeRegExp(agentkit.version)}'?:\\s*\\n\\s*resolution: \\{integrity: ([^,}\\s]+)`,
   ).exec(lockText)?.[1];
   const override = /"@x402\/core":\s*([0-9.]+)/.exec(workspace)?.[1];
   if (!integrity) throw new UnmeasuredError("AgentKit's integrity is not in the lockfile");
