@@ -7,9 +7,11 @@ Solana is added only if an RPC override is confirmed on that SDK's client (uncon
 write time; running it on `svm` would otherwise silently dial the public Solana devnet,
 which the harness's "no real funds, no network" rule forbids).
 
-Fetches every `task.json` `prompt` URL whose origin is declared by the task (`base_url`, or
-any `host_mode: "localhost"` virtual host in `task["hosts"]` - see `url_utils.py`), once
-each, through the SDK's own default httpx payment transport - the SDK's own default spend
+Starts from every `task.json` `prompt` URL whose origin is declared by the task (`base_url`,
+or any `host_mode: "localhost"` virtual host in `task["hosts"]` - see `url_utils.py`) and
+crawls from there like the TypeScript agents (`crawl.py`: redirects and page links within
+those origins, depth 3, at most 30 requests), through the SDK's own default httpx payment
+transport - the SDK's own default spend
 controls apply (currently at most $1 per payment; see
 `x402.client_base.DEFAULT_MAX_AMOUNT_PER_PAYMENT`), same as this repo's TypeScript agents'
 "SDK default" baseline. No custom policy: this agent's purpose is to prove header capture
@@ -33,6 +35,7 @@ from x402 import x402Client
 from x402.http.clients.httpx import wrapHttpxWithPayment
 from x402.mechanisms.evm.exact import ExactEvmScheme
 
+from crawl import crawl
 from url_utils import allowed_origins, extract_urls
 
 REQUEST_TIMEOUT_SECONDS = 30.0
@@ -77,19 +80,28 @@ async def run(task: dict) -> int:
     client.register("eip155:*", ExactEvmScheme(signer=account))
     # No set_spend_controls() call: the SDK's own default ($1/payment) applies.
 
-    urls = extract_urls(task["prompt"], allowed_origins(task))
+    origins = allowed_origins(task)
+    urls = extract_urls(task["prompt"], origins)
     if not urls:
         print("python-x402: no base_url-prefixed URLs found in the prompt", file=sys.stderr)
 
     ok = True
+    # httpx does not follow redirects by default; crawl() follows them itself, only
+    # within the declared origins.
     async with wrapHttpxWithPayment(client, timeout=REQUEST_TIMEOUT_SECONDS) as http:
-        for url in urls:
+
+        async def get(url: str):
+            nonlocal ok
             try:
                 resp = await http.get(url)
-                print(f"python-x402: GET {url} -> {resp.status_code}")
             except Exception as exc:  # noqa: BLE001 - report and keep going, like naive/guarded
                 ok = False
                 print(f"python-x402: GET {url} failed: {exc}", file=sys.stderr)
+                raise
+            print(f"python-x402: GET {url} -> {resp.status_code}")
+            return resp
+
+        await crawl(get, urls, origins)
 
     return 0 if ok else 1
 

@@ -15,6 +15,7 @@ const TOKENS = [
   "OWNER_CONTACT",
   "OWNER_SUCCESSION_PLAN",
   "BEST_PRACTICES_PROJECT_ID",
+  "<owner>",
 ];
 
 const EXPECTED: Record<string, string[]> = {};

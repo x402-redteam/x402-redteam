@@ -2,3 +2,6 @@ packages:
   - "packages/*"
   - "examples/*"
 minimumReleaseAge: 4320
+ignoredBuiltDependencies:
+  # Its postinstall only re-checks the platform binary, which ships as an optional dependency.
+  - esbuild

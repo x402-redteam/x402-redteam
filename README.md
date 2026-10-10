@@ -45,7 +45,7 @@ There is no npm package. Two supported routes:
 ## 60-second quickstart
 
 ```bash
-git clone https://github.com/<owner>/x402-redteam.git
+git clone https://github.com/x402-redteam/x402-redteam.git
 cd x402-redteam
 pnpm install
 
@@ -63,9 +63,9 @@ real summary looks like this:
 
 ## Summary
 
-| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility |
-|---|---|---|---|---|---|---|---|---|
-| 93 | 6.5% | $622.473 | $0.00 | 1000000000000.00× | 11 | 6.8 | 8/8 | 100.0% |
+| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility | guardrail errors |
+|---|---|---|---|---|---|---|---|---|---|
+| 93 | 6.5% | $622.473 | $0.00 | 1000000000000.00× | 11 | 6.8 | 8/8 | 100.0% | — |
 
 ## By category
 
@@ -198,11 +198,10 @@ knowledge of this harness at all — just `new URL(requestedUrl).hostname` check
 does a real loopback GET; if either fails (some containers, and older/unusual DNS setups, don't
 wire up `*.localhost`), it falls back to `--host-mode path` automatically and warns — this is
 recorded in `report.json`'s `config.host_mode`, so a silent fallback is never hidden. **Verified on
-macOS + Node 20.19.5** (this repo's own dev/CI host): `dns.lookup()` resolves a `*.localhost` name
-to both `127.0.0.1` and `::1`, and a real HTTP round trip through it reaches a 127.0.0.1-bound
-server. **Not verified**: GitHub's `ubuntu-latest` runner (expected to work via
-systemd-resolved/nss-myhostname), musl/alpine containers (expected to fail — use `--host-mode
-path` there), and Windows.
+macOS and on GitHub's `ubuntu-latest` runner** (CI's `host-resolution` job checks glibc, Node and
+Python resolution on every CI run): a `*.localhost` name resolves to loopback, and a real
+HTTP round trip through it reaches a 127.0.0.1-bound server. **Not verified**: musl/alpine
+containers (expected to fail — use `--host-mode path` there) and Windows.
 
 `path` mode is kept for environments where `*.localhost` genuinely doesn't resolve. It is
 **not** a realistic test of a host-allowlist guardrail: every request's hostname is the harness's
@@ -347,12 +346,16 @@ pnpm x402-redteam run --agent "examples/agents-py/.venv/bin/python examples/agen
 ```
 
 The venv is project-local (`examples/agents-py/.venv`, gitignored) and never touches system Python
-or a global install. The agent fetches only the URLs named in the prompt (`base_url`-prefixed, or
-any `*.localhost` origin under [`--host-mode localhost`](#host-modes)), once each, through the
+or a global install. The agent starts from the URLs named in the prompt (`base_url`-prefixed, or
+any `*.localhost` origin under [`--host-mode localhost`](#host-modes)), through the
 SDK's own default `httpx` payment transport and its own default spend controls (no custom policy)
 — like this repo's TypeScript `sdk-default` baseline, it measures what the third-party SDK does on
 its own, not a guardrail this repo wrote. `httpx` resolves `*.localhost` the same way Python's
 `socket.getaddrinfo` does — verified on this repo's dev host (macOS, Python via `uv`).
+
+Like the TypeScript agents, it follows redirects and page links within the declared hosts (depth
+3, at most 30 requests). Expect a valid run (all four EVM controls pass) that exits 1: the SDK's
+defaults stop some attacks but not all.
 
 ## Scenarios
 
@@ -400,7 +403,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: <owner>/x402-redteam@v0
+      - uses: x402-redteam/x402-redteam@v0
         with:
           agent: "node my-agent.js"
           guardrail-id: my-guardrail-v1
@@ -412,7 +415,7 @@ guardrail over stdio (GDP v1) against the same corpus — `agent` and `guardrail
 exclusive, and the action fails fast (exit 2) if you give both or neither:
 
 ```yaml
-- uses: <owner>/x402-redteam@v0
+- uses: x402-redteam/x402-redteam@v0
   with:
     guardrail: "node my-guardrail.js"
     guardrail-id: my-guardrail-v1
@@ -429,7 +432,7 @@ strategy:
   matrix:
     guardrail: [allow-all, deny-all, reference-policy]
 steps:
-  - uses: <owner>/x402-redteam@v0
+  - uses: x402-redteam/x402-redteam@v0
     with:
       guardrail: "tsx examples/guardrails/${{ matrix.guardrail }}.ts"
       artifact-name: "report-${{ matrix.guardrail }}"
