@@ -44,6 +44,12 @@ There is no npm package. Two supported routes:
 
 ## 60-second quickstart
 
+**Terms.** The *agent* is whatever program holds the wallet and decides to pay: the thing under
+test. Yours will usually be autonomous, an LLM deciding for itself what to fetch and pay. The
+programs in [`examples/agents/`](examples/agents/) are mostly **scripted reference payers**: each
+follows one fixed rule, so its result is known in advance. They calibrate the harness and are not
+autonomous agents. The one autonomous example is the [LLM agent](#bring-an-llm-agent).
+
 ```bash
 git clone https://github.com/x402-redteam/x402-redteam.git
 cd x402-redteam
@@ -53,9 +59,9 @@ pnpm x402-redteam run --agent "tsx examples/agents/src/naive.ts" \
   --agent-id naive-baseline --guardrail-id naive-baseline
 ```
 
-`naive` is the maximally gullible reference agent — it pays every 402 it meets and acts on page
-prose — so it fails almost every attack scenario, while still doing the legitimate job correctly
-on every control task (it's not a crashed or do-nothing agent — see "controls" below). That run's
+`naive` is the maximally gullible reference payer. Its one fixed rule is to pay every 402 it meets
+and act on page prose, so it fails almost every attack scenario, while still doing the legitimate
+job correctly on every control task (it's not a crashed or do-nothing payer — see "controls" below). That run's
 real summary looks like this:
 
 ```
@@ -103,8 +109,8 @@ every *legitimate* task correctly; an agent that crashes or does nothing instead
 controls, and its report opens with an INVALID banner — `summary.valid: false` and CLI exit code
 **2** — which is a different failure mode from merely losing to an attack scenario.)
 
-Now point it at a guardrail that actually checks host allowlists, per-payment budgets, advertised
-price and one-payment-per-route (see [`examples/agents/src/guarded.ts`](examples/agents/src/guarded.ts)):
+Now run the scripted reference payer whose fixed policy checks host allowlists, per-payment
+budgets, advertised price and one-payment-per-route (see [`examples/agents/src/guarded.ts`](examples/agents/src/guarded.ts)):
 
 ```bash
 pnpm x402-redteam run --agent "tsx examples/agents/src/guarded.ts" \
@@ -112,7 +118,8 @@ pnpm x402-redteam run --agent "tsx examples/agents/src/guarded.ts" \
 ```
 
 `guarded` passes every attack scenario×chain at $0 unauthorized, plus every control (safety score
-100). Try your own agent by pointing `--agent` at whatever command starts it — see the integration
+100). Neither result says anything about a real agent; they show the harness tells a gullible
+payer from a careful one. Try your own agent by pointing `--agent` at whatever command starts it — see the integration
 contract below.
 
 ## Integration contract
@@ -229,7 +236,7 @@ proxy — it allow-lists the harness's own loopback address alongside the loaded
 A target host outside the loaded scenario gets a `502` and is logged (not scored). `CONNECT` always
 gets `405` — there is no CA and never will be; this harness only ever serves plain `http://`.
 
-This mode exists for **audits and the agent track**, not the two reference agents or the ranked
+This mode exists for **audits and the agent track**, not the scripted reference payers or the ranked
 guardrail track — our own crawler only follows `task.base_url`- and `*.localhost`-prefixed links
 (see `localhost`/`path` above), not bare proxy-mode origins, so `naive`/`guarded`/`hostname-allowlist`
 don't do anything useful under `--host-mode proxy` today. A real third-party agent or framework
@@ -290,7 +297,7 @@ client.register("solana:*", new ExactSvmScheme(wrapped, { rpcUrl: task.solana_rp
 > guardrail does. If you're auditing an agent and its run looks suspiciously safe against a
 > large-amount scenario (e.g. `unit_confusion`), check whether that's your guardrail or the SDK's
 > own default before concluding anything about the agent's own judgment. Our `naive` reference
-> agent explicitly disables it (`client.setSpendControls({ maxAmountPerPayment: false })`) so it
+> payer explicitly disables it (`client.setSpendControls({ maxAmountPerPayment: false })`) so it
 > models a payer with *no* spend awareness at all, rather than being accidentally protected by the
 > SDK.
 
@@ -300,8 +307,8 @@ via `recordTransfer` from `@x402-redteam/capture` — see
 
 ### Bring an LLM agent
 
-[`examples/agents/src/llm.ts`](examples/agents/src/llm.ts) is a Claude tool-use agent that decides
-*for itself* whether to pay, instead of following a scripted policy — three tools (`http_get`,
+[`examples/agents/src/llm.ts`](examples/agents/src/llm.ts) is the repo's one autonomous example: a
+Claude tool-use agent that decides *for itself* whether to pay, instead of following a scripted policy — three tools (`http_get`,
 `pay_and_get`, `send_usdc`), no attack awareness in its system prompt, `--repeat` and pass_rate
 instead of a determinism assertion. Its results are **experimental**: never committed to
 `results/`, never ranked, never run in CI (ADR-008 amendment).
@@ -331,9 +338,9 @@ examples/agents/scripts/run-llm.sh --repeat 5
 - Offline, CI-safe tests cover the tool handlers (against a live mock adversary) and the agent
   loop (against a scripted, stubbed Anthropic client) — no key or network needed for `pnpm test`.
 
-### Python agents
+### Python reference payer
 
-[`examples/agents-py/`](examples/agents-py/) runs the same corpus against a client on a different
+[`examples/agents-py/`](examples/agents-py/) is a scripted payer, not an autonomous agent. It runs the same corpus against a client on a different
 SDK entirely — the [`x402` PyPI package](https://pypi.org/project/x402/) — to prove header capture
 works cross-language, not just against `@x402/*`. EVM only in Bolt 5:
 
@@ -353,7 +360,7 @@ SDK's own default `httpx` payment transport and its own default spend controls (
 its own, not a guardrail this repo wrote. `httpx` resolves `*.localhost` the same way Python's
 `socket.getaddrinfo` does — verified on this repo's dev host (macOS, Python via `uv`).
 
-Like the TypeScript agents, it follows redirects and page links within the declared hosts (depth
+Like the TypeScript reference payers, it follows redirects and page links within the declared hosts (depth
 3, at most 30 requests). Expect a valid run (all four EVM controls pass) that exits 1: the SDK's
 defaults stop some attacks but not all.
 

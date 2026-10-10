@@ -1,7 +1,7 @@
 [project]
 name = "x402-redteam-agents-py"
 version = "0.0.1"
-description = "Python x402 reference agent for x402-redteam (U12, Bolt 5) - a header-capture, cross-language / third-party-SDK baseline. EVM only in Bolt 5."
+description = "Python x402 reference payer for x402-redteam (U12, Bolt 5) - a header-capture, cross-language / third-party-SDK baseline. EVM only in Bolt 5."
 requires-python = ">=3.10"
 dependencies = [
     "x402[evm,httpx]==2.25.0",
