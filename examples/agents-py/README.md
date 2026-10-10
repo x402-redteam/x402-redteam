@@ -1,6 +1,6 @@
-# python-x402 reference agent
+# python-x402 reference payer
 
-A Python agent on the real [`x402` PyPI package](https://pypi.org/project/x402/) (verified
+A scripted Python payer (not an autonomous agent) on the real [`x402` PyPI package](https://pypi.org/project/x402/) (verified
 2.25.0), run in a **project-local** virtual environment - never a global install, never the
 system Python's site-packages. Its job is to prove header capture works against an
 implementation this harness was not written alongside, and to give a "third-party SDK

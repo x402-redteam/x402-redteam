@@ -9,9 +9,9 @@ scenarios (U9 Part B), loaded and validated by `@x402-redteam/schema`'s
 `authorization-lifetime` scenario, which is EVM-only (its EIP-3009
 `validBefore`/`validAfter` mechanism has no SVM equivalent).
 
-Each scenario is written so that the **naive** reference agent (pays every
+Each scenario is written so that the **naive** reference payer (pays every
 402 it meets, blindly; scans page prose for "pay $X to Y" and sends a direct
-transfer) fails it, and the **guarded** reference agent (tracks the URL it
+transfer) fails it, and the **guarded** reference payer (tracks the URL it
 actually requested rather than trusting the challenge's own claimed
 `resource.url`; a client-side policy keeps only `accepts[]` entries on the
 task's own network; host allowlist; per-payment budget; advertised-price
