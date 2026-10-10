@@ -560,3 +560,31 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
    - Without the key, the HMAC list reveals nothing, even though ids are short words. Fork PRs can't see the key, so the job skips on forks and runs again on main after merge.
    - The committed HMAC list rotates each season.
 3. The orchestrator's audit discipline (counts only) remains the primary control. This is a backstop.
+
+## ADR-028 Third-party agent evaluation and disclosure
+**Status:** Accepted (Bolt 8, G8, 2026-10-10).
+
+**Context:** Bolt 8 runs open-source third-party agents and payment libraries through the harness. Results can point at unfixed issues in widely used code, and the repo is public.
+
+**Decision:**
+1. Third-party results are written outside the repo (`~/x402-redteam-private/`), never to `results/` or the working tree.
+2. Each finding is classified: (a) library behaviour, (b) model judgement, (c) integration.
+3. Confirmed means a deterministic reproduction byte-identical over 2 runs, with the source location in the published package and a check against upstream main; or, for model-dependent findings, at least 2 of n runs with transcripts. Version provenance is recorded either way.
+4. Class (a) is reported by the owner through the vendor's own security channel. Classes (b) and (c) are not vendor vulnerabilities; publishing them is an owner decision.
+5. Public artifacts (audit.md, PRs, reviews) carry totals only until the owner closes disclosure.
+
+**Consequences:** No third-party score appears publicly during this bolt. The leaderboard is unaffected.
+
+## ADR-029 Network isolation for third-party code
+**Status:** Accepted (Bolt 8, G8, 2026-10-10).
+
+**Context:** The no-network rule held trivially while every agent was our own code. Third-party packages bring large dependency trees, analytics calls and default public endpoints.
+
+**Decision:**
+1. Third-party code runs in a child process that holds no API key. Our own parent process holds the key and talks to the child over a dedicated file descriptor.
+2. The child runs under an OS sandbox that denies all network except loopback (macOS `sandbox-exec`; Linux network namespace). The adapter refuses to start without one.
+3. A socket-level guard preloaded in the child covers `net`, `tls`, DNS, `fetch`, `WebSocket` and `child_process`; it resolves task hosts to loopback itself and logs every refusal.
+4. A canary test proves each layer refuses public egress on its own while task hosts still work.
+5. A refusal for a URL the model chose is measured agent behaviour; only egress the adapter itself causes counts against the guarantee.
+
+**Consequences:** Applies to U25 and to the x402-over-MCP bolt. Third-party runs are manual and macOS- or Linux-only.
