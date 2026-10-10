@@ -287,4 +287,186 @@ describe("attribute", () => {
     );
     expect(exactMatch.instruction_source).toBe("prose");
   });
+  describe("payment made after earlier unpaid requests", () => {
+    const c1 = challenge({ challenge_id: "provider.test/api/report#1", seq: 1 });
+    const c2 = challenge({ challenge_id: "provider.test/api/report#2", seq: 2 });
+
+    it("binds to the unpaid challenge of the current issuance for its route", () => {
+      const result = attribute(
+        payment(),
+        ctx({ challenges: [c1, c2], current_challenge_ids: [c2.challenge_id] }),
+      );
+      expect(result).toEqual({
+        instruction_source: "header",
+        challenge_id: c2.challenge_id,
+        replay: false,
+      });
+    });
+
+    it("binds a resubmitted credential to the current challenge and marks it a replay", () => {
+      // The same signed credential was already captured once (same dedupe_key) and
+      // credited to c1; resubmitting it against a fresh issuance is still a replay.
+      const prior = [priorPayment({ challenge_id: c1.challenge_id, dedupe_key: "evm:0xnonce1" })];
+      const result = attribute(
+        payment({ dedupe_key: "evm:0xnonce1" }),
+        ctx({ challenges: [c1, c2], prior, current_challenge_ids: [c2.challenge_id] }),
+      );
+      expect(result).toEqual({
+        instruction_source: "header",
+        challenge_id: c2.challenge_id,
+        replay: true,
+      });
+    });
+
+    it("binds to the earliest unpaid match when no current issuance is given", () => {
+      const result = attribute(payment(), ctx({ challenges: [c1, c2] }));
+      expect(result).toEqual({
+        instruction_source: "header",
+        challenge_id: c1.challenge_id,
+        replay: false,
+      });
+    });
+
+    it("falls back to the earliest unpaid match when the current challenge is already paid", () => {
+      const prior = [priorPayment({ challenge_id: c2.challenge_id })];
+      const result = attribute(
+        payment(),
+        ctx({ challenges: [c1, c2], prior, current_challenge_ids: [c2.challenge_id] }),
+      );
+      expect(result).toEqual({
+        instruction_source: "header",
+        challenge_id: c1.challenge_id,
+        replay: false,
+      });
+    });
+
+    it("binds to the latest match as a replay when every match is paid", () => {
+      const prior = [
+        priorPayment({ challenge_id: c1.challenge_id }),
+        priorPayment({ challenge_id: c2.challenge_id, seq: 1, dedupe_key: "evm:0xother" }),
+      ];
+      const result = attribute(
+        payment(),
+        ctx({ challenges: [c1, c2], prior, current_challenge_ids: [c1.challenge_id] }),
+      );
+      expect(result).toEqual({
+        instruction_source: "header",
+        challenge_id: c2.challenge_id,
+        replay: true,
+      });
+    });
+
+    it("ignores a current challenge that the payment does not match", () => {
+      const other = challenge({
+        challenge_id: "provider.test/other#1",
+        route_key: "provider.test/other",
+        seq: 3,
+        requirements: { amount: "2000" },
+      });
+      const result = attribute(
+        payment(),
+        ctx({ challenges: [c1, c2, other], current_challenge_ids: [other.challenge_id] }),
+      );
+      expect(result.challenge_id).toBe(c1.challenge_id);
+      expect(result.replay).toBe(false);
+    });
+
+    it("binds identical challenges on different routes to the route that was paid", () => {
+      const stations = [1, 2, 3].map((n) =>
+        challenge({
+          challenge_id: `provider.test/stations/${n}#1`,
+          route_key: `provider.test/stations/${n}`,
+          seq: n,
+        }),
+      );
+      const result = attribute(
+        payment(),
+        ctx({ challenges: stations, current_challenge_ids: ["provider.test/stations/3#1"] }),
+      );
+      expect(result.challenge_id).toBe("provider.test/stations/3#1");
+      expect(result.replay).toBe(false);
+    });
+
+    it("a shim capture first, then the header capture: the merged entry keeps the header's challenge", () => {
+      const dedupe_key = "evm:0xshimfirst";
+      const decoded = payment({ dedupe_key });
+      let payments: Payment[] = [];
+
+      const shimAttr = attribute(decoded, ctx({ challenges: [c1, c2], prior: payments }));
+      expect(shimAttr.challenge_id).toBe(c1.challenge_id);
+      payments = merge(payments, {
+        ...priorPayment({ dedupe_key, capture: "shim", seq: 5 }),
+        ...shimAttr,
+      });
+
+      const headerAttr = attribute(
+        decoded,
+        ctx({ challenges: [c1, c2], prior: payments, current_challenge_ids: [c2.challenge_id] }),
+      );
+      expect(headerAttr).toEqual({
+        instruction_source: "header",
+        challenge_id: c2.challenge_id,
+        replay: false,
+      });
+      payments = merge(payments, {
+        ...priorPayment({ dedupe_key, capture: "header", seq: 6 }),
+        ...headerAttr,
+      });
+
+      expect(payments).toHaveLength(1);
+      expect(payments[0]?.capture).toBe("header+shim");
+      expect(payments[0]?.challenge_id).toBe(c2.challenge_id);
+      expect(payments[0]?.replay).toBe(false);
+    });
+
+    it("overlapping multi-option challenges: each payment binds to its own route, with no replay", () => {
+      // Route A offers options X and Y; route B offers only Y. A payment with option Y
+      // on route B, then a payment with option X on route A, each pay their own route.
+      const optionX: IssuedChallenge["requirements"] = {
+        ...challenge().requirements,
+        network: "eip155:8453",
+        asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      };
+      const optionY = challenge().requirements;
+      const a = challenge({
+        challenge_id: "provider.test/a#1",
+        route_key: "provider.test/a",
+        seq: 1,
+        accepts: [optionX, optionY],
+      });
+      const b = challenge({
+        challenge_id: "provider.test/b#1",
+        route_key: "provider.test/b",
+        seq: 2,
+        accepts: [optionY],
+      });
+
+      const payY = payment({ dedupe_key: "evm:0xy" });
+      const yAttr = attribute(
+        payY,
+        ctx({ challenges: [a, b], current_challenge_ids: [b.challenge_id] }),
+      );
+      expect(yAttr).toEqual({
+        instruction_source: "header",
+        challenge_id: b.challenge_id,
+        replay: false,
+      });
+
+      const prior = [priorPayment({ dedupe_key: "evm:0xy", challenge_id: b.challenge_id })];
+      const payX = payment({
+        dedupe_key: "evm:0xx",
+        network: optionX.network,
+        asset: optionX.asset,
+      });
+      const xAttr = attribute(
+        payX,
+        ctx({ challenges: [a, b], prior, current_challenge_ids: [a.challenge_id] }),
+      );
+      expect(xAttr).toEqual({
+        instruction_source: "header",
+        challenge_id: a.challenge_id,
+        replay: false,
+      });
+    });
+  });
 });

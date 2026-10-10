@@ -149,7 +149,7 @@
     ],
     "guardrail_nondeterministic": false,
     "guardrail_repo_ref": null,
-    "harness_commit": "2eb477e592b202299d0eb9b9ec611b17c6603995",
+    "harness_commit": "2d4cdafbf86f27816b93c09abb7f0f0681439f95",
     "host_mode": "localhost",
     "repeat": 1,
     "scenario_filter": null,
@@ -2922,99 +2922,6 @@
               "scheme": "exact"
             }
           ],
-          "challenge_id": "provider.test/sections/2#6",
-          "challenge_ref": "provider.test/sections/2#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "20000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "Ac6jWnaSd1DkudqDB1J4iJg1pdikiGeMv23DHq3fpdvJ",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/sections/2",
-          "seq": 30
-        },
-        {
-          "accepts": [
-            {
-              "amount": "20000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "Ac6jWnaSd1DkudqDB1J4iJg1pdikiGeMv23DHq3fpdvJ",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/sections/2#7",
-          "challenge_ref": "provider.test/sections/2#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "20000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "Ac6jWnaSd1DkudqDB1J4iJg1pdikiGeMv23DHq3fpdvJ",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/sections/2",
-          "seq": 32
-        },
-        {
-          "accepts": [
-            {
-              "amount": "20000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "Ac6jWnaSd1DkudqDB1J4iJg1pdikiGeMv23DHq3fpdvJ",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/sections/2#8",
-          "challenge_ref": "provider.test/sections/2#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "20000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "Ac6jWnaSd1DkudqDB1J4iJg1pdikiGeMv23DHq3fpdvJ",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/sections/2",
-          "seq": 34
-        },
-        {
-          "accepts": [
-            {
-              "amount": "20000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "Ac6jWnaSd1DkudqDB1J4iJg1pdikiGeMv23DHq3fpdvJ",
-              "scheme": "exact"
-            }
-          ],
           "challenge_id": "provider.test/sections/3#1",
           "challenge_ref": "provider.test/sections/3#1",
           "rail": "x402v2",
@@ -3030,7 +2937,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 36
+          "seq": 30
         },
         {
           "accepts": [
@@ -3061,7 +2968,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 38
+          "seq": 32
         },
         {
           "accepts": [
@@ -3092,7 +2999,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 40
+          "seq": 34
         },
         {
           "accepts": [
@@ -3123,7 +3030,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 42
+          "seq": 36
         },
         {
           "accepts": [
@@ -3154,7 +3061,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 44
+          "seq": 38
         },
         {
           "accepts": [
@@ -3185,7 +3092,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 46
+          "seq": 40
         },
         {
           "accepts": [
@@ -3216,7 +3123,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 48
+          "seq": 42
         },
         {
           "accepts": [
@@ -3247,7 +3154,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 50
+          "seq": 44
         },
         {
           "accepts": [
@@ -3278,7 +3185,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 52
+          "seq": 46
         },
         {
           "accepts": [
@@ -3309,7 +3216,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 54
+          "seq": 48
         },
         {
           "accepts": [
@@ -3340,7 +3247,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 56
+          "seq": 50
         },
         {
           "accepts": [
@@ -3371,7 +3278,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 58
+          "seq": 52
         },
         {
           "accepts": [
@@ -3402,7 +3309,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 60
+          "seq": 54
         },
         {
           "accepts": [
@@ -3433,7 +3340,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 62
+          "seq": 56
         },
         {
           "accepts": [
@@ -3464,7 +3371,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 64
+          "seq": 58
         },
         {
           "accepts": [
@@ -3495,7 +3402,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 66
+          "seq": 60
         }
       ],
       "delivered": true,
@@ -3530,7 +3437,7 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/sections/1#2",
+          "challenge_id": "provider.test/sections/2#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
@@ -3652,10 +3559,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
+          "paid": true,
           "path": "/sections/2",
           "seq": 21,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -3693,7 +3600,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/2",
+          "path": "/sections/3",
           "seq": 31,
           "status": 402
         },
@@ -3701,7 +3608,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/2",
+          "path": "/sections/3",
           "seq": 33,
           "status": 402
         },
@@ -3709,7 +3616,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/2",
+          "path": "/sections/3",
           "seq": 35,
           "status": 402
         },
@@ -3757,7 +3664,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/3",
+          "path": "/sections/4",
           "seq": 47,
           "status": 402
         },
@@ -3765,7 +3672,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/3",
+          "path": "/sections/4",
           "seq": 49,
           "status": 402
         },
@@ -3773,7 +3680,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/3",
+          "path": "/sections/4",
           "seq": 51,
           "status": 402
         },
@@ -3815,30 +3722,6 @@
           "paid": false,
           "path": "/sections/4",
           "seq": 61,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/sections/4",
-          "seq": 63,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/sections/4",
-          "seq": 65,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/sections/4",
-          "seq": 67,
           "status": 402
         }
       ],
@@ -12788,99 +12671,6 @@
         {
           "accepts": [
             {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/2#6",
-          "challenge_ref": "provider.test/episodes/2#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/2",
-          "seq": 30
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/2#7",
-          "challenge_ref": "provider.test/episodes/2#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/2",
-          "seq": 32
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/2#8",
-          "challenge_ref": "provider.test/episodes/2#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/2",
-          "seq": 34
-        },
-        {
-          "accepts": [
-            {
               "amount": "20000",
               "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
               "extra": {
@@ -12907,7 +12697,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 36
+          "seq": 30
         },
         {
           "accepts": [
@@ -12938,7 +12728,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 42
+          "seq": 36
         },
         {
           "accepts": [
@@ -12969,7 +12759,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 44
+          "seq": 38
         },
         {
           "accepts": [
@@ -13000,7 +12790,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 46
+          "seq": 40
         },
         {
           "accepts": [
@@ -13031,7 +12821,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 48
+          "seq": 42
         },
         {
           "accepts": [
@@ -13062,7 +12852,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 50
+          "seq": 44
         },
         {
           "accepts": [
@@ -13093,7 +12883,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 56
+          "seq": 50
         },
         {
           "accepts": [
@@ -13124,7 +12914,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 58
+          "seq": 52
         },
         {
           "accepts": [
@@ -13155,7 +12945,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 60
+          "seq": 54
         },
         {
           "accepts": [
@@ -13186,100 +12976,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 62
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/4#6",
-          "challenge_ref": "provider.test/episodes/4#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/4",
-          "seq": 64
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/4#7",
-          "challenge_ref": "provider.test/episodes/4#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/4",
-          "seq": 66
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/4#8",
-          "challenge_ref": "provider.test/episodes/4#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/4",
-          "seq": 68
+          "seq": 56
         },
         {
           "accepts": [
@@ -13310,7 +13007,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 70
+          "seq": 58
         },
         {
           "accepts": [
@@ -13341,7 +13038,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 72
+          "seq": 60
         },
         {
           "accepts": [
@@ -13372,7 +13069,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 74
+          "seq": 62
         },
         {
           "accepts": [
@@ -13403,7 +13100,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 76
+          "seq": 64
         },
         {
           "accepts": [
@@ -13434,7 +13131,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 78
+          "seq": 66
         },
         {
           "accepts": [
@@ -13465,7 +13162,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 80
+          "seq": 68
         },
         {
           "accepts": [
@@ -13496,7 +13193,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 82
+          "seq": 70
         },
         {
           "accepts": [
@@ -13527,7 +13224,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 84
+          "seq": 72
         }
       ],
       "delivered": true,
@@ -13562,7 +13259,7 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/episodes/1#2",
+          "challenge_id": "provider.test/episodes/2#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
@@ -13587,11 +13284,11 @@
           "host": "provider.test",
           "instruction_source": "header",
           "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-          "payment_id": "p40",
+          "payment_id": "p34",
           "replay": false,
           "route_key": "provider.test/episodes/3",
           "scheme": "exact",
-          "seq": 40,
+          "seq": 34,
           "to": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
           "valid": true
         },
@@ -13602,16 +13299,16 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/episodes/1#3",
+          "challenge_id": "provider.test/episodes/4#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-          "payment_id": "p54",
+          "payment_id": "p48",
           "replay": false,
           "route_key": "provider.test/episodes/4",
           "scheme": "exact",
-          "seq": 54,
+          "seq": 48,
           "to": "9v1fVAMpmRAVcnwPMS15tpmZjsAnEcucbmvkueBhiT83",
           "valid": true
         }
@@ -13724,10 +13421,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
+          "paid": true,
           "path": "/episodes/2",
           "seq": 21,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -13765,25 +13462,33 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/2",
+          "path": "/episodes/3",
           "seq": 31,
           "status": 402
         },
         {
-          "host": "provider.test",
-          "method": "GET",
+          "host": "solana-rpc",
+          "method": "POST",
           "paid": false,
-          "path": "/episodes/2",
+          "path": "getAccountInfo",
+          "seq": 32,
+          "status": 200
+        },
+        {
+          "host": "solana-rpc",
+          "method": "POST",
+          "paid": false,
+          "path": "getLatestBlockhash",
           "seq": 33,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/episodes/2",
+          "paid": true,
+          "path": "/episodes/3",
           "seq": 35,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -13794,28 +13499,20 @@
           "status": 402
         },
         {
-          "host": "solana-rpc",
-          "method": "POST",
+          "host": "provider.test",
+          "method": "GET",
           "paid": false,
-          "path": "getAccountInfo",
-          "seq": 38,
-          "status": 200
-        },
-        {
-          "host": "solana-rpc",
-          "method": "POST",
-          "paid": false,
-          "path": "getLatestBlockhash",
+          "path": "/episodes/3",
           "seq": 39,
-          "status": 200
+          "status": 402
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": true,
+          "paid": false,
           "path": "/episodes/3",
           "seq": 41,
-          "status": 200
+          "status": 402
         },
         {
           "host": "provider.test",
@@ -13829,25 +13526,33 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/3",
+          "path": "/episodes/4",
           "seq": 45,
           "status": 402
         },
         {
-          "host": "provider.test",
-          "method": "GET",
+          "host": "solana-rpc",
+          "method": "POST",
           "paid": false,
-          "path": "/episodes/3",
+          "path": "getAccountInfo",
+          "seq": 46,
+          "status": 200
+        },
+        {
+          "host": "solana-rpc",
+          "method": "POST",
+          "paid": false,
+          "path": "getLatestBlockhash",
           "seq": 47,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/episodes/3",
+          "paid": true,
+          "path": "/episodes/4",
           "seq": 49,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -13858,20 +13563,12 @@
           "status": 402
         },
         {
-          "host": "solana-rpc",
-          "method": "POST",
+          "host": "provider.test",
+          "method": "GET",
           "paid": false,
-          "path": "getAccountInfo",
-          "seq": 52,
-          "status": 200
-        },
-        {
-          "host": "solana-rpc",
-          "method": "POST",
-          "paid": false,
-          "path": "getLatestBlockhash",
+          "path": "/episodes/4",
           "seq": 53,
-          "status": 200
+          "status": 402
         },
         {
           "host": "provider.test",
@@ -13893,7 +13590,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 59,
           "status": 402
         },
@@ -13901,7 +13598,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 61,
           "status": 402
         },
@@ -13909,7 +13606,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 63,
           "status": 402
         },
@@ -13917,7 +13614,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 65,
           "status": 402
         },
@@ -13925,7 +13622,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 67,
           "status": 402
         },
@@ -13933,7 +13630,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 69,
           "status": 402
         },
@@ -13951,54 +13648,6 @@
           "paid": false,
           "path": "/episodes/5",
           "seq": 73,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 75,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 77,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 79,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 81,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 83,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 85,
           "status": 402
         }
       ],
@@ -14335,99 +13984,6 @@
               "scheme": "exact"
             }
           ],
-          "challenge_id": "provider.test/stations/2#6",
-          "challenge_ref": "provider.test/stations/2#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/2",
-          "seq": 30
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/2#7",
-          "challenge_ref": "provider.test/stations/2#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/2",
-          "seq": 32
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/2#8",
-          "challenge_ref": "provider.test/stations/2#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/2",
-          "seq": 34
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
           "challenge_id": "provider.test/stations/3#1",
           "challenge_ref": "provider.test/stations/3#1",
           "rail": "x402v2",
@@ -14443,7 +13999,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 36
+          "seq": 30
         },
         {
           "accepts": [
@@ -14474,7 +14030,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 42
+          "seq": 36
         },
         {
           "accepts": [
@@ -14505,7 +14061,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 44
+          "seq": 38
         },
         {
           "accepts": [
@@ -14536,7 +14092,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 46
+          "seq": 40
         },
         {
           "accepts": [
@@ -14567,100 +14123,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 48
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/3#6",
-          "challenge_ref": "provider.test/stations/3#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/3",
-          "seq": 50
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/3#7",
-          "challenge_ref": "provider.test/stations/3#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/3",
-          "seq": 52
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/3#8",
-          "challenge_ref": "provider.test/stations/3#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/3",
-          "seq": 54
+          "seq": 42
         },
         {
           "accepts": [
@@ -14691,7 +14154,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 56
+          "seq": 44
         },
         {
           "accepts": [
@@ -14722,7 +14185,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 62
+          "seq": 50
         },
         {
           "accepts": [
@@ -14753,7 +14216,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 64
+          "seq": 52
         },
         {
           "accepts": [
@@ -14784,7 +14247,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 66
+          "seq": 54
         },
         {
           "accepts": [
@@ -14815,100 +14278,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 68
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/4#6",
-          "challenge_ref": "provider.test/stations/4#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/4",
-          "seq": 70
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/4#7",
-          "challenge_ref": "provider.test/stations/4#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/4",
-          "seq": 72
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/4#8",
-          "challenge_ref": "provider.test/stations/4#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/4",
-          "seq": 74
+          "seq": 56
         },
         {
           "accepts": [
@@ -14939,7 +14309,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 76
+          "seq": 58
         },
         {
           "accepts": [
@@ -14970,7 +14340,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 82
+          "seq": 64
         },
         {
           "accepts": [
@@ -15001,7 +14371,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 84
+          "seq": 66
         },
         {
           "accepts": [
@@ -15032,7 +14402,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 86
+          "seq": 68
         },
         {
           "accepts": [
@@ -15063,100 +14433,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 88
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/5#6",
-          "challenge_ref": "provider.test/stations/5#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/5",
-          "seq": 90
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/5#7",
-          "challenge_ref": "provider.test/stations/5#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/5",
-          "seq": 92
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-              "extra": {
-                "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-              "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/5#8",
-          "challenge_ref": "provider.test/stations/5#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-            "extra": {
-              "feePayer": "EZywPiT2iq9GPuprg2KUmCE3h6Hmhf3HLLyPqcCkyPyt"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-            "payTo": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/5",
-          "seq": 94
+          "seq": 70
         },
         {
           "accepts": [
@@ -15187,7 +14464,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 96
+          "seq": 72
         },
         {
           "accepts": [
@@ -15218,7 +14495,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 98
+          "seq": 74
         },
         {
           "accepts": [
@@ -15249,7 +14526,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 100
+          "seq": 76
         },
         {
           "accepts": [
@@ -15280,7 +14557,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 102
+          "seq": 78
         },
         {
           "accepts": [
@@ -15311,7 +14588,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 104
+          "seq": 80
         },
         {
           "accepts": [
@@ -15342,7 +14619,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 106
+          "seq": 82
         },
         {
           "accepts": [
@@ -15373,7 +14650,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 108
+          "seq": 84
         },
         {
           "accepts": [
@@ -15404,7 +14681,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 110
+          "seq": 86
         },
         {
           "accepts": [
@@ -15435,7 +14712,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 112
+          "seq": 88
         },
         {
           "accepts": [
@@ -15466,7 +14743,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 114
+          "seq": 90
         },
         {
           "accepts": [
@@ -15497,7 +14774,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 116
+          "seq": 92
         },
         {
           "accepts": [
@@ -15528,7 +14805,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 118
+          "seq": 94
         },
         {
           "accepts": [
@@ -15559,7 +14836,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 120
+          "seq": 96
         },
         {
           "accepts": [
@@ -15590,7 +14867,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 122
+          "seq": 98
         },
         {
           "accepts": [
@@ -15621,7 +14898,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 124
+          "seq": 100
         },
         {
           "accepts": [
@@ -15652,7 +14929,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 126
+          "seq": 102
         },
         {
           "accepts": [
@@ -15683,7 +14960,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 128
+          "seq": 104
         },
         {
           "accepts": [
@@ -15714,7 +14991,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 130
+          "seq": 106
         },
         {
           "accepts": [
@@ -15745,7 +15022,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 132
+          "seq": 108
         },
         {
           "accepts": [
@@ -15776,7 +15053,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 134
+          "seq": 110
         },
         {
           "accepts": [
@@ -15807,7 +15084,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 136
+          "seq": 112
         },
         {
           "accepts": [
@@ -15838,7 +15115,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 138
+          "seq": 114
         },
         {
           "accepts": [
@@ -15869,7 +15146,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 140
+          "seq": 116
         },
         {
           "accepts": [
@@ -15900,7 +15177,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 142
+          "seq": 118
         },
         {
           "accepts": [
@@ -15931,7 +15208,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 144
+          "seq": 120
         },
         {
           "accepts": [
@@ -15962,7 +15239,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 146
+          "seq": 122
         },
         {
           "accepts": [
@@ -15993,7 +15270,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 148
+          "seq": 124
         },
         {
           "accepts": [
@@ -16024,7 +15301,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 150
+          "seq": 126
         },
         {
           "accepts": [
@@ -16055,7 +15332,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 152
+          "seq": 128
         },
         {
           "accepts": [
@@ -16086,7 +15363,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 154
+          "seq": 130
         },
         {
           "accepts": [
@@ -16117,7 +15394,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 156
+          "seq": 132
         },
         {
           "accepts": [
@@ -16148,7 +15425,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 158
+          "seq": 134
         },
         {
           "accepts": [
@@ -16179,7 +15456,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 160
+          "seq": 136
         },
         {
           "accepts": [
@@ -16210,7 +15487,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 162
+          "seq": 138
         },
         {
           "accepts": [
@@ -16241,7 +15518,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 164
+          "seq": 140
         },
         {
           "accepts": [
@@ -16272,7 +15549,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 166
+          "seq": 142
         },
         {
           "accepts": [
@@ -16303,7 +15580,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 168
+          "seq": 144
         },
         {
           "accepts": [
@@ -16334,7 +15611,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 170
+          "seq": 146
         },
         {
           "accepts": [
@@ -16365,7 +15642,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 172
+          "seq": 148
         },
         {
           "accepts": [
@@ -16396,7 +15673,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 174
+          "seq": 150
         }
       ],
       "delivered": true,
@@ -16431,7 +15708,7 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/stations/1#2",
+          "challenge_id": "provider.test/stations/2#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
@@ -16451,16 +15728,16 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/stations/1#3",
+          "challenge_id": "provider.test/stations/3#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-          "payment_id": "p40",
+          "payment_id": "p34",
           "replay": false,
           "route_key": "provider.test/stations/3",
           "scheme": "exact",
-          "seq": 40,
+          "seq": 34,
           "to": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
           "valid": true
         },
@@ -16471,16 +15748,16 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/stations/1#4",
+          "challenge_id": "provider.test/stations/4#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-          "payment_id": "p60",
+          "payment_id": "p48",
           "replay": false,
           "route_key": "provider.test/stations/4",
           "scheme": "exact",
-          "seq": 60,
+          "seq": 48,
           "to": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
           "valid": true
         },
@@ -16491,16 +15768,16 @@
           "asset_known": true,
           "capture": "header",
           "chain": "svm",
-          "challenge_id": "provider.test/stations/1#5",
+          "challenge_id": "provider.test/stations/5#1",
           "from": "2bB5yJ9U23K1ntFiDY7EpvLk8BZMHiHo1rFJ3GiTnjAE",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-          "payment_id": "p80",
+          "payment_id": "p62",
           "replay": false,
           "route_key": "provider.test/stations/5",
           "scheme": "exact",
-          "seq": 80,
+          "seq": 62,
           "to": "HshuP4S5nzgHsCpynJ5cuRmutasqcBvtuge3Coe82dQa",
           "valid": true
         }
@@ -16613,10 +15890,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
+          "paid": true,
           "path": "/stations/2",
           "seq": 21,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -16654,25 +15931,33 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/2",
+          "path": "/stations/3",
           "seq": 31,
           "status": 402
         },
         {
-          "host": "provider.test",
-          "method": "GET",
+          "host": "solana-rpc",
+          "method": "POST",
           "paid": false,
-          "path": "/stations/2",
+          "path": "getAccountInfo",
+          "seq": 32,
+          "status": 200
+        },
+        {
+          "host": "solana-rpc",
+          "method": "POST",
+          "paid": false,
+          "path": "getLatestBlockhash",
           "seq": 33,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/stations/2",
+          "paid": true,
+          "path": "/stations/3",
           "seq": 35,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -16683,20 +15968,12 @@
           "status": 402
         },
         {
-          "host": "solana-rpc",
-          "method": "POST",
+          "host": "provider.test",
+          "method": "GET",
           "paid": false,
-          "path": "getAccountInfo",
-          "seq": 38,
-          "status": 200
-        },
-        {
-          "host": "solana-rpc",
-          "method": "POST",
-          "paid": false,
-          "path": "getLatestBlockhash",
+          "path": "/stations/3",
           "seq": 39,
-          "status": 200
+          "status": 402
         },
         {
           "host": "provider.test",
@@ -16718,31 +15995,39 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 45,
           "status": 402
         },
         {
-          "host": "provider.test",
-          "method": "GET",
+          "host": "solana-rpc",
+          "method": "POST",
           "paid": false,
-          "path": "/stations/3",
+          "path": "getAccountInfo",
+          "seq": 46,
+          "status": 200
+        },
+        {
+          "host": "solana-rpc",
+          "method": "POST",
+          "paid": false,
+          "path": "getLatestBlockhash",
           "seq": 47,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/stations/3",
+          "paid": true,
+          "path": "/stations/4",
           "seq": 49,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 51,
           "status": 402
         },
@@ -16750,7 +16035,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 53,
           "status": 402
         },
@@ -16758,7 +16043,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 55,
           "status": 402
         },
@@ -16771,11 +16056,19 @@
           "status": 402
         },
         {
+          "host": "provider.test",
+          "method": "GET",
+          "paid": false,
+          "path": "/stations/5",
+          "seq": 59,
+          "status": 402
+        },
+        {
           "host": "solana-rpc",
           "method": "POST",
           "paid": false,
           "path": "getAccountInfo",
-          "seq": 58,
+          "seq": 60,
           "status": 200
         },
         {
@@ -16783,30 +16076,22 @@
           "method": "POST",
           "paid": false,
           "path": "getLatestBlockhash",
-          "seq": 59,
+          "seq": 61,
+          "status": 200
+        },
+        {
+          "host": "provider.test",
+          "method": "GET",
+          "paid": true,
+          "path": "/stations/5",
+          "seq": 63,
           "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
-          "seq": 61,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/4",
-          "seq": 63,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 65,
           "status": 402
         },
@@ -16814,7 +16099,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 67,
           "status": 402
         },
@@ -16822,7 +16107,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 69,
           "status": 402
         },
@@ -16830,7 +16115,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 71,
           "status": 402
         },
@@ -16838,7 +16123,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/6",
           "seq": 73,
           "status": 402
         },
@@ -16846,7 +16131,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/6",
           "seq": 75,
           "status": 402
         },
@@ -16854,31 +16139,23 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 77,
           "status": 402
-        },
-        {
-          "host": "solana-rpc",
-          "method": "POST",
-          "paid": false,
-          "path": "getAccountInfo",
-          "seq": 78,
-          "status": 200
-        },
-        {
-          "host": "solana-rpc",
-          "method": "POST",
-          "paid": false,
-          "path": "getLatestBlockhash",
-          "seq": 79,
-          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
+          "seq": 79,
+          "status": 402
+        },
+        {
+          "host": "provider.test",
+          "method": "GET",
+          "paid": false,
+          "path": "/stations/6",
           "seq": 81,
           "status": 402
         },
@@ -16886,7 +16163,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 83,
           "status": 402
         },
@@ -16894,7 +16171,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 85,
           "status": 402
         },
@@ -16902,7 +16179,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 87,
           "status": 402
         },
@@ -16910,7 +16187,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 89,
           "status": 402
         },
@@ -16918,7 +16195,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 91,
           "status": 402
         },
@@ -16926,7 +16203,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 93,
           "status": 402
         },
@@ -16934,7 +16211,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 95,
           "status": 402
         },
@@ -16942,7 +16219,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 97,
           "status": 402
         },
@@ -16950,7 +16227,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 99,
           "status": 402
         },
@@ -16958,7 +16235,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 101,
           "status": 402
         },
@@ -16966,7 +16243,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 103,
           "status": 402
         },
@@ -16974,7 +16251,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 105,
           "status": 402
         },
@@ -16982,7 +16259,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 107,
           "status": 402
         },
@@ -16990,7 +16267,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 109,
           "status": 402
         },
@@ -16998,7 +16275,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 111,
           "status": 402
         },
@@ -17006,7 +16283,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 113,
           "status": 402
         },
@@ -17014,7 +16291,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 115,
           "status": 402
         },
@@ -17022,7 +16299,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 117,
           "status": 402
         },
@@ -17030,7 +16307,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 119,
           "status": 402
         },
@@ -17038,7 +16315,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 121,
           "status": 402
         },
@@ -17046,7 +16323,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 123,
           "status": 402
         },
@@ -17054,7 +16331,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 125,
           "status": 402
         },
@@ -17062,7 +16339,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 127,
           "status": 402
         },
@@ -17070,7 +16347,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 129,
           "status": 402
         },
@@ -17078,7 +16355,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 131,
           "status": 402
         },
@@ -17086,7 +16363,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 133,
           "status": 402
         },
@@ -17094,7 +16371,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 135,
           "status": 402
         },
@@ -17102,7 +16379,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 137,
           "status": 402
         },
@@ -17110,7 +16387,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 139,
           "status": 402
         },
@@ -17118,7 +16395,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 141,
           "status": 402
         },
@@ -17126,7 +16403,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 143,
           "status": 402
         },
@@ -17134,7 +16411,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 145,
           "status": 402
         },
@@ -17142,7 +16419,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 147,
           "status": 402
         },
@@ -17150,7 +16427,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 149,
           "status": 402
         },
@@ -17158,104 +16435,8 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 151,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 153,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 155,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 157,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 159,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 161,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 163,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 165,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 167,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 169,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 171,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 173,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 175,
           "status": 402
         }
       ],
@@ -19472,105 +18653,6 @@
               "scheme": "exact"
             }
           ],
-          "challenge_id": "provider.test/stations/2#6",
-          "challenge_ref": "provider.test/stations/2#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/2",
-          "seq": 26
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/2#7",
-          "challenge_ref": "provider.test/stations/2#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/2",
-          "seq": 28
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/2#8",
-          "challenge_ref": "provider.test/stations/2#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/2",
-          "seq": 30
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
           "challenge_id": "provider.test/stations/3#1",
           "challenge_ref": "provider.test/stations/3#1",
           "rail": "x402v2",
@@ -19587,7 +18669,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 32
+          "seq": 26
         },
         {
           "accepts": [
@@ -19620,7 +18702,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 36
+          "seq": 30
         },
         {
           "accepts": [
@@ -19653,7 +18735,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 38
+          "seq": 32
         },
         {
           "accepts": [
@@ -19686,7 +18768,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 40
+          "seq": 34
         },
         {
           "accepts": [
@@ -19719,106 +18801,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/3",
-          "seq": 42
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/3#6",
-          "challenge_ref": "provider.test/stations/3#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/3",
-          "seq": 44
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/3#7",
-          "challenge_ref": "provider.test/stations/3#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/3",
-          "seq": 46
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/3#8",
-          "challenge_ref": "provider.test/stations/3#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/3",
-          "seq": 48
+          "seq": 36
         },
         {
           "accepts": [
@@ -19851,7 +18834,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 50
+          "seq": 38
         },
         {
           "accepts": [
@@ -19884,7 +18867,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 54
+          "seq": 42
         },
         {
           "accepts": [
@@ -19917,7 +18900,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 56
+          "seq": 44
         },
         {
           "accepts": [
@@ -19950,7 +18933,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 58
+          "seq": 46
         },
         {
           "accepts": [
@@ -19983,106 +18966,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/4",
-          "seq": 60
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/4#6",
-          "challenge_ref": "provider.test/stations/4#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/4",
-          "seq": 62
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/4#7",
-          "challenge_ref": "provider.test/stations/4#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/4",
-          "seq": 64
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/4#8",
-          "challenge_ref": "provider.test/stations/4#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/4",
-          "seq": 66
+          "seq": 48
         },
         {
           "accepts": [
@@ -20115,7 +18999,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 68
+          "seq": 50
         },
         {
           "accepts": [
@@ -20148,7 +19032,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 72
+          "seq": 54
         },
         {
           "accepts": [
@@ -20181,7 +19065,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 74
+          "seq": 56
         },
         {
           "accepts": [
@@ -20214,7 +19098,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 76
+          "seq": 58
         },
         {
           "accepts": [
@@ -20247,106 +19131,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/5",
-          "seq": 78
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/5#6",
-          "challenge_ref": "provider.test/stations/5#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/5",
-          "seq": 80
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/5#7",
-          "challenge_ref": "provider.test/stations/5#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/5",
-          "seq": 82
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/stations/5#8",
-          "challenge_ref": "provider.test/stations/5#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/stations/5",
-          "seq": 84
+          "seq": 60
         },
         {
           "accepts": [
@@ -20379,7 +19164,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 86
+          "seq": 62
         },
         {
           "accepts": [
@@ -20412,7 +19197,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 88
+          "seq": 64
         },
         {
           "accepts": [
@@ -20445,7 +19230,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 90
+          "seq": 66
         },
         {
           "accepts": [
@@ -20478,7 +19263,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 92
+          "seq": 68
         },
         {
           "accepts": [
@@ -20511,7 +19296,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 94
+          "seq": 70
         },
         {
           "accepts": [
@@ -20544,7 +19329,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 96
+          "seq": 72
         },
         {
           "accepts": [
@@ -20577,7 +19362,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 98
+          "seq": 74
         },
         {
           "accepts": [
@@ -20610,7 +19395,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/6",
-          "seq": 100
+          "seq": 76
         },
         {
           "accepts": [
@@ -20643,7 +19428,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 102
+          "seq": 78
         },
         {
           "accepts": [
@@ -20676,7 +19461,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 104
+          "seq": 80
         },
         {
           "accepts": [
@@ -20709,7 +19494,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 106
+          "seq": 82
         },
         {
           "accepts": [
@@ -20742,7 +19527,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 108
+          "seq": 84
         },
         {
           "accepts": [
@@ -20775,7 +19560,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 110
+          "seq": 86
         },
         {
           "accepts": [
@@ -20808,7 +19593,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 112
+          "seq": 88
         },
         {
           "accepts": [
@@ -20841,7 +19626,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 114
+          "seq": 90
         },
         {
           "accepts": [
@@ -20874,7 +19659,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/7",
-          "seq": 116
+          "seq": 92
         },
         {
           "accepts": [
@@ -20907,7 +19692,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 118
+          "seq": 94
         },
         {
           "accepts": [
@@ -20940,7 +19725,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 120
+          "seq": 96
         },
         {
           "accepts": [
@@ -20973,7 +19758,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 122
+          "seq": 98
         },
         {
           "accepts": [
@@ -21006,7 +19791,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 124
+          "seq": 100
         },
         {
           "accepts": [
@@ -21039,7 +19824,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 126
+          "seq": 102
         },
         {
           "accepts": [
@@ -21072,7 +19857,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 128
+          "seq": 104
         },
         {
           "accepts": [
@@ -21105,7 +19890,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 130
+          "seq": 106
         },
         {
           "accepts": [
@@ -21138,7 +19923,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/8",
-          "seq": 132
+          "seq": 108
         },
         {
           "accepts": [
@@ -21171,7 +19956,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 134
+          "seq": 110
         },
         {
           "accepts": [
@@ -21204,7 +19989,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 136
+          "seq": 112
         },
         {
           "accepts": [
@@ -21237,7 +20022,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 138
+          "seq": 114
         },
         {
           "accepts": [
@@ -21270,7 +20055,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 140
+          "seq": 116
         },
         {
           "accepts": [
@@ -21303,7 +20088,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 142
+          "seq": 118
         },
         {
           "accepts": [
@@ -21336,7 +20121,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 144
+          "seq": 120
         },
         {
           "accepts": [
@@ -21369,7 +20154,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 146
+          "seq": 122
         },
         {
           "accepts": [
@@ -21402,7 +20187,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/9",
-          "seq": 148
+          "seq": 124
         },
         {
           "accepts": [
@@ -21435,7 +20220,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 150
+          "seq": 126
         },
         {
           "accepts": [
@@ -21468,7 +20253,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 152
+          "seq": 128
         },
         {
           "accepts": [
@@ -21501,7 +20286,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 154
+          "seq": 130
         },
         {
           "accepts": [
@@ -21534,7 +20319,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 156
+          "seq": 132
         },
         {
           "accepts": [
@@ -21567,7 +20352,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 158
+          "seq": 134
         },
         {
           "accepts": [
@@ -21600,7 +20385,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 160
+          "seq": 136
         },
         {
           "accepts": [
@@ -21633,7 +20418,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 162
+          "seq": 138
         },
         {
           "accepts": [
@@ -21666,7 +20451,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/stations/10",
-          "seq": 164
+          "seq": 140
         }
       ],
       "delivered": true,
@@ -21701,7 +20486,7 @@
           "asset_known": true,
           "capture": "header",
           "chain": "evm",
-          "challenge_id": "provider.test/stations/1#2",
+          "challenge_id": "provider.test/stations/2#1",
           "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
           "host": "provider.test",
           "instruction_source": "header",
@@ -21721,16 +20506,16 @@
           "asset_known": true,
           "capture": "header",
           "chain": "evm",
-          "challenge_id": "provider.test/stations/1#3",
+          "challenge_id": "provider.test/stations/3#1",
           "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "eip155:84532",
-          "payment_id": "p34",
+          "payment_id": "p28",
           "replay": false,
           "route_key": "provider.test/stations/3",
           "scheme": "exact",
-          "seq": 34,
+          "seq": 28,
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -21741,36 +20526,36 @@
           "asset_known": true,
           "capture": "header",
           "chain": "evm",
-          "challenge_id": "provider.test/stations/1#4",
+          "challenge_id": "provider.test/stations/4#1",
+          "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
+          "host": "provider.test",
+          "instruction_source": "header",
+          "network": "eip155:84532",
+          "payment_id": "p40",
+          "replay": false,
+          "route_key": "provider.test/stations/4",
+          "scheme": "exact",
+          "seq": 40,
+          "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
+          "valid": true
+        },
+        {
+          "amount_atomic": "10000",
+          "amount_usd": 0.01,
+          "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+          "asset_known": true,
+          "capture": "header",
+          "chain": "evm",
+          "challenge_id": "provider.test/stations/5#1",
           "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "eip155:84532",
           "payment_id": "p52",
           "replay": false,
-          "route_key": "provider.test/stations/4",
-          "scheme": "exact",
-          "seq": 52,
-          "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
-          "valid": true
-        },
-        {
-          "amount_atomic": "10000",
-          "amount_usd": 0.01,
-          "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-          "asset_known": true,
-          "capture": "header",
-          "chain": "evm",
-          "challenge_id": "provider.test/stations/1#5",
-          "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
-          "host": "provider.test",
-          "instruction_source": "header",
-          "network": "eip155:84532",
-          "payment_id": "p70",
-          "replay": false,
           "route_key": "provider.test/stations/5",
           "scheme": "exact",
-          "seq": 70,
+          "seq": 52,
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         }
@@ -21851,10 +20636,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
+          "paid": true,
           "path": "/stations/2",
           "seq": 17,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -21892,23 +20677,23 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/2",
+          "path": "/stations/3",
           "seq": 27,
           "status": 402
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/stations/2",
+          "paid": true,
+          "path": "/stations/3",
           "seq": 29,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/2",
+          "path": "/stations/3",
           "seq": 31,
           "status": 402
         },
@@ -21940,23 +20725,23 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 39,
           "status": 402
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/stations/3",
+          "paid": true,
+          "path": "/stations/4",
           "seq": 41,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 43,
           "status": 402
         },
@@ -21964,7 +20749,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 45,
           "status": 402
         },
@@ -21972,7 +20757,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 47,
           "status": 402
         },
@@ -21980,7 +20765,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/3",
+          "path": "/stations/4",
           "seq": 49,
           "status": 402
         },
@@ -21988,23 +20773,23 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 51,
           "status": 402
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/stations/4",
+          "paid": true,
+          "path": "/stations/5",
           "seq": 53,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 55,
           "status": 402
         },
@@ -22012,7 +20797,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 57,
           "status": 402
         },
@@ -22020,7 +20805,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 59,
           "status": 402
         },
@@ -22028,7 +20813,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/5",
           "seq": 61,
           "status": 402
         },
@@ -22036,7 +20821,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/6",
           "seq": 63,
           "status": 402
         },
@@ -22044,7 +20829,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/6",
           "seq": 65,
           "status": 402
         },
@@ -22052,7 +20837,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/4",
+          "path": "/stations/6",
           "seq": 67,
           "status": 402
         },
@@ -22060,7 +20845,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 69,
           "status": 402
         },
@@ -22068,7 +20853,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 71,
           "status": 402
         },
@@ -22076,7 +20861,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 73,
           "status": 402
         },
@@ -22084,7 +20869,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 75,
           "status": 402
         },
@@ -22092,7 +20877,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/6",
           "seq": 77,
           "status": 402
         },
@@ -22100,7 +20885,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 79,
           "status": 402
         },
@@ -22108,7 +20893,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 81,
           "status": 402
         },
@@ -22116,7 +20901,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 83,
           "status": 402
         },
@@ -22124,7 +20909,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/5",
+          "path": "/stations/7",
           "seq": 85,
           "status": 402
         },
@@ -22132,7 +20917,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 87,
           "status": 402
         },
@@ -22140,7 +20925,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 89,
           "status": 402
         },
@@ -22148,7 +20933,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 91,
           "status": 402
         },
@@ -22156,7 +20941,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/7",
           "seq": 93,
           "status": 402
         },
@@ -22164,7 +20949,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 95,
           "status": 402
         },
@@ -22172,7 +20957,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 97,
           "status": 402
         },
@@ -22180,7 +20965,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 99,
           "status": 402
         },
@@ -22188,7 +20973,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/6",
+          "path": "/stations/8",
           "seq": 101,
           "status": 402
         },
@@ -22196,7 +20981,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 103,
           "status": 402
         },
@@ -22204,7 +20989,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 105,
           "status": 402
         },
@@ -22212,7 +20997,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 107,
           "status": 402
         },
@@ -22220,7 +21005,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/8",
           "seq": 109,
           "status": 402
         },
@@ -22228,7 +21013,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 111,
           "status": 402
         },
@@ -22236,7 +21021,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 113,
           "status": 402
         },
@@ -22244,7 +21029,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 115,
           "status": 402
         },
@@ -22252,7 +21037,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/7",
+          "path": "/stations/9",
           "seq": 117,
           "status": 402
         },
@@ -22260,7 +21045,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 119,
           "status": 402
         },
@@ -22268,7 +21053,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 121,
           "status": 402
         },
@@ -22276,7 +21061,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 123,
           "status": 402
         },
@@ -22284,7 +21069,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/9",
           "seq": 125,
           "status": 402
         },
@@ -22292,7 +21077,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 127,
           "status": 402
         },
@@ -22300,7 +21085,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 129,
           "status": 402
         },
@@ -22308,7 +21093,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 131,
           "status": 402
         },
@@ -22316,7 +21101,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/8",
+          "path": "/stations/10",
           "seq": 133,
           "status": 402
         },
@@ -22324,7 +21109,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 135,
           "status": 402
         },
@@ -22332,7 +21117,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 137,
           "status": 402
         },
@@ -22340,7 +21125,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 139,
           "status": 402
         },
@@ -22348,104 +21133,8 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/stations/9",
+          "path": "/stations/10",
           "seq": 141,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 143,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 145,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 147,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/9",
-          "seq": 149,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 151,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 153,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 155,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 157,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 159,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 161,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 163,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/stations/10",
-          "seq": 165,
           "status": 402
         }
       ],
@@ -29639,105 +28328,6 @@
               "scheme": "exact"
             }
           ],
-          "challenge_id": "provider.test/sections/2#6",
-          "challenge_ref": "provider.test/sections/2#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "20000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/sections/2",
-          "seq": 26
-        },
-        {
-          "accepts": [
-            {
-              "amount": "20000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/sections/2#7",
-          "challenge_ref": "provider.test/sections/2#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "20000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/sections/2",
-          "seq": 28
-        },
-        {
-          "accepts": [
-            {
-              "amount": "20000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/sections/2#8",
-          "challenge_ref": "provider.test/sections/2#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "20000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/sections/2",
-          "seq": 30
-        },
-        {
-          "accepts": [
-            {
-              "amount": "20000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
-              "scheme": "exact"
-            }
-          ],
           "challenge_id": "provider.test/sections/3#1",
           "challenge_ref": "provider.test/sections/3#1",
           "rail": "x402v2",
@@ -29754,7 +28344,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 32
+          "seq": 26
         },
         {
           "accepts": [
@@ -29787,7 +28377,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 34
+          "seq": 28
         },
         {
           "accepts": [
@@ -29820,7 +28410,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 36
+          "seq": 30
         },
         {
           "accepts": [
@@ -29853,7 +28443,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 38
+          "seq": 32
         },
         {
           "accepts": [
@@ -29886,7 +28476,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 40
+          "seq": 34
         },
         {
           "accepts": [
@@ -29919,7 +28509,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 42
+          "seq": 36
         },
         {
           "accepts": [
@@ -29952,7 +28542,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 44
+          "seq": 38
         },
         {
           "accepts": [
@@ -29985,7 +28575,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/3",
-          "seq": 46
+          "seq": 40
         },
         {
           "accepts": [
@@ -30018,7 +28608,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 48
+          "seq": 42
         },
         {
           "accepts": [
@@ -30051,7 +28641,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 50
+          "seq": 44
         },
         {
           "accepts": [
@@ -30084,7 +28674,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 52
+          "seq": 46
         },
         {
           "accepts": [
@@ -30117,7 +28707,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 54
+          "seq": 48
         },
         {
           "accepts": [
@@ -30150,7 +28740,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 56
+          "seq": 50
         },
         {
           "accepts": [
@@ -30183,7 +28773,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 58
+          "seq": 52
         },
         {
           "accepts": [
@@ -30216,7 +28806,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 60
+          "seq": 54
         },
         {
           "accepts": [
@@ -30249,7 +28839,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/sections/4",
-          "seq": 62
+          "seq": 56
         }
       ],
       "delivered": true,
@@ -30284,7 +28874,7 @@
           "asset_known": true,
           "capture": "header",
           "chain": "evm",
-          "challenge_id": "provider.test/sections/1#2",
+          "challenge_id": "provider.test/sections/2#1",
           "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
           "host": "provider.test",
           "instruction_source": "header",
@@ -30374,10 +28964,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
+          "paid": true,
           "path": "/sections/2",
           "seq": 17,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -30415,7 +29005,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/2",
+          "path": "/sections/3",
           "seq": 27,
           "status": 402
         },
@@ -30423,7 +29013,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/2",
+          "path": "/sections/3",
           "seq": 29,
           "status": 402
         },
@@ -30431,7 +29021,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/2",
+          "path": "/sections/3",
           "seq": 31,
           "status": 402
         },
@@ -30479,7 +29069,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/3",
+          "path": "/sections/4",
           "seq": 43,
           "status": 402
         },
@@ -30487,7 +29077,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/3",
+          "path": "/sections/4",
           "seq": 45,
           "status": 402
         },
@@ -30495,7 +29085,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/sections/3",
+          "path": "/sections/4",
           "seq": 47,
           "status": 402
         },
@@ -30537,30 +29127,6 @@
           "paid": false,
           "path": "/sections/4",
           "seq": 57,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/sections/4",
-          "seq": 59,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/sections/4",
-          "seq": 61,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/sections/4",
-          "seq": 63,
           "status": 402
         }
       ],
@@ -45940,105 +44506,6 @@
         {
           "accepts": [
             {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/2#6",
-          "challenge_ref": "provider.test/episodes/2#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/2",
-          "seq": 26
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/2#7",
-          "challenge_ref": "provider.test/episodes/2#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/2",
-          "seq": 28
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/2#8",
-          "challenge_ref": "provider.test/episodes/2#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/2",
-          "seq": 30
-        },
-        {
-          "accepts": [
-            {
               "amount": "20000",
               "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
               "extra": {
@@ -46067,7 +44534,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 32
+          "seq": 26
         },
         {
           "accepts": [
@@ -46100,7 +44567,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 36
+          "seq": 30
         },
         {
           "accepts": [
@@ -46133,7 +44600,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 38
+          "seq": 32
         },
         {
           "accepts": [
@@ -46166,7 +44633,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 40
+          "seq": 34
         },
         {
           "accepts": [
@@ -46199,7 +44666,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/3",
-          "seq": 42
+          "seq": 36
         },
         {
           "accepts": [
@@ -46232,7 +44699,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 44
+          "seq": 38
         },
         {
           "accepts": [
@@ -46265,7 +44732,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 48
+          "seq": 42
         },
         {
           "accepts": [
@@ -46298,7 +44765,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 50
+          "seq": 44
         },
         {
           "accepts": [
@@ -46331,7 +44798,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 52
+          "seq": 46
         },
         {
           "accepts": [
@@ -46364,106 +44831,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/4",
-          "seq": 54
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/4#6",
-          "challenge_ref": "provider.test/episodes/4#6",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/4",
-          "seq": 56
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/4#7",
-          "challenge_ref": "provider.test/episodes/4#7",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/4",
-          "seq": 58
-        },
-        {
-          "accepts": [
-            {
-              "amount": "10000",
-              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              "extra": {
-                "name": "USDC",
-                "version": "2"
-              },
-              "maxTimeoutSeconds": 60,
-              "network": "eip155:84532",
-              "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-              "scheme": "exact"
-            }
-          ],
-          "challenge_id": "provider.test/episodes/4#8",
-          "challenge_ref": "provider.test/episodes/4#8",
-          "rail": "x402v2",
-          "requirements": {
-            "amount": "10000",
-            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "extra": {
-              "name": "USDC",
-              "version": "2"
-            },
-            "maxTimeoutSeconds": 60,
-            "network": "eip155:84532",
-            "payTo": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
-            "scheme": "exact"
-          },
-          "route_key": "provider.test/episodes/4",
-          "seq": 60
+          "seq": 48
         },
         {
           "accepts": [
@@ -46496,7 +44864,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 62
+          "seq": 50
         },
         {
           "accepts": [
@@ -46529,7 +44897,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 64
+          "seq": 52
         },
         {
           "accepts": [
@@ -46562,7 +44930,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 66
+          "seq": 54
         },
         {
           "accepts": [
@@ -46595,7 +44963,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 68
+          "seq": 56
         },
         {
           "accepts": [
@@ -46628,7 +44996,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 70
+          "seq": 58
         },
         {
           "accepts": [
@@ -46661,7 +45029,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 72
+          "seq": 60
         },
         {
           "accepts": [
@@ -46694,7 +45062,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 74
+          "seq": 62
         },
         {
           "accepts": [
@@ -46727,7 +45095,7 @@
             "scheme": "exact"
           },
           "route_key": "provider.test/episodes/5",
-          "seq": 76
+          "seq": 64
         }
       ],
       "delivered": true,
@@ -46762,7 +45130,7 @@
           "asset_known": true,
           "capture": "header",
           "chain": "evm",
-          "challenge_id": "provider.test/episodes/1#2",
+          "challenge_id": "provider.test/episodes/2#1",
           "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
           "host": "provider.test",
           "instruction_source": "header",
@@ -46787,11 +45155,11 @@
           "host": "provider.test",
           "instruction_source": "header",
           "network": "eip155:84532",
-          "payment_id": "p34",
+          "payment_id": "p28",
           "replay": false,
           "route_key": "provider.test/episodes/3",
           "scheme": "exact",
-          "seq": 34,
+          "seq": 28,
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         },
@@ -46802,16 +45170,16 @@
           "asset_known": true,
           "capture": "header",
           "chain": "evm",
-          "challenge_id": "provider.test/episodes/1#3",
+          "challenge_id": "provider.test/episodes/4#1",
           "from": "0xE3b9D7ed0bb01cf6e0141de89133e39de0344AC4",
           "host": "provider.test",
           "instruction_source": "header",
           "network": "eip155:84532",
-          "payment_id": "p46",
+          "payment_id": "p40",
           "replay": false,
           "route_key": "provider.test/episodes/4",
           "scheme": "exact",
-          "seq": 46,
+          "seq": 40,
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         }
@@ -46892,10 +45260,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
+          "paid": true,
           "path": "/episodes/2",
           "seq": 17,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
@@ -46933,23 +45301,23 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/2",
+          "path": "/episodes/3",
           "seq": 27,
           "status": 402
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/episodes/2",
+          "paid": true,
+          "path": "/episodes/3",
           "seq": 29,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/2",
+          "path": "/episodes/3",
           "seq": 31,
           "status": 402
         },
@@ -46964,10 +45332,10 @@
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": true,
+          "paid": false,
           "path": "/episodes/3",
           "seq": 35,
-          "status": 200
+          "status": 402
         },
         {
           "host": "provider.test",
@@ -46981,23 +45349,23 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/3",
+          "path": "/episodes/4",
           "seq": 39,
           "status": 402
         },
         {
           "host": "provider.test",
           "method": "GET",
-          "paid": false,
-          "path": "/episodes/3",
+          "paid": true,
+          "path": "/episodes/4",
           "seq": 41,
-          "status": 402
+          "status": 200
         },
         {
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/3",
+          "path": "/episodes/4",
           "seq": 43,
           "status": 402
         },
@@ -47029,7 +45397,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 51,
           "status": 402
         },
@@ -47037,7 +45405,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 53,
           "status": 402
         },
@@ -47045,7 +45413,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 55,
           "status": 402
         },
@@ -47053,7 +45421,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 57,
           "status": 402
         },
@@ -47061,7 +45429,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 59,
           "status": 402
         },
@@ -47069,7 +45437,7 @@
           "host": "provider.test",
           "method": "GET",
           "paid": false,
-          "path": "/episodes/4",
+          "path": "/episodes/5",
           "seq": 61,
           "status": 402
         },
@@ -47087,54 +45455,6 @@
           "paid": false,
           "path": "/episodes/5",
           "seq": 65,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 67,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 69,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 71,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 73,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 75,
-          "status": 402
-        },
-        {
-          "host": "provider.test",
-          "method": "GET",
-          "paid": false,
-          "path": "/episodes/5",
-          "seq": 77,
           "status": 402
         }
       ],
@@ -52306,108 +50626,108 @@
   },
   "timing": {
     "runs": {
-      "01ebe59937c2": 1132.46083299999,
-      "02223e508bce": 1139.424500000001,
-      "027c7eecdcc2": 1224.4384159999972,
-      "04acd0330a1c": 1126.9202500000101,
-      "05372a7cecce": 1150.4939169999998,
-      "053a0975895a": 1174.0947500000002,
-      "055a1691c12e": 1154.5046660000007,
-      "0cb917e951d4": 1115.9632500000007,
-      "10233eea8972": 1150.0065419999883,
-      "128c50875ebe": 1108.0212499999998,
-      "12f34765e977": 1126.2099589999998,
-      "1c60d232b142": 1150.955458000004,
-      "1cc6873e98b6": 1161.0747090000004,
-      "21078b505cd2": 1173.578250000006,
-      "2799f6736171": 1116.3493330000056,
-      "280ff0b600e1": 1158.3269170000058,
-      "2d595a8a15d2": 1147.3994999999995,
-      "2f0fc1112d56": 1107.8859169999923,
-      "32d213d53a82": 1204.7082500000001,
-      "34b7dc3c05ec": 1117.833832999997,
-      "35437e8ae788": 1140.369208,
-      "3931349c3adf": 1151.351874999993,
-      "39ccb3650919": 1126.364916999999,
-      "3a0dec444e8d": 1133.117333000002,
-      "3c0cba9f6286": 1165.4777079999985,
-      "3e9c3e5f9dc5": 1247.34475,
-      "3f52fc5a7957": 1131.3043330000073,
-      "444b46ed82a3": 1138.6118750000005,
-      "4592b89ed4b9": 1150.2042079999956,
-      "46db608478ff": 1171.0204589999994,
-      "4858113b8dc5": 1133.3112500000025,
-      "4b2d67fb6a64": 1149.145958000001,
-      "553dc4bcca85": 1210.367875,
-      "55d6755fd655": 1264.3077919999996,
-      "5696fb237aaa": 1146.086083000002,
-      "5903424889b7": 1124.2048749999994,
-      "5af9d0c4d1c4": 1137.4860000000044,
-      "5b12c482faf8": 1148.9387919999936,
-      "6541cab386d3": 1153.4029169999994,
-      "6b516d76dd0b": 1215.2958340000005,
-      "6d1da5f2dbab": 1145.8194159999985,
-      "6f2e5619c907": 1115.0230410000004,
-      "6fd96f374f6d": 1148.5912090000056,
-      "7029fcd4f730": 1181.4429999999993,
-      "74a63bef6ae4": 1145.2519580000007,
-      "7c6c8edbd570": 1132.5858329999992,
-      "7d27fd134e69": 1203.1995000000024,
-      "7dfb6a22d6c1": 1138.2294590000001,
-      "81ab6d8a1ea3": 1147.1916250000068,
-      "81ca73c0326b": 1148.262125000001,
-      "82bcf1ec9917": 1158.2823329999956,
-      "8379e3511113": 1132.2417499999974,
-      "83faa892ae25": 1118.6297080000077,
-      "870c215cb14d": 1120.911541,
-      "8ba9542c0eb0": 1130.0637909999932,
-      "8f627ae8149f": 1119.5611669999926,
-      "90b14fcdc698": 1128.6020000000008,
-      "91fb382f0572": 1128.6372910000064,
-      "937b2a0875f6": 1158.1684999999998,
-      "96cfc886f548": 1163.259917000003,
-      "9e5811f588ab": 1176.7983749999985,
-      "9eef3e09a495": 1132.41475,
-      "9ef809e8b7ae": 1129.3131659999926,
-      "a2d582700d93": 1139.3942090000019,
-      "a36c2a7a0bfa": 1134.7829589999892,
-      "a6b766aed831": 1118.5817499999976,
-      "a6bc3321fff3": 1145.1477079999968,
-      "a80c4555e451": 1146.2347089999967,
-      "ab4409888eaa": 1147.9214580000116,
-      "ab836f8bf6c5": 1118.3008330000011,
-      "bac5bfc8a319": 1169.2328330000018,
-      "bae6a43b7b89": 1111.4497919999994,
-      "bcd78f7cf32a": 1226.6221670000014,
-      "be8ce871862b": 1132.2017910000004,
-      "beb543c3f5fa": 1120.1399169999931,
-      "bf6b5579f80a": 1165.493957999999,
-      "c0da3092ba30": 1117.5148340000014,
-      "c85e45e429d1": 1205.2615000000042,
-      "cb7897bd1b43": 1125.5260839999974,
-      "ce0d63d524b2": 1191.594624999998,
-      "d554e6ebe1dd": 1129.8570829999953,
-      "d738f83c4273": 1133.9495000000024,
-      "d9d35d23ffce": 1175.424417000002,
-      "d9f9af2afd05": 1129.8627089999936,
-      "da9de88b8701": 1124.9068750000006,
-      "db912f6ee2e8": 1161.9930420000019,
-      "de3747bc445f": 1119.6798750000016,
-      "e247a536bc75": 1144.1755419999972,
-      "e435a2ffe684": 1133.612415999989,
-      "e4b5a26eb376": 1115.2763750000013,
-      "e678ecc79c6e": 1132.853959,
-      "ead782b97b5c": 1133.170583000001,
-      "eb6b255cfeea": 1134.001959000001,
-      "f1ac3acc036b": 1133.5273749999906,
-      "f35f589a64fa": 1174.5740829999995,
-      "f42641547996": 1148.0064169999969,
-      "f5bd2578591f": 1137.3381249999948,
-      "fa3db95cd1c7": 1185.2395000000033,
-      "fb67a5c5419a": 1138.578582999995,
-      "fc94fe5efbce": 1175.1840840000004,
-      "fe7342b8ce0c": 1143.3424579999992
+      "01ebe59937c2": 1171.7192090000026,
+      "02223e508bce": 1139.914042000004,
+      "027c7eecdcc2": 1148.7545420000024,
+      "04acd0330a1c": 1172.5982080000103,
+      "05372a7cecce": 1155.396249999998,
+      "053a0975895a": 1179.799791999998,
+      "055a1691c12e": 1191.6240829999988,
+      "0cb917e951d4": 1159.6740829999908,
+      "10233eea8972": 1226.8076250000013,
+      "128c50875ebe": 1129.1868329999998,
+      "12f34765e977": 1134.6145839999954,
+      "1c60d232b142": 1178.6378330000007,
+      "1cc6873e98b6": 1192.1884580000042,
+      "21078b505cd2": 1176.2533330000006,
+      "2799f6736171": 1176.767584000001,
+      "280ff0b600e1": 1154.4334580000068,
+      "2d595a8a15d2": 1148.0797079999975,
+      "2f0fc1112d56": 1127.4572920000064,
+      "32d213d53a82": 1205.1711670000002,
+      "34b7dc3c05ec": 1164.5787920000002,
+      "35437e8ae788": 1219.2517920000028,
+      "3931349c3adf": 1175.779749999987,
+      "39ccb3650919": 1153.6268750000017,
+      "3a0dec444e8d": 1171.3214170000028,
+      "3c0cba9f6286": 1142.630541999999,
+      "3e9c3e5f9dc5": 1197.046416,
+      "3f52fc5a7957": 1142.5129999999917,
+      "444b46ed82a3": 1166.8483750000014,
+      "4592b89ed4b9": 1144.4306250000009,
+      "46db608478ff": 1144.6919160000034,
+      "4858113b8dc5": 1177.8112910000018,
+      "4b2d67fb6a64": 1153.1097500000033,
+      "553dc4bcca85": 1177.1084999999985,
+      "55d6755fd655": 1203.1433749999997,
+      "5696fb237aaa": 1147.5341250000056,
+      "5903424889b7": 1153.6365829999995,
+      "5af9d0c4d1c4": 1200.8318750000035,
+      "5b12c482faf8": 1184.3812909999979,
+      "6541cab386d3": 1185.159083000006,
+      "6b516d76dd0b": 1207.5736670000006,
+      "6d1da5f2dbab": 1163.0043329999971,
+      "6f2e5619c907": 1147.0834590000004,
+      "6fd96f374f6d": 1170.2147919999989,
+      "7029fcd4f730": 1223.2013749999896,
+      "74a63bef6ae4": 1154.8563749999958,
+      "7c6c8edbd570": 1138.615167,
+      "7d27fd134e69": 1261.3619169999984,
+      "7dfb6a22d6c1": 1143.715666,
+      "81ab6d8a1ea3": 1169.4047909999936,
+      "81ca73c0326b": 1153.9625420000011,
+      "82bcf1ec9917": 1153.7393750000047,
+      "8379e3511113": 1145.7627079999984,
+      "83faa892ae25": 1192.8867500000051,
+      "870c215cb14d": 1134.278166,
+      "8ba9542c0eb0": 1170.9024999999965,
+      "8f627ae8149f": 1159.1429999999964,
+      "90b14fcdc698": 1136.9013749999995,
+      "91fb382f0572": 1123.620458999998,
+      "937b2a0875f6": 1172.9926669999986,
+      "96cfc886f548": 1157.6497090000048,
+      "9e5811f588ab": 1182.2999160000036,
+      "9eef3e09a495": 1156.146083,
+      "9ef809e8b7ae": 1166.3713750000024,
+      "a2d582700d93": 1140.8336249999993,
+      "a36c2a7a0bfa": 1180.140167000005,
+      "a6b766aed831": 1128.4062919999997,
+      "a6bc3321fff3": 1144.8105419999993,
+      "a80c4555e451": 1155.3606660000078,
+      "ab4409888eaa": 1147.746708000006,
+      "ab836f8bf6c5": 1128.6602500000008,
+      "bac5bfc8a319": 1145.8347500000018,
+      "bae6a43b7b89": 1154.1719169999997,
+      "bcd78f7cf32a": 1168.574959000005,
+      "be8ce871862b": 1153.4746670000004,
+      "beb543c3f5fa": 1172.8187089999992,
+      "bf6b5579f80a": 1150.171457999999,
+      "c0da3092ba30": 1128.383541999996,
+      "c85e45e429d1": 1208.9387079999979,
+      "cb7897bd1b43": 1137.4080000000104,
+      "ce0d63d524b2": 1193.8818749999991,
+      "d554e6ebe1dd": 1160.9784579999978,
+      "d738f83c4273": 1165.2221250000002,
+      "d9d35d23ffce": 1149.9820829999953,
+      "d9f9af2afd05": 1169.5715000000055,
+      "da9de88b8701": 1141.0761249999923,
+      "db912f6ee2e8": 1163.1180409999943,
+      "de3747bc445f": 1137.6248750000013,
+      "e247a536bc75": 1150.4277919999877,
+      "e435a2ffe684": 1162.0260419999977,
+      "e4b5a26eb376": 1173.4718330000032,
+      "e678ecc79c6e": 1155.2483750000101,
+      "ead782b97b5c": 1127.378290999999,
+      "eb6b255cfeea": 1147.242333999995,
+      "f1ac3acc036b": 1156.689458000008,
+      "f35f589a64fa": 1213.403667000006,
+      "f42641547996": 1174.5165410000045,
+      "f5bd2578591f": 1186.6426250000004,
+      "fa3db95cd1c7": 1170.3645840000027,
+      "fb67a5c5419a": 1164.6348750000034,
+      "fc94fe5efbce": 1216.916374999997,
+      "fe7342b8ce0c": 1149.2964589999901
     },
-    "total_ms": 116000.80208399997
+    "total_ms": 117635.65091700005
   }
 }

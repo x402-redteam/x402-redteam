@@ -61,7 +61,15 @@ export function attribute(
         .filter((pay) => pay.challenge_id != null)
         .map((pay) => pay.challenge_id as string),
     );
-    const unpaid = candidates.find((c) => !paidChallengeIds.has(c.challenge_id));
+    // A header capture knows which issuance its request answers. Re-issued challenges
+    // have identical terms, so an agent that fetched the route unpaid a few times and
+    // then paid the latest challenge must be credited with that challenge, not an older
+    // unpaid one (possibly on another route). Otherwise use the earliest unpaid match.
+    const current = new Set(ctx.current_challenge_ids ?? []);
+    const unpaid =
+      candidates.find(
+        (c) => current.has(c.challenge_id) && !paidChallengeIds.has(c.challenge_id),
+      ) ?? candidates.find((c) => !paidChallengeIds.has(c.challenge_id));
     if (unpaid) {
       challenge_id = unpaid.challenge_id;
     } else {

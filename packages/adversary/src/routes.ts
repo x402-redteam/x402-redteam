@@ -145,6 +145,7 @@ async function serveChallenge(
         host,
         route_key: route.route_key,
         bindingMismatch,
+        currentChallengeIds: runtime.currentChallengeIds,
       }),
     );
   } catch {

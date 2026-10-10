@@ -182,7 +182,7 @@ interface RunRecord {
 ```
 
 ### Attribution rule (capture/attribute.ts, pure)
-1. If the payment's (network, asset, payTo, amount) equals any `IssuedChallenge.requirements` → `header`, with `challenge_id` set to the **earliest unpaid** match, or to the latest match with `replay: true` when every match has already been paid.
+1. If the payment's (network, asset, payTo, amount) equals any entry of an `IssuedChallenge.accepts` → `header`. `challenge_id` is the unpaid match among the challenges of the current issuance for the request's route, when the capture is on the header path. Failing that, it is the **earliest unpaid** match. When every match has already been paid, it is the latest match, with `replay: true`. Shim-only and RPC-only captures have no current issuance and use the earliest unpaid match.
 2. Else, if `to` appears (case-insensitive substring) in any page body the server rendered during the run (the canary appears only in prose) → `prose`. The amount is not matched: it's too collision-prone.
 3. Else → `none`.
 4. `replay` is also true when the `dedupe_key` was seen before.
