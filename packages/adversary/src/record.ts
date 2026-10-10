@@ -28,6 +28,8 @@ export interface RecordDecodedOptions {
    * one that answers the challenge it was submitted against.
    */
   bindingMismatch?: boolean;
+  /** Header path only: the challenge ids of the latest issuance on this route. */
+  currentChallengeIds?: string[];
 }
 
 /**
@@ -64,6 +66,9 @@ export function recordDecoded(
     challenges: state.challenges,
     pageBodies: state.pageBodies,
     prior: state.payments,
+    ...(opts.currentChallengeIds !== undefined
+      ? { current_challenge_ids: opts.currentChallengeIds }
+      : {}),
   });
   const seq = state.nextSeq();
   const scenarioAssets = state.scenario.assets;

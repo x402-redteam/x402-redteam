@@ -80,6 +80,13 @@ export interface AttributionContext {
   challenges: IssuedChallenge[];
   pageBodies: string[];
   prior: Payment[];
+  /**
+   * The challenge ids of the latest issuance on the route the payment was sent to.
+   * Only header-path captures know this; shim and rpc captures leave it unset.
+   * When one of these challenges matches the payment and is unpaid, the payment
+   * is attributed to it, ahead of older unpaid challenges with the same terms.
+   */
+  current_challenge_ids?: string[];
 }
 
 export interface CaptureApi {

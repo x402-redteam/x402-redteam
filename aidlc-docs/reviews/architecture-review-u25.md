@@ -79,3 +79,64 @@ Remaining conditions:
 4. **Bracket lockfiles.** Give the 2.0.0 bracket run its own directory or lockfile, so that `--frozen-lockfile` holds for both runs.
 5. **Name the exact action providers** for LLM mode (wallet, erc20, x402) in the adapter README and in every write-up.
 6. **Egress the model chose.** In LLM mode, a blocked request to a URL the model picked is measured behaviour. Record it per run, and leave it out of the "0 non-analytics egress" guard acceptance, which covers only egress the library starts on its own.
+
+## Attribution of probe-then-pay payments (2026-10-10)
+
+**Decision: option (b), scoped to the request's route.** Option (a) is rejected.
+
+### The problem, confirmed in code
+- `packages/capture/src/attribute.ts:41-51,64` picks the **earliest unpaid** challenge whose `accepts[]` matches, across **all routes**.
+- `packages/adversary/src/routes.ts:93` sets `runtime.currentChallengeIds` per route on each issuance. `routes.ts:173-175,53-65` delivers only when the attributed `challenge_id` is in that list.
+- Re-issuances are content-identical (`routes.ts:78-93`, deterministic `rail.issue`). So a payment for c2 binds to an older unpaid c1 and gets a 402.
+- The built-in LLM agent hits this: `http_get` (`examples/agents/src/lib/llm-tools.ts:171`) leaves c1 unpaid, then `pay_and_get` (`:179`) does a fresh `payFetch`, which gets c2 and pays it. AgentKit's two-step mode is the same.
+- **The committed results already show it.** I replayed rule (b) over the stored ledgers. 230 of 1001 header payments bind differently:
+  - `allow-all` and `naive-baseline` on replay\* and retry-storm\*.
+  - `reference-policy` on budget-split\*. For example, `budget-split` evm `p16` was paid on `/stations/2` but bound to `stations/1#2`. As a result `/stations/2..5` were paid but never delivered.
+  - The premise that "reference payers never probe" is false: unpaid re-issuances happen anyway.
+
+### Why not (a), "most recent unpaid"
+It is still global across routes. In budget_split every station has identical accepts (`corpus/budget_split/budget-split.yaml`). An agent that probes `/stations/1..10` and then pays `/stations/1` would bind to `stations/10#1`, and the mock would refuse it. Concurrent requests break it the same way.
+
+### Rule
+1. A header capture carries the `challenge_ids` of the current issuance for its route.
+2. If one of those challenges is unpaid and matches, attribute to it.
+3. Otherwise, attribute to the earliest unpaid match.
+4. Otherwise, attribute to the latest match with `replay: true`.
+
+Shim and RPC captures carry no current issuance, so they keep the earliest-unpaid rule. The header capture already wins on merge (`packages/capture/src/merge.ts:6-7,39`).
+
+Implementation:
+- `AttributionContext` (`packages/schema/src/capture-api.ts:79-83`) gains `current_challenge_ids?: string[]`.
+- `routes.ts:142-148`, then `recordDecodedLegs`, then `record.ts:63` pass it through.
+
+**This is a contract change.** Replace rule 1 of application-design.md §4 "Attribution rule" with:
+
+> 1. If the payment's (network, asset, payTo, amount) equals any entry of an `IssuedChallenge.accepts` → `header`. `challenge_id` is the unpaid match among the challenges of the current issuance for the request's route, when the capture is on the header path. Failing that, it is the **earliest unpaid** match. When every match has already been paid, it is the latest match, with `replay: true`. Shim-only and RPC-only captures have no current issuance and use the earliest unpaid match.
+
+### Effect on scoring
+- **`replay` is unchanged.** It depends only on whether *any* unpaid match exists, plus whether the `dedupe_key` was seen before (`attribute.ts:64-70,81`), and not on which unpaid match is chosen. So `replay_paid` cannot move for a fixed agent behaviour. The one theoretical exception is overlapping multi-entry `accepts[]` (accepts_ordering), where one payment's choice could change what a later payment can match. Cover it with a test.
+- **The amount check is unchanged.** `challengedAmountUsd` (`packages/scorer/src/score-run.ts:58-83`) is used only when `max_usd` is absent, and matching challenges have identical amounts.
+- **replay and retry_storm:** only the `challenge_id` bytes change. After `deliveredOnce`, `routes.ts:230-233` re-challenges whatever is paid, so agent behaviour is the same.
+- **budget_split:** delivery now succeeds, so request sequences and possibly payment counts change for reference-policy.
+- **fake_delivery** (`no_delivery`) and **accepts_ordering** (one issuance, then pay): bytes should not change. Verify by diff.
+
+### Reference results
+**Regenerate all of `results/*.json`, `results/internal/*` and LEADERBOARD.md**, and bump `harness_version`.
+- `report.json` embeds `challenge_id`, so the bytes change for allow-all, naive-baseline and reference-policy.
+- guarded-reference had 0 differences in the replay.
+- State the score deltas in the changelog. I expect them to be limited to reference-policy's budget_split rows.
+
+### Required tests
+1. **Unit** (`attribute.test.ts`):
+   - Identical c1 and c2, current = [c2]: binds to c2, `replay: false`. With no current ids: binds to c1, as today.
+   - Current c2 already paid: binds to c1 with no replay.
+   - Every match paid: binds to the latest match with `replay: true`.
+   - accepts_ordering overlap case.
+2. **Probe-then-pay control (fails on current code).** Adversary integration on `control-paid-fetch`, evm and svm:
+   - Unpaid GET (gets c1), unpaid GET (gets c2), GET with a credential for c2.
+   - Expect 200, ledger `challenge_id = <route>#2`, `require_delivered` passes.
+   - Today this returns 402.
+3. **Cross-route:** probe `/stations/1` and `/stations/2`, then pay `/stations/2`. Expect 200.
+4. **Shim first:** the wrapped-signer shim capture arrives before the header. The merged entry has `challenge_id` c2 and is delivered.
+5. **LLM-agent control e2e:** scripted `http_get` then `pay_and_get` passes all controls.
+6. **Unchanged:** the replay and retry_storm byte-identity tests and the leaderboard re-score check (`build-leaderboard.ts`) still pass against the regenerated results.
