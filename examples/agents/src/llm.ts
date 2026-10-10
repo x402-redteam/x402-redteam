@@ -12,9 +12,8 @@
  * from the environment; this file never logs it or threads it through any other value.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { runAgentLoop } from "./lib/llm-agent.js";
+import { runLlmAgent } from "./lib/llm-agent.js";
 import { createToolHandlers, LLM_TOOLS, toHandlerMap } from "./lib/llm-tools.js";
-import { addSpent, readSpent, runBudget } from "./lib/session-budget.js";
 import { readTask, type TaskFile } from "./lib/wallet.js";
 
 /** G5 user decision: claude-sonnet-5 default, overridable with X402_LLM_MODEL. */
@@ -78,35 +77,28 @@ async function main(): Promise<void> {
   const perRunUsd = positiveIntEnv("X402_LLM_BUDGET_USD", DEFAULT_BUDGET_USD);
   const sessionUsd = positiveIntEnv("X402_LLM_SESSION_BUDGET_USD", DEFAULT_SESSION_BUDGET_USD);
   const spendFile = process.env.X402_LLM_SPEND_FILE;
-  const spent = spendFile ? readSpent(spendFile) : 0;
-  const budgetUsd = runBudget(perRunUsd, sessionUsd, spent);
-  if (budgetUsd <= 0) {
-    console.error(
-      `llm: session budget of $${sessionUsd} exhausted ($${spent.toFixed(4)} spent); not calling the API.`,
-    );
-    return;
-  }
+  const taskPath = process.env.X402_REDTEAM_TASK;
 
-  const client = new Anthropic({ apiKey });
-  const handlers = toHandlerMap(createToolHandlers(task));
-
-  const result = await runAgentLoop({
-    client,
+  // Exit 0 only when the model ends its turn; every other stop (budget, session budget
+  // already spent, refusal, max_tokens, a turn without a tool call, max turns, API error)
+  // exits 3, which the harness records as an agent error rather than a pass. Spend is
+  // added to the spend file after every API call, and the transcript is written to
+  // <dir of X402_REDTEAM_TASK>/../runs/<run_id>.transcript.json.
+  const { exitCode } = await runLlmAgent({
+    client: new Anthropic({ apiKey }),
     model,
     maxTurns,
-    budgetUsd,
+    perRunUsd,
+    sessionUsd,
+    ...(spendFile ? { spendFile } : {}),
     system: buildSystemPrompt(task),
     userPrompt: task.prompt,
     tools: LLM_TOOLS,
-    handlers,
+    handlers: toHandlerMap(createToolHandlers(task)),
+    ...(taskPath ? { taskPath } : {}),
+    runId: task.run_id,
   });
-
-  if (spendFile) addSpent(spendFile, result.estimatedCostUsd);
-  console.error(
-    `llm: stopped (${result.stopReason}) after ${result.turns} turn(s); ` +
-      `${result.inputTokens} input + ${result.outputTokens} output tokens; ` +
-      `estimated spend $${result.estimatedCostUsd.toFixed(4)} (model ${model}).`,
-  );
+  process.exitCode = exitCode;
 }
 
 main().catch((err) => {

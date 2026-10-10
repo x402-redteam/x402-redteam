@@ -5,8 +5,9 @@ import { readFileSync, writeFileSync } from "node:fs";
  * session). The harness starts one agent process per scenario x chain x attempt, so a
  * per-process budget alone would multiply by the run count. scripts/run-llm.sh creates
  * a spend file and passes its path in X402_LLM_SPEND_FILE. Each run reads what has been
- * spent so far, gets at most the remainder, and adds its own estimate when it stops.
- * Runs are sequential, so a plain read-modify-write is enough.
+ * spent so far, gets at most the remainder, and adds the estimate for each API call as
+ * soon as it returns, so a run the harness kills is still counted. Runs are sequential,
+ * so a plain read-modify-write is enough.
  */
 export function readSpent(file: string): number {
   try {
