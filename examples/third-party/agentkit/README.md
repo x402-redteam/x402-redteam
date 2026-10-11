@@ -10,7 +10,8 @@ Never point `--out` inside the repo tree.
 ## How it is put together
 
 - `src/agent.ts` is the **parent**. It is our code only and imports no AgentKit code.
-  It reads `X402_REDTEAM_TASK`, starts the child and drives it.
+  It reads `X402_REDTEAM_TASK`, starts the child and drives it. In llm mode it also
+  holds `ANTHROPIC_API_KEY` and runs the Claude loop.
 - `src/child.ts` is the **child**, the AgentKit tool server. It speaks JSON lines over
   fd 3: `{"id","action","args"}` in, `{"id","ok","result"|"error"}` out. Its stdout
   and console output go to stderr. It builds a local `ViemWalletProvider` from the task's
@@ -57,6 +58,7 @@ Then install the adapter, from this directory:
 corepack pnpm install --frozen-lockfile
 corepack pnpm typecheck
 corepack pnpm canary
+corepack pnpm test:llm
 ```
 
 The `@x402-redteam/capture` and `@x402-redteam/schema` dependencies are `file:` links to
@@ -90,9 +92,10 @@ Set `CANARY_VERBOSE=1` to print every probe result.
 
 ## Modes
 
-Choose the mode with `X402_AGENTKIT_MODE` and pass it with `--pass-env`. All three modes
-are scripted: no LLM, deterministic and free. Each one drives a copy of the reference
-payers' crawl (`src/crawl.ts`, copied from `examples/agents/src/lib/crawl.ts`).
+Choose the mode with `X402_AGENTKIT_MODE` and pass it with `--pass-env`. Three modes are
+scripted: no LLM, deterministic and free. Each one drives a copy of the reference payers'
+crawl (`src/crawl.ts`, copied from `examples/agents/src/lib/crawl.ts`). The fourth, `llm`,
+is described [below](#llm-mode).
 
 | Mode | What every fetch does |
 |---|---|
@@ -103,19 +106,82 @@ payers' crawl (`src/crawl.ts`, copied from `examples/agents/src/lib/crawl.ts`).
 Transfer mode keeps the autopay crawl so its controls can pass. Compare a transfer run
 with the autopay run on the same scenarios to isolate what the transfers add.
 
-`llm` mode is not built yet.
+### llm mode
+
+`X402_AGENTKIT_MODE=llm` runs the built-in LLM agent's Claude loop over AgentKit's own
+actions (`src/llm-mode.ts`):
+
+- The loop is `runLlmAgent` from `examples/agents/src/lib/llm-agent.ts`, and the system
+  prompt and settings come from `examples/agents/src/lib/llm-config.ts`, the same module
+  `examples/agents/src/llm.ts` uses. Both are imported by relative path, so the turn cap,
+  exit codes, per-call spend recording, session spend file and transcript
+  (`<out>/runs/<run_id>.transcript.json`) behave exactly as for the built-in agent.
+  `X402_LLM_MODEL`, `X402_LLM_BUDGET_USD`, `X402_LLM_SESSION_BUDGET_USD`,
+  `X402_LLM_SPEND_FILE`, `X402_LLM_MAX_TURNS` and `X402_LLM_POLICY_HINTS` all apply.
+- The tools are the actions of `x402ActionProvider`, `walletActionProvider` and
+  `erc20ActionProvider`, with AgentKit's names and descriptions and their zod schemas
+  converted by `zod-to-json-schema` (only the `$schema` key is dropped).
+  `X402ActionProvider_discover_x402_services` is left out because it queries a
+  facilitator's discovery endpoint, Coinbase CDP by default, rather than a task host.
+- Every tool call runs in the sandboxed child over fd 3, and the result goes back to the
+  model exactly as AgentKit returned it.
+- The parent holds `ANTHROPIC_API_KEY` and never passes it on. At start-up it asks the
+  child for the names in its environment and stops if any begins with `ANTHROPIC_`.
+- `provenance.json` records mode `llm` and the model, so runs with different models need
+  different out dirs.
+
+What this comparison isolates: with the model, system prompt, turn cap and budgets held
+constant, the only thing that differs from the built-in LLM agent is AgentKit's side:
+its tool surface, tool descriptions, result text and wallet. It does not use AgentKit's
+own template prompt or step limit, so it says nothing about how AgentKit's example
+chatbot behaves as shipped.
+
+Run it with the wrapper, from the harness root:
+
+```
+examples/third-party/agentkit/scripts/run-llm.sh --chains evm \
+  --scenario control-paid-fetch --out ~/x402-redteam-private/bolt8/agentkit/<label>
+```
+
+Like `examples/agents/scripts/run-llm.sh`, it prints `SKIPPED` and exits 0 without a key,
+creates a session spend file, sets `X402_AGENTKIT_MODE=llm`, passes the key and the
+`X402_LLM_*` variables with `--pass-env`, and runs with `--agent-id agentkit-llm`,
+`--guardrail-id none-llm-judgement` and `--timeout 180`. Only run it by hand.
+
+`corepack pnpm test:llm` runs `test/llm-mode.test.ts` against a live mock adversary with a
+stubbed Messages client in place of the API, so it needs no key and makes no API call.
+The stub calls `make_http_request` and then `retry_http_request_with_x402` on
+`control-paid-fetch`; the test checks that the payment is delivered and the run exits 0,
+that the child has no API key, that a `max_tokens` stop exits 3, that a failed child
+call ends the run before another API call, that a measured `error: true` result reaches
+the model and the run can still exit 0, and that a transport failure or a guard refusal
+of a task host exits 3. It needs the harness's root install.
 
 ### Exit codes
 
 - `0`: the run measured what it set out to.
 - `3`: it did not, and the harness scores it as an agent error. Causes:
-  - an action failed in the child (unknown action, schema error, exception), or returned
-    `error: true`, other than a guard refusal for a host outside the task, which is
-    measured behaviour;
-  - a transfer ended with anything except `Transferred …` or one of the transfer
-    action's two `Refusing … transfer` messages;
+  - scripted modes: an action failed in the child (unknown action, schema error,
+    exception), or returned `error: true`, other than a guard refusal for a host outside
+    the task, which is measured behaviour;
+  - scripted modes: a transfer ended with anything except `Transferred …` or one of the
+    transfer action's two `Refusing … transfer` messages;
+  - llm mode: the model stopped for any reason except `end_turn` (budget, session
+    budget, refusal, `max_tokens`, a turn without a tool call, the turn cap, an API
+    error);
+  - llm mode: the child failed a call (unknown action, input that fails AgentKit's
+    schema, an exception) or crashed, or a tool result, JSON or plain text, shows a
+    failure of the run rather than an outcome (`src/classify.ts`): a guard refusal of a
+    task host; a transport failure such as `ECONNREFUSED`, `ETIMEDOUT`, `fetch failed`
+    or viem's `HTTP request failed`; a payment payload that failed for a reason other
+    than a known client policy; or a generic exception it does not recognise. The adapter
+    stops the loop before the next API call. AgentKit's own outcomes (a network mismatch,
+    an HTTP status from the scenario's server, a 402 with its options, a spend-control
+    rejection, a refused or failed transfer) and a refusal of a host outside the task are
+    measured and go to the model unchanged;
   - the provenance check failed.
-- `1`: anything else, such as a child crash or a bad mode.
+- `2`: llm mode without `ANTHROPIC_API_KEY`.
+- `1`: anything else, such as a scripted-mode child crash or a bad mode.
 
 The adapter supports EVM only (`--chains evm`) and `localhost` or `path` host mode.
 

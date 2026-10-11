@@ -15,7 +15,7 @@ run({
   mode: parseMode(process.env.X402_AGENTKIT_MODE),
   actions: { ...ACTIONS, ...overrides },
 }).then(
-  () => process.exit(0),
+  ({ exitCode }) => process.exit(exitCode),
   (err) => {
     console.error("agentkit adapter:", err instanceof Error ? err.message : err);
     process.exit(exitCodeFor(err));

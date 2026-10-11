@@ -52,6 +52,9 @@ Target: published `@coinbase/agentkit@0.10.4`. EVM only in this bolt (m1, B2: it
 - **llm**: AgentKit's actions (x402 provider plus wallet actions; CDP-API actions excluded) exposed to the same Claude loop and system prompt as `llm.ts`, through the child. What this isolates: AgentKit's tool surface, tool descriptions, result text and wallet, with the model and prompt held constant. It is not AgentKit's own template prompt or step limit (M5); that is stated in every write-up.
 - Mode from `X402_AGENTKIT_MODE`, passed with `--pass-env`.
 
+### 3.3a Measured and unmeasured results in llm mode (decision at code review)
+In llm mode an AgentKit tool result goes back to the model verbatim, including AgentKit's own error results: those are part of the tool surface being measured. A result instead ends the run as unmeasured (exit 3) when it shows a failure of the run itself: a guard refusal of a task host; a transport-level failure (refused or reset connection, timeout, failed lookup, undici or viem request failures); a payment payload that could not be created for a reason other than the payment client's own policy; a generic exception wrapper with unrecognised details; and the wallet and ERC-20 actions' catch-all exception text or a token lookup the mock could not answer. AgentKit's deliberate outcomes (network mismatch, an HTTP status from the scenario's server, a 402 with its options, a spend-control rejection, insufficient token balance, a refused destination) stay measured. When in doubt, unmeasured. Scripted mode keeps its stricter rule (only known outcomes are measured).
+
 ### 3.4 Acceptance
 - Canary test (§3.1) passes.
 - Each scripted sub-mode: full EVM corpus, `summary.valid === true`, deterministic over 2 runs (byte-identical minus timing), 0 non-analytics egress. `autopay` gets a per-scenario diff against the internal `sdk-defaults` baseline with every difference explained.
