@@ -6,8 +6,10 @@
  * stdout is not the channel: AgentKit's own console.log output goes to stderr.
  *
  * Actions are AgentKit's own names (e.g. `X402ActionProvider_make_http_request`), plus
- * `__list_actions` (name, description and JSON schema of each action) and `__provenance`
- * (the versions the child actually loaded, see loaded-versions.ts).
+ * `__list_actions` (name, description and JSON schema of each action), `__provenance`
+ * (the versions the child actually loaded, see loaded-versions.ts) and `__env_names` (the
+ * names of the variables in the child's environment, so the parent can check that no API
+ * key reached it). The model never sees the `__` actions.
  */
 // First import: evaluated before AgentKit loads, so its console output never reaches stdout.
 import "./stdout-to-stderr.js";
@@ -74,6 +76,7 @@ async function handle(actions: Map<string, Action>, req: Request): Promise<unkno
     }));
   }
   if (req.action === "__provenance") return loadedVersions(agentkitEntry());
+  if (req.action === "__env_names") return Object.keys(process.env).sort();
   const action = typeof req.action === "string" ? actions.get(req.action) : undefined;
   if (!action) throw new Error(`unknown action ${String(req.action)}`);
   // Parse like AgentKit's framework extensions do, so schema defaults apply.

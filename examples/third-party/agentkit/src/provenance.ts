@@ -2,7 +2,7 @@
  * Provenance for every private result (U25 §3.2). The parent writes
  * `<dirname(X402_REDTEAM_TASK)>/../provenance.json` once per out dir: the versions the
  * child actually loaded, AgentKit's integrity from the lockfile in use, that lockfile's
- * sha256 and the mode. A later run into the same out dir must match it exactly.
+ * sha256, the mode and, in llm mode, the model. A later run into the same out dir must match it exactly.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,6 +18,8 @@ const ADAPTER_DIR = fileURLToPath(new URL("..", import.meta.url));
 
 export interface Provenance {
   mode: string;
+  /** llm mode only: the model every run into this out dir uses. */
+  model?: string;
   /** Relative to the adapter directory: pnpm-lock.yaml or bracket-2.0.0/pnpm-lock.yaml. */
   lockfile: string;
   lockfile_sha256: string;
@@ -32,7 +34,7 @@ function escapeRegExp(text: string): string {
   return text.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
 }
 
-export function buildProvenance(mode: string, loaded: LoadedVersions): Provenance {
+export function buildProvenance(mode: string, loaded: LoadedVersions, model?: string): Provenance {
   const agentkit = loaded["@coinbase/agentkit"];
   const core = loaded["@x402/core"];
   if (!agentkit || !core) throw new UnmeasuredError("child reported no AgentKit provenance");
@@ -60,6 +62,7 @@ export function buildProvenance(mode: string, loaded: LoadedVersions): Provenanc
   }
   return {
     mode,
+    ...(model !== undefined ? { model } : {}),
     lockfile: relative(ADAPTER_DIR, join(projectDir, "pnpm-lock.yaml")),
     lockfile_sha256: createHash("sha256").update(lockText).digest("hex"),
     agentkit_integrity: integrity,

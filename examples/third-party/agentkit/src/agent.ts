@@ -1,25 +1,32 @@
 /**
- * AgentKit adapter parent (U25 §3.1, §3.3), scripted mode. Our code only: it imports no
- * AgentKit code and drives the sandboxed child (child.ts) over fd 3.
+ * AgentKit adapter parent (U25 §3.1, §3.3). Our code only: it imports no AgentKit code
+ * and drives the sandboxed child (child.ts) over fd 3.
  *
- * X402_AGENTKIT_MODE picks a fixed driver over the reference payers' crawl (crawl.ts):
+ * X402_AGENTKIT_MODE picks the driver. Three scripted modes run a fixed driver over the
+ * reference payers' crawl (crawl.ts):
  * - autopay:  every fetch is AgentKit's make_http_request_with_x402;
  * - twostep:  make_http_request, then retry_http_request_with_x402 with the first offered
  *             option when the answer is a 402;
  * - transfer: the autopay crawl plus prose-instructed transfers through AgentKit's ERC-20
  *             transfer action; compare it with the autopay run to isolate what the
  *             transfers add.
- * llm mode is not built yet (U25-B part 2).
+ * llm mode runs the built-in LLM agent's Claude loop and system prompt over AgentKit's
+ * own actions (llm-mode.ts). This process holds ANTHROPIC_API_KEY; the child never does.
  *
  * Exit codes: 0 when the run measured what it set out to; 3 (scored as an agent error)
  * when it did not, for example an action failed in the child, a transfer ended without a
- * measured outcome, or the provenance check failed; 1 for anything else, such as a child
- * crash or a bad mode.
+ * measured outcome, the provenance check failed, or (llm mode) the model stopped for any
+ * reason except end_turn or the child crashed; 2 in llm mode without ANTHROPIC_API_KEY;
+ * 1 for anything else, such as a scripted-mode child crash or a bad mode.
  */
 import { pathToFileURL } from "node:url";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
-import { type AgentKitChild, startChild } from "./child-client.js";
+import type { MessagesClient } from "../../../agents/src/lib/llm-agent.js";
+import { readLlmSettings } from "../../../agents/src/lib/llm-config.js";
+import { blockedHost } from "./blocked-host.js";
+import { type AgentKitChild, ChildCrashedError, startChild } from "./child-client.js";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./crawl.js";
+import { checkChildEnv, runLlm } from "./llm-mode.js";
 import type { LoadedVersions } from "./loaded-versions.js";
 import { buildProvenance, recordProvenance, UnmeasuredError } from "./provenance.js";
 import { readTask, type TaskFile, taskHostnames } from "./task.js";
@@ -41,7 +48,7 @@ const TRANSFER_REFUSALS = [
   "Error: Transfer destination is an ERC20 token contract. Refusing to transfer to prevent loss of funds.",
 ];
 
-const MODES = ["autopay", "twostep", "transfer"] as const;
+const MODES = ["autopay", "twostep", "transfer", "llm"] as const;
 export type Mode = (typeof MODES)[number];
 
 type ActionResult = Record<string, unknown>;
@@ -66,20 +73,6 @@ export function toResponse(status: number, data: unknown): Response {
   const safe = Number.isInteger(status) && status >= 200 && status <= 599 ? status : 502;
   const nullBody = safe === 204 || safe === 205 || safe === 304;
   return new Response(nullBody ? null : bodyText(data), { status: safe });
-}
-
-/** The host an `EGRESS_BLOCKED <kind>:<target>` refusal names. */
-function blockedHost(text: string): string | undefined {
-  const match = /EGRESS_BLOCKED (\w+):(\S+)/.exec(text);
-  if (!match) return undefined;
-  const [, kind, target = ""] = match;
-  try {
-    if (kind === "fetch" || kind === "websocket") return new URL(target).hostname;
-  } catch {
-    return undefined;
-  }
-  if (kind === "tcp" || kind === "tls" || kind === "udp") return target.replace(/:\d*$/, "");
-  return target;
 }
 
 /**
@@ -192,8 +185,7 @@ class Driver {
 export function parseMode(value: string | undefined): Mode {
   if (MODES.includes(value as Mode)) return value as Mode;
   throw new Error(
-    `X402_AGENTKIT_MODE must be one of ${MODES.join(", ")} (got ${value ?? "nothing"}); ` +
-      "llm mode is not built yet",
+    `X402_AGENTKIT_MODE must be one of ${MODES.join(", ")} (got ${value ?? "nothing"})`,
   );
 }
 
@@ -217,39 +209,97 @@ export interface RunOptions {
   mode: Mode;
   /** Only tests override this (a wrong name must end the run with exit 3). */
   actions?: ActionNames;
+  /** The environment the child's is filtered from and llm mode's settings are read from.
+   * Default process.env. */
+  env?: NodeJS.ProcessEnv;
+  /** llm mode: the Messages client (the real Anthropic client, or a test stub). */
+  client?: MessagesClient;
+  log?: (line: string) => void;
 }
 
-export async function run(opts: RunOptions): Promise<void> {
+export interface RunResult {
+  /** 0, or 3 when llm mode stopped for any reason except end_turn. */
+  exitCode: number;
+  /** llm mode: the variable names the child reported from its own environment. */
+  childEnvNames?: string[];
+}
+
+export async function run(opts: RunOptions): Promise<RunResult> {
   if (opts.task.host_mode === "proxy") throw new Error("proxy host mode is not supported");
   if (opts.task.chain !== "evm") {
     throw new Error("the AgentKit adapter supports --chains evm only");
   }
-  const child = startChild();
-  const driver = new Driver(child, opts.task, opts.actions ?? ACTIONS);
-  const work = (async () => {
+  const env = opts.env ?? process.env;
+  const llm = opts.mode === "llm";
+  const client = opts.client;
+  if (llm && !client) throw new Error("llm mode needs a Messages client");
+  const child = startChild({ env });
+  const work = (async (): Promise<RunResult> => {
     const loaded = (await child.call("__provenance")) as LoadedVersions;
-    recordProvenance(opts.taskPath, buildProvenance(opts.mode, loaded));
-    await drive(driver, opts.mode);
+    if (!llm || !client) {
+      recordProvenance(opts.taskPath, buildProvenance(opts.mode, loaded));
+      await drive(new Driver(child, opts.task, opts.actions ?? ACTIONS), opts.mode);
+      return { exitCode: 0 };
+    }
+    const { model } = readLlmSettings(env);
+    recordProvenance(opts.taskPath, buildProvenance(opts.mode, loaded, model));
+    const childEnvNames = checkChildEnv((await child.call("__env_names")) as string[]);
+    const exitCode = await runLlm({
+      child,
+      task: opts.task,
+      taskPath: opts.taskPath,
+      client,
+      env,
+      ...(opts.log ? { log: opts.log } : {}),
+    });
+    return { exitCode, childEnvNames };
   })();
+  let result: RunResult;
   try {
     // A crash rejects every pending call, and the race ends the run at once.
-    await Promise.race([work, child.crashed]);
+    result = await Promise.race([work, child.crashed]);
+    await child.close();
   } catch (err) {
     child.kill();
+    // In llm mode a child crash is never a measured AgentKit result.
+    if (llm && err instanceof ChildCrashedError) throw new UnmeasuredError(err.message);
     throw err;
   }
-  await child.close();
+  return result;
 }
 
 export function exitCodeFor(err: unknown): number {
   return err instanceof UnmeasuredError ? 3 : 1;
 }
 
+/** Exit code when llm mode starts without ANTHROPIC_API_KEY, as for examples/agents/src/llm.ts. */
+export const MISSING_KEY_EXIT_CODE = 2;
+
 async function main(): Promise<void> {
   const mode = parseMode(process.env.X402_AGENTKIT_MODE);
   const taskPath = process.env.X402_REDTEAM_TASK;
   if (!taskPath) throw new Error("X402_REDTEAM_TASK is not set");
-  await run({ task: readTask(), taskPath, mode });
+  let client: MessagesClient | undefined;
+  if (mode === "llm") {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      console.error(
+        "agentkit adapter: ANTHROPIC_API_KEY is not set. Run llm mode through " +
+          "scripts/run-llm.sh (which skips cleanly), or pass one with --pass-env ANTHROPIC_API_KEY.",
+      );
+      process.exit(MISSING_KEY_EXIT_CODE);
+    }
+    // Loaded only in llm mode. The key stays in this process; the child never gets it.
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    client = new Anthropic({ apiKey }) as unknown as MessagesClient;
+  }
+  const { exitCode } = await run({
+    task: readTask(),
+    taskPath,
+    mode,
+    ...(client ? { client } : {}),
+  });
+  process.exitCode = exitCode;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

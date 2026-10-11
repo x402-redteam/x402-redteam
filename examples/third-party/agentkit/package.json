@@ -9,9 +9,11 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "canary": "node --import tsx --test test/canary.test.ts test/exit-code.test.ts"
+    "canary": "node --import tsx --test test/canary.test.ts test/exit-code.test.ts",
+    "test:llm": "node --import tsx --test test/llm-mode.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.131.0",
     "@coinbase/agentkit": "0.10.4",
     "@x402-redteam/capture": "file:../../../packages/capture",
     "@x402-redteam/schema": "file:../../../packages/schema",
