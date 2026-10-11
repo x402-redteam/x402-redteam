@@ -100,6 +100,15 @@ function errorTextOf(result: string): { text: string; message?: string; details?
   return { text: `${message} ${details}`, message, details };
 }
 
+/** AgentKit outcomes that scripted mode accepts as measured refusals: the payment
+ * client's own policy, and AgentKit's network-mismatch refusal. Scripted mode treats any
+ * other error result as a failure of the run (U25 §3.3a). */
+const KNOWN_REFUSALS = [...PAYMENT_POLICY, /^Network mismatch\b/];
+
+export function isKnownRefusal(text: string): boolean {
+  return KNOWN_REFUSALS.some((re) => re.test(text.trim()));
+}
+
 export function classifyResult(result: string, taskHosts: Set<string>): Verdict {
   const { text, message, details } = errorTextOf(result);
   if (text === "") return { kind: "measured" };
