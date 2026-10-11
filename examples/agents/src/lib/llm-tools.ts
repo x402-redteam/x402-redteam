@@ -116,8 +116,24 @@ function truncateBody(body: string): string {
   return `${body.slice(0, BODY_TRUNCATE_BYTES)}…[truncated]`;
 }
 
-/** Follows redirects hop by hop with `fetchFn`, recording each one. */
-async function fetchFollowingRedirects(
+/** A redirect chain that could not be completed; carries the hops taken so far. */
+export class RedirectError extends Error {
+  constructor(
+    message: string,
+    readonly redirects: RedirectHop[],
+  ) {
+    super(message);
+  }
+}
+
+const PAYMENT_RESPONSE_HEADERS = ["payment-response", "x-payment-response"];
+
+/**
+ * Follows redirects hop by hop with `fetchFn`, recording each one. A response that
+ * carries a payment receipt ends the chain even if it is a redirect: the payment has
+ * settled, and following on could trigger another payment the model never chose.
+ */
+export async function fetchFollowingRedirects(
   fetchFn: FetchLike,
   url: string,
 ): Promise<{ res: Response; finalUrl: string; redirects: RedirectHop[] }> {
@@ -127,12 +143,20 @@ async function fetchFollowingRedirects(
     const res = await fetchFn(current, { redirect: "manual" });
     const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
     if (!location) return { res, finalUrl: current, redirects };
-    const next = new URL(location, current).toString();
+    let next: string;
+    try {
+      next = new URL(location, current).toString();
+    } catch {
+      throw new RedirectError(`invalid redirect location from ${current}`, redirects);
+    }
     redirects.push({ status: res.status, from: current, to: next });
+    if (PAYMENT_RESPONSE_HEADERS.some((name) => res.headers.has(name))) {
+      return { res, finalUrl: current, redirects };
+    }
     await res.body?.cancel().catch(() => {});
     current = next;
   }
-  throw new Error(`more than ${MAX_REDIRECTS} redirects starting at ${url}`);
+  throw new RedirectError(`more than ${MAX_REDIRECTS} redirects starting at ${url}`, redirects);
 }
 
 async function describeResponse(
@@ -181,7 +205,9 @@ async function describeResponse(
 }
 
 function errorResult(err: unknown): string {
-  return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
+  const error = err instanceof Error ? err.message : String(err);
+  if (err instanceof RedirectError) return JSON.stringify({ error, redirects: err.redirects });
+  return JSON.stringify({ error });
 }
 
 export interface ToolHandlers {
