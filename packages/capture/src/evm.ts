@@ -5,27 +5,26 @@ import {
   erc20Abi,
   getAddress,
   type Hex,
-  isAddressEqual,
   keccak256,
   parseTransaction,
   recoverTransactionAddress,
-  recoverTypedDataAddress,
+  serializeSignature,
   type TransactionSerialized,
   verifyTypedData,
 } from "viem";
+import {
+  decodeEvmAuthorization,
+  decodeEvmMessage,
+  decodeEvmRawSign,
+  decodeTypedData,
+  EIP2612_PERMIT_TYPES,
+  PERMIT2_ADDRESS,
+  PERMIT2_WITNESS_TYPES,
+  sameAddress,
+} from "./evm-signatures.js";
+import { authorizationSeconds, isNonNegativeIntegerString, normalizeAddress } from "./evm-util.js";
 
-/**
- * True iff `value` is a valid non-negative decimal integer string (digits only - no
- * sign, no fractional part, no leading/trailing whitespace, no hex/scientific
- * notation). A decoded on-chain amount (ERC-20 `uint256` via `decodeFunctionData`, a
- * native tx's `value`) is always shaped like this by construction - the EVM has no
- * negative integers - but a header/shim payload's `authorization.value` is an
- * untyped string an agent (or attacker) controls directly, so it must be checked
- * before use (orchestrator addition, U9-B review: "negative_amount").
- */
-function isNonNegativeIntegerString(value: string): boolean {
-  return /^\d+$/.test(value);
-}
+export { decodeEvmAuthorization, decodeEvmMessage, decodeEvmRawSign };
 
 /**
  * EIP-712 type definition for EIP-3009 `transferWithAuthorization`, per
@@ -137,57 +136,15 @@ interface Eip3009Inner {
   signature?: string;
 }
 
-/**
- * Parses a value that may arrive as a `bigint` (an in-process real client
- * call), a numeric string (JSON-decoded, e.g. a shim event posted over
- * HTTP), or a plain number, into a `bigint`. Returns `undefined` when the
- * value can't be parsed, so callers can leave `authorization_seconds` unset
- * rather than throw.
- */
-function toBigIntOrUndefined(value: unknown): bigint | undefined {
-  if (typeof value === "bigint") return value;
-  if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
-  if (typeof value === "string" && value !== "") {
-    try {
-      return BigInt(value);
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-/**
- * v2 (authorization_lifetime, application-design.md §4 "v2" `Payment.authorization_seconds`).
- *
- * Orchestrator decision (U11 finding, post-review): the real @x402/evm@2.28.0 exact-EVM
- * client sets `validAfter: "0"` (a constant) and `validBefore: now + maxTimeoutSeconds`
- * (`now` = the *signer's* wall clock), so a plain `validBefore - validAfter` difference is
- * not a stable "window duration" at all - it's dominated by whichever epoch `validAfter`
- * happens to be. Instead this reports *the remaining authorization window at the harness's
- * receipt time*: `validBefore - max(validAfter, nowSeconds)`, where `nowSeconds` is the
- * harness's own wall clock (in whole seconds) at decode time. Can be negative (an already-
- * expired authorization, itself a signal). This is inherently wall-clock-dependent by
- * design - callers must keep it out of `report.json` (see `packages/scorer/src/score-suite.ts`,
- * which strips it the same way it strips `raw`/`dedupe_key`) and only persist it in the
- * full per-run ledger (`out/runs/*.json`).
- */
-function authorizationSeconds(validAfter: unknown, validBefore: unknown): number | undefined {
-  const after = toBigIntOrUndefined(validAfter);
-  const before = toBigIntOrUndefined(validBefore);
-  if (after === undefined || before === undefined) return undefined;
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-  const effectiveAfter = after > nowSeconds ? after : nowSeconds;
-  return Number(before - effectiveAfter);
-}
-
 interface Permit2Inner {
   signature: string;
   permit2Authorization: {
     from: string;
     nonce: string;
+    spender?: string;
+    deadline?: string;
     permitted: { token: string; amount: string };
-    witness?: { to?: string };
+    witness?: { to?: string; validAfter?: string };
   };
 }
 
@@ -264,32 +221,124 @@ async function decodeEip3009(
   }
 }
 
-function decodePermit2(accepted: EvmAccepted, inner: Permit2Inner, raw: unknown): DecodedPayment {
-  const { permit2Authorization } = inner;
-  const amount_atomic = permit2Authorization.permitted?.amount ?? "0";
-  // M3 (code review): an amount that isn't even a valid non-negative integer is a more
-  // specific, more useful signal than the generic "we don't support Permit2" reason.
-  const invalid_reason = isNonNegativeIntegerString(amount_atomic)
-    ? "unsupported_transfer_method"
-    : "negative_amount";
-  return {
-    chain: "evm",
+/**
+ * A Permit2 witness transfer from the payment header, verified as the x402 exact scheme
+ * defines it: domain `{name: "Permit2", chainId, verifyingContract: PERMIT2}`, the
+ * `PermitWitnessTransferFrom` types, signed by `from`, for the accepted asset, with the
+ * x402 Permit2 proxy as spender (any other spender is `untrusted_permit2_spender`). A
+ * correct one is valid and delivers like an EIP-3009 payment. It shares its decoder (and
+ * so its `evm:${nonce}` dedupe key) with the shim capture of the same signature.
+ */
+async function decodePermit2(
+  accepted: EvmAccepted,
+  inner: Permit2Inner,
+  raw: unknown,
+): Promise<DecodedPayment> {
+  const auth = inner.permit2Authorization ?? ({} as Permit2Inner["permit2Authorization"]);
+  const decoded = await decodeTypedData(
+    {
+      domain: {
+        name: "Permit2",
+        chainId: optionalChainId(accepted.network),
+        verifyingContract: PERMIT2_ADDRESS,
+      },
+      types: PERMIT2_WITNESS_TYPES,
+      primaryType: "PermitWitnessTransferFrom",
+      message: {
+        permitted: auth.permitted,
+        spender: auth.spender,
+        nonce: auth.nonce,
+        deadline: auth.deadline,
+        witness: auth.witness,
+      },
+      signature: inner.signature,
+      signer: auth.from,
+    },
+    raw,
+  );
+  const result: DecodedPayment = {
+    ...decoded,
     network: accepted.network,
     scheme: accepted.scheme,
-    asset: accepted.asset,
-    from: permit2Authorization.from ?? "",
-    to: permit2Authorization.witness?.to ?? "",
-    amount_atomic,
-    dedupe_key: `evm:${permit2Authorization.nonce ?? "unknown"}`,
-    valid: false,
-    invalid_reason,
-    raw,
+    asset: typeof auth.permitted?.token === "string" ? decoded.asset : accepted.asset,
   };
+  if (result.valid && !sameAddress(result.asset, accepted.asset)) {
+    return { ...result, valid: false, invalid_reason: "asset_mismatch" };
+  }
+  return result;
+}
+
+function optionalChainId(network: string): number | undefined {
+  try {
+    return evmChainId(network);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
- * Decodes an EVM header payload (`payload.payload = {signature, authorization}`
- * for v2, or the equivalent v1 shape), per functional-design.md §2.
+ * The legs a payment header's `extensions` carry, beside the payment itself. The client
+ * echoes the server's declarations back even when it signed nothing, so a leg is decoded
+ * only when a signed artifact is present, never because the extension key is:
+ * - `erc20ApprovalGasSponsoring.info.signedTransaction`: a signed approve transaction,
+ *   decoded like any other transaction (same dedupe key as its shim and RPC captures).
+ * - `eip2612GasSponsoring.info.signature`: an EIP-2612 `Permit`, verified against the
+ *   accepted token with the domain name and version from the challenge's `extra`, as the
+ *   SDK signs it.
+ */
+async function decodeExtensionLegs(
+  accepted: EvmAccepted,
+  extensions: unknown,
+): Promise<DecodedPayment[]> {
+  if (extensions === null || typeof extensions !== "object") return [];
+  const ext = extensions as Record<string, { info?: Record<string, unknown> } | undefined>;
+  const legs: DecodedPayment[] = [];
+
+  const permitInfo = ext.eip2612GasSponsoring?.info;
+  if (permitInfo && typeof permitInfo.signature === "string") {
+    const token = typeof permitInfo.asset === "string" ? permitInfo.asset : accepted.asset;
+    const permit = await decodeTypedData(
+      {
+        domain: {
+          name: accepted.extra?.name as string | undefined,
+          version: accepted.extra?.version as string | undefined,
+          chainId: optionalChainId(accepted.network),
+          verifyingContract: normalizeAddress(token),
+        },
+        types: EIP2612_PERMIT_TYPES,
+        primaryType: "Permit",
+        message: {
+          owner: permitInfo.from,
+          spender: permitInfo.spender,
+          value: permitInfo.amount,
+          nonce: permitInfo.nonce,
+          deadline: permitInfo.deadline,
+        },
+        signature: permitInfo.signature,
+        signer: String(permitInfo.from ?? ""),
+      },
+      { eip2612GasSponsoring: { info: permitInfo } },
+    );
+    legs.push({ ...permit, network: accepted.network });
+  }
+
+  const approvalInfo = ext.erc20ApprovalGasSponsoring?.info;
+  if (approvalInfo && typeof approvalInfo.signedTransaction === "string") {
+    try {
+      const tx = await decodeEvmTx({ serialized: approvalInfo.signedTransaction });
+      legs.push(...(tx.legs ?? [tx]));
+    } catch {
+      // Not a parseable transaction, so nothing was signed that could be submitted.
+    }
+  }
+  return legs;
+}
+
+/**
+ * Decodes an EVM header payload (`payload.payload = {signature, authorization}` or
+ * `{signature, permit2Authorization}` for v2, or the equivalent v1 shape), per
+ * functional-design.md §2. Signed gas-sponsoring extensions add further legs
+ * (`DecodedPayment.legs`, payment first).
  */
 export async function decodeEvmPayload(
   payload: PaymentPayload | Record<string, unknown>,
@@ -317,11 +366,15 @@ export async function decodeEvmPayload(
     inner = anyPayload.payload as Record<string, unknown>;
   }
 
+  let primary: DecodedPayment | undefined;
   if (isPermit2Shaped(inner)) {
-    return decodePermit2(accepted, inner as unknown as Permit2Inner, payload);
+    primary = await decodePermit2(accepted, inner as unknown as Permit2Inner, payload);
+  } else if (isEip3009Shaped(inner)) {
+    primary = await decodeEip3009(accepted, inner as unknown as Eip3009Inner, payload);
   }
-  if (isEip3009Shaped(inner)) {
-    return decodeEip3009(accepted, inner as unknown as Eip3009Inner, payload);
+  if (primary) {
+    const extensionLegs = await decodeExtensionLegs(accepted, anyPayload.extensions);
+    return extensionLegs.length === 0 ? primary : { ...primary, legs: [primary, ...extensionLegs] };
   }
   return {
     chain: "evm",
@@ -348,62 +401,29 @@ interface EvmTypedDataShimPayload {
 }
 
 /**
- * Decodes an `evm_typed_data` shim event, per functional-design.md §2.
- * Recovers the signer with `recoverTypedDataAddress` and requires it to
- * equal `payload.address`.
+ * Decodes an `evm_typed_data` shim event by its primaryType, with signature verification
+ * against `payload.address`:
+ * - `TransferWithAuthorization`, `ReceiveWithAuthorization` (EIP-3009): a transfer.
+ * - `PermitWitnessTransferFrom`, `PermitTransferFrom` (Permit2): a transfer of
+ *   `permitted.amount` to `witness.to`, else to the spender.
+ * - `Permit` (EIP-2612), `PermitSingle`, `PermitBatch` (Permit2 allowances): scheme
+ *   `approve`, `to` = spender, amount = value (or the largest detail).
+ * - anything else: scheme `unknown_typed_data`, amount 0.
  */
 export async function decodeEvmTypedData(
   payload: EvmTypedDataShimPayload,
 ): Promise<DecodedPayment> {
-  const domain = payload.domain as {
-    name?: string;
-    version?: string;
-    chainId?: number;
-    verifyingContract?: string;
-  };
-  const message = payload.message as Record<string, unknown>;
-  const network = domain.chainId != null ? `eip155:${domain.chainId}` : "";
-  const from = String(message.from ?? "");
-  const to = String(message.to ?? "");
-  const value = message.value;
-  const amount_atomic = typeof value === "bigint" ? value.toString() : String(value ?? "0");
-  const nonce = String(message.nonce ?? "");
-
-  const base: DecodedPayment = {
-    chain: "evm",
-    network,
-    scheme: "exact",
-    asset: String(domain.verifyingContract ?? ""),
-    from,
-    to,
-    amount_atomic,
-    dedupe_key: `evm:${nonce}`,
-    valid: false,
-    authorization_seconds: authorizationSeconds(message.validAfter, message.validBefore),
-    raw: payload,
-  };
-
-  // M3 (code review): check before attempting signature verification, same as decodeEip3009.
-  if (!isNonNegativeIntegerString(amount_atomic)) {
-    return { ...base, invalid_reason: "negative_amount" };
-  }
-
-  try {
-    const recovered = await recoverTypedDataAddress({
-      // biome-ignore lint/suspicious/noExplicitAny: shim events carry untyped EIP-712 params over the wire.
-      domain: domain as any,
-      // biome-ignore lint/suspicious/noExplicitAny: <see above>
-      types: payload.types as any,
+  return decodeTypedData(
+    {
+      domain: (payload.domain ?? {}) as Parameters<typeof decodeTypedData>[0]["domain"],
+      types: payload.types,
       primaryType: payload.primaryType,
-      // biome-ignore lint/suspicious/noExplicitAny: <see above>
-      message: message as any,
-      signature: payload.signature as Hex,
-    });
-    const valid = isAddressEqual(recovered, getAddress(payload.address));
-    return valid ? { ...base, valid: true } : { ...base, invalid_reason: "bad_signature" };
-  } catch {
-    return { ...base, invalid_reason: "bad_signature" };
-  }
+      message: payload.message as Record<string, unknown>,
+      signature: payload.signature,
+      signer: payload.address,
+    },
+    payload,
+  );
 }
 
 interface EvmTxShimPayload {
@@ -574,9 +594,9 @@ function decodeCalldataLeg(
  *   `value`, a second, independent native-value leg is recorded alongside it.
  * - A tx with no recognised calldata (or none at all) is a single native-value leg -
  *   `asset: NATIVE_ASSET` (plain value transfers, including value 0).
- * - An EIP-7702 `authorizationList` entry is its own leg (`invalid_reason:
- *   "unsupported_authority_grant"`, `to` = the delegated-to contract), independent of any
- *   calldata/value leg in the same tx.
+ * - Each EIP-7702 `authorizationList` entry is its own leg (scheme `delegate`, `to` = the
+ *   delegate, `from` = the recovered authority, valued at the wallet balance), independent
+ *   of any calldata/value leg in the same tx.
  * The top-level `DecodedPayment` fields mirror the first leg, for callers that only look at
  * one payment.
  */
@@ -595,20 +615,44 @@ export async function decodeEvmTx(payload: EvmTxShimPayload): Promise<DecodedPay
 
   const rawLegs: RawEvmLeg[] = [];
 
-  // EIP-7702: hands control of the signer's EOA to another address - independent of, and
-  // in addition to, any calldata/value leg below.
-  const authorizationList = (tx as { authorizationList?: readonly { address?: string }[] })
-    .authorizationList;
-  if (authorizationList && authorizationList.length > 0) {
-    rawLegs.push({
-      scheme: "approve",
-      asset: "",
-      from: signer,
-      to: authorizationList[0]?.address ?? "",
-      amount_atomic: "0",
-      dedupe_key: `evmtx:${hash}#7702`,
-      invalid_reason: "unsupported_authority_grant",
-    });
+  // EIP-7702: each authorization hands control of its authority's account to another
+  // address - independent of, and in addition to, any calldata/value leg below. Decoded
+  // like a wallet's own authorization signature, so the two captures share a dedupe key.
+  const authorizationList =
+    (
+      tx as {
+        authorizationList?: readonly {
+          address?: string;
+          chainId?: number;
+          nonce?: number;
+          r?: Hex;
+          s?: Hex;
+          yParity?: number;
+        }[];
+      }
+    ).authorizationList ?? [];
+  const delegateLegs: DecodedPayment[] = [];
+  for (const [i, entry] of authorizationList.entries()) {
+    let signature = "";
+    try {
+      signature = serializeSignature({
+        r: entry.r as Hex,
+        s: entry.s as Hex,
+        yParity: entry.yParity ?? 0,
+      });
+    } catch {
+      signature = "";
+    }
+    const leg = await decodeEvmAuthorization(
+      {
+        chainId: entry.chainId ?? 0,
+        address: entry.address ?? "",
+        nonce: entry.nonce ?? 0,
+        signature,
+      },
+      payload,
+    );
+    delegateLegs.push(leg.valid ? leg : { ...leg, dedupe_key: `evmtx:${hash}#7702:${i}` });
   }
 
   const nativeValue = tx.value ?? 0n;
@@ -638,7 +682,10 @@ export async function decodeEvmTx(payload: EvmTxShimPayload): Promise<DecodedPay
     });
   }
 
-  const legs = rawLegs.map((leg) => finalizeLeg(leg, network, signerValid, payload));
+  const legs = [
+    ...delegateLegs,
+    ...rawLegs.map((leg) => finalizeLeg(leg, network, signerValid, payload)),
+  ];
   const [first, ...rest] = legs;
   return { ...(first as DecodedPayment), legs: [first as DecodedPayment, ...rest] };
 }

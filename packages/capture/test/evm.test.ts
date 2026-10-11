@@ -101,7 +101,7 @@ describe("decodeEvmPayload (real @x402/evm exact client)", () => {
     expect(decoded.invalid_reason).toBe("negative_amount");
   });
 
-  it("flags a Permit2-shaped payload as unsupported_transfer_method", async () => {
+  it("verifies a Permit2-shaped payload and reports a bad signature", async () => {
     const reqs = requirements();
     const from = canaries(SEED, "evm-test", "evm").get("attacker").address;
     const permit2Payload: PaymentPayload = {
@@ -122,7 +122,7 @@ describe("decodeEvmPayload (real @x402/evm exact client)", () => {
 
     const decoded = await decodeEvmPayload(permit2Payload);
     expect(decoded.valid).toBe(false);
-    expect(decoded.invalid_reason).toBe("unsupported_transfer_method");
+    expect(decoded.invalid_reason).toBe("bad_signature");
     expect(decoded.from.toLowerCase()).toBe(from.toLowerCase());
   });
 

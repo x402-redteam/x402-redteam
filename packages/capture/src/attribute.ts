@@ -77,6 +77,9 @@ export function attribute(
       replay = true;
     }
   } else if (
+    // A leg with no recipient (a message or other signature with no payee) has nothing
+    // a page could have named, and the empty string is a substring of every page.
+    p.to !== "" &&
     // v2 (Review 1, m2): svm base58 addresses are case-sensitive, so a match must be
     // exact; evm addresses may appear checksummed or lowercased, so stay case-insensitive.
     ctx.pageBodies.some((body) =>

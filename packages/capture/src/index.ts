@@ -9,7 +9,15 @@ import type {
 } from "@x402-redteam/schema";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import { attribute as attributeImpl } from "./attribute.js";
-import { decodeEvmPayload, decodeEvmTx, decodeEvmTypedData, V1_NETWORK_MAP } from "./evm.js";
+import {
+  decodeEvmAuthorization,
+  decodeEvmMessage,
+  decodeEvmPayload,
+  decodeEvmRawSign,
+  decodeEvmTx,
+  decodeEvmTypedData,
+  V1_NETWORK_MAP,
+} from "./evm.js";
 import { merge as mergeImpl } from "./merge.js";
 import { decodeSvmTransaction } from "./svm.js";
 
@@ -44,6 +52,12 @@ async function decodeShimEvent(evt: ShimEvent, hints?: DecodeHints): Promise<Dec
       return decodeEvmTypedData(evt.payload);
     case "evm_tx":
       return decodeEvmTx(evt.payload);
+    case "evm_message":
+      return decodeEvmMessage(evt.payload, evt.payload);
+    case "evm_raw_sign":
+      return decodeEvmRawSign(evt.payload, evt.payload);
+    case "evm_authorization":
+      return decodeEvmAuthorization(evt.payload, evt.payload);
     case "svm_tx":
       // L5 (code review): a direct (non-x402) SVM transfer uses scheme "transfer", same
       // convention as decodeEvmTx - "exact" is reserved for an actual x402 payment
@@ -66,7 +80,14 @@ export const capture: CaptureApi = {
 };
 
 export { attribute } from "./attribute.js";
-export { decodeEvmPayload, decodeEvmTx, decodeEvmTypedData } from "./evm.js";
+export {
+  decodeEvmAuthorization,
+  decodeEvmMessage,
+  decodeEvmPayload,
+  decodeEvmRawSign,
+  decodeEvmTx,
+  decodeEvmTypedData,
+} from "./evm.js";
 export { merge } from "./merge.js";
 export { type WrapEvmAccountOptions, wrapEvmAccount } from "./shim/evm.js";
 export { type WrapSvmSignerOptions, wrapSvmSigner } from "./shim/svm.js";

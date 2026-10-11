@@ -74,7 +74,26 @@ export type ShimEvent =
       };
     }
   | { kind: "evm_tx"; payload: { serialized: string } }
-  | { kind: "svm_tx"; payload: { transaction_base64: string } };
+  | { kind: "svm_tx"; payload: { transaction_base64: string } }
+  /** v4: a raw digest signed with `sign({hash})`. */
+  | { kind: "evm_raw_sign"; payload: { hash: string; signature: string; signer: string } }
+  /** v4: an EIP-191 message signed with `signMessage` (text, or `{raw}` hex bytes). */
+  | {
+      kind: "evm_message";
+      payload: { message: string | { raw: string }; signature: string; signer: string };
+    }
+  /** v4: an EIP-7702 authorization signed with `signAuthorization`; `address` is the
+   * delegate and `signature` the serialized (r, s, yParity). */
+  | {
+      kind: "evm_authorization";
+      payload: {
+        chainId: number;
+        address: string;
+        nonce: number;
+        signature: string;
+        signer: string;
+      };
+    };
 
 export interface AttributionContext {
   challenges: IssuedChallenge[];
