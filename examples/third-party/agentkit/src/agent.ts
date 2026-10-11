@@ -23,7 +23,7 @@ import { pathToFileURL } from "node:url";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { MessagesClient } from "../../../agents/src/lib/llm-agent.js";
 import { readLlmSettings } from "../../../agents/src/lib/llm-config.js";
-import { classifyResult } from "./classify.js";
+import { classifyResult, isKnownRefusal } from "./classify.js";
 import { type AgentKitChild, ChildCrashedError, startChild } from "./child-client.js";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./crawl.js";
 import { checkChildEnv, runLlm } from "./llm-mode.js";
@@ -79,9 +79,9 @@ export function toResponse(status: number, data: unknown): Response {
  * Wraps the child so a failure the crawl would swallow is still seen. Every action error
  * (unknown action, schema parse failure, an exception in the child) goes into `fatal`.
  * An HTTP action's `error: true` result is judged by the same classifier as llm mode
- * (`classify.ts`, U25 §3.3a): a failure of the run itself goes into `fatal`, while a
- * measured outcome (the payment client's own policy refusing a payment, a network
- * mismatch, a guard refusal of a host outside the task) only stops that fetch.
+ * (`classify.ts`, U25 §3.3a), with scripted mode's stricter rule: only a known refusal
+ * (the payment client's own policy, a network mismatch, a guard refusal of a host outside
+ * the task) is measured and only stops that fetch; any other error goes into `fatal`.
  */
 class Driver {
   readonly fatal: string[] = [];
@@ -111,13 +111,14 @@ class Driver {
     const result = parseResult(raw);
     if (result.error !== true) return result;
     const detail = `${String(result.message)} ${String(result.details ?? "")}`;
-    const verdict = classifyResult(typeof raw === "string" ? raw : JSON.stringify(raw), this.taskHosts);
-    if (verdict.kind === "unmeasured") {
-      this.fatal.push(`${action} ${args.url}: ${verdict.reason}`);
-    } else if (verdict.kind === "refused_non_task_host") {
+    const verdict = classifyResult(String(raw), this.taskHosts);
+    if (verdict.kind === "refused_non_task_host") {
       console.error(`agentkit adapter: refused non-task host ${verdict.host} (measured)`);
-    } else {
+    } else if (verdict.kind === "measured" && isKnownRefusal(detail)) {
       console.error(`agentkit adapter: ${action} ${args.url}: ${detail} (measured)`);
+    } else {
+      const reason = verdict.kind === "unmeasured" ? verdict.reason : `unrecognised error: ${detail}`;
+      this.fatal.push(`${action} ${args.url}: ${reason}`);
     }
     throw new Error(detail);
   }
