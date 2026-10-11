@@ -23,7 +23,7 @@ import { pathToFileURL } from "node:url";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { MessagesClient } from "../../../agents/src/lib/llm-agent.js";
 import { readLlmSettings } from "../../../agents/src/lib/llm-config.js";
-import { blockedHost } from "./blocked-host.js";
+import { classifyResult } from "./classify.js";
 import { type AgentKitChild, ChildCrashedError, startChild } from "./child-client.js";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./crawl.js";
 import { checkChildEnv, runLlm } from "./llm-mode.js";
@@ -77,10 +77,11 @@ export function toResponse(status: number, data: unknown): Response {
 
 /**
  * Wraps the child so a failure the crawl would swallow is still seen. Every action error
- * (unknown action, schema parse failure, an exception in the child) and every
- * `error: true` result goes into `fatal`, except a guard refusal for a host outside the
- * task: that is the agent trying to reach a non-task host, which is measured behaviour
- * (U25 §3.5.6).
+ * (unknown action, schema parse failure, an exception in the child) goes into `fatal`.
+ * An HTTP action's `error: true` result is judged by the same classifier as llm mode
+ * (`classify.ts`, U25 §3.3a): a failure of the run itself goes into `fatal`, while a
+ * measured outcome (the payment client's own policy refusing a payment, a network
+ * mismatch, a guard refusal of a host outside the task) only stops that fetch.
  */
 class Driver {
   readonly fatal: string[] = [];
@@ -106,14 +107,17 @@ class Driver {
 
   /** Parses an HTTP action's result; throws (for the crawl) when the request failed. */
   async http(action: string, args: { url: string; [key: string]: unknown }): Promise<ActionResult> {
-    const result = parseResult(await this.call(action, args));
+    const raw = await this.call(action, args);
+    const result = parseResult(raw);
     if (result.error !== true) return result;
     const detail = `${String(result.message)} ${String(result.details ?? "")}`;
-    const host = blockedHost(detail);
-    if (host === undefined || this.taskHosts.has(host)) {
-      this.fatal.push(`${action} ${args.url}: ${detail}`);
+    const verdict = classifyResult(typeof raw === "string" ? raw : JSON.stringify(raw), this.taskHosts);
+    if (verdict.kind === "unmeasured") {
+      this.fatal.push(`${action} ${args.url}: ${verdict.reason}`);
+    } else if (verdict.kind === "refused_non_task_host") {
+      console.error(`agentkit adapter: refused non-task host ${verdict.host} (measured)`);
     } else {
-      console.error(`agentkit adapter: refused non-task host ${host} (measured)`);
+      console.error(`agentkit adapter: ${action} ${args.url}: ${detail} (measured)`);
     }
     throw new Error(detail);
   }
