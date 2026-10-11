@@ -8,15 +8,18 @@ import {
 import type { Hono } from "hono";
 import {
   decodeFunctionData,
+  encodeFunctionResult,
   erc20Abi,
+  type Hex,
   keccak256,
+  parseAbi,
   parseTransaction,
   recoverTransactionAddress,
   type TransactionSerialized,
 } from "viem";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
-import type { SeenEvmTx } from "./state.js";
+import type { RunState, SeenEvmTx } from "./state.js";
 
 /**
  * Mock EVM JSON-RPC (ADR-013, application-design.md §5 "v2"): `POST /evm-rpc`. Every
@@ -75,6 +78,74 @@ function encodeAbiString(value: string): string {
 }
 
 const MAX_UINT256 = 2n ** 256n - 1n;
+
+/** The canonical Multicall3 deployment address, the same on every EVM chain. viem's
+ * `multicall` sends `aggregate3` here via `eth_call`. */
+const MULTICALL3_ADDRESS = "0xca11bde05977b3631167028862be2a173976ca11";
+const multicall3Abi = parseAbi([
+  "struct Call3 { address target; bool allowFailure; bytes callData; }",
+  "struct Result { bool success; bytes returnData; }",
+  "function aggregate3(Call3[] calls) payable returns (Result[] returnData)",
+]);
+/** Placeholder bytecode returned by `eth_getCode` for addresses the mock treats as
+ * contracts (known assets and Multicall3). Never executed; it only needs to be non-empty. */
+const EVM_CONTRACT_CODE = "0x6080604052600080fdfe";
+
+/** Answers a read-only call to a known ERC-20 asset, or `undefined` for a revert. */
+function tokenCall(state: RunState, to: string | undefined, data: string): string | undefined {
+  const info = to ? assetInfo("evm", to, state.scenario.assets) : undefined;
+  if (!info?.known) return undefined;
+  switch (data.slice(0, 10).toLowerCase()) {
+    case SELECTOR_BALANCE_OF: {
+      const atomic = usdToAtomic(
+        walletBalanceUsd(state.scenario.task) / info.usd_price,
+        info.decimals,
+      );
+      return encodeUint256(BigInt(atomic));
+    }
+    case SELECTOR_DECIMALS:
+      return encodeUint256(BigInt(info.decimals));
+    case SELECTOR_SYMBOL:
+    case SELECTOR_NAME:
+      return encodeAbiString(info.symbol);
+    case SELECTOR_ALLOWANCE:
+      return encodeUint256(MAX_UINT256);
+    default:
+      return undefined;
+  }
+}
+
+/** Multicall3 `aggregate3`: runs each sub-call through `tokenCall`. A failing sub-call
+ * yields `{success:false, returnData:"0x"}`, or reverts the whole call when it does not
+ * allow failure. Returns `undefined` for a revert. */
+function multicallAggregate3(state: RunState, data: string): string | undefined {
+  let calls: readonly { target: string; allowFailure: boolean; callData: Hex }[];
+  try {
+    const decoded = decodeFunctionData({ abi: multicall3Abi, data: data as Hex });
+    if (decoded.functionName !== "aggregate3") return undefined;
+    [calls] = decoded.args;
+  } catch {
+    return undefined;
+  }
+  const results: { success: boolean; returnData: Hex }[] = [];
+  for (const call of calls) {
+    const answer = tokenCall(state, call.target, call.callData);
+    if (answer === undefined && !call.allowFailure) return undefined;
+    results.push(
+      answer === undefined
+        ? { success: false, returnData: "0x" }
+        : { success: true, returnData: answer as Hex },
+    );
+  }
+  return encodeFunctionResult({ abi: multicall3Abi, functionName: "aggregate3", result: results });
+}
+
+/** `eth_getCode`: non-empty for known assets and Multicall3, `"0x"` for everything else. */
+function codeAt(state: RunState, address: string | undefined): string {
+  if (!address) return "0x";
+  if (address.toLowerCase() === MULTICALL3_ADDRESS) return EVM_CONTRACT_CODE;
+  return assetInfo("evm", address, state.scenario.assets).known ? EVM_CONTRACT_CODE : "0x";
+}
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -297,34 +368,16 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
             const callParams = req.params?.[0] as EthCallParams | undefined;
             const to = callParams?.to;
             const data = callParams?.data ?? "0x";
-            const info = to ? assetInfo("evm", to, state.scenario.assets) : undefined;
-            const selector = data.slice(0, 10).toLowerCase();
-            if (!info?.known) {
-              body = err(-32000, "execution reverted");
-              break;
-            }
-            switch (selector) {
-              case SELECTOR_BALANCE_OF: {
-                const atomic = usdToAtomic(
-                  walletBalanceUsd(state.scenario.task) / info.usd_price,
-                  info.decimals,
-                );
-                body = ok(encodeUint256(BigInt(atomic)));
-                break;
-              }
-              case SELECTOR_DECIMALS:
-                body = ok(encodeUint256(BigInt(info.decimals)));
-                break;
-              case SELECTOR_SYMBOL:
-              case SELECTOR_NAME:
-                body = ok(encodeAbiString(info.symbol));
-                break;
-              case SELECTOR_ALLOWANCE:
-                body = ok(encodeUint256(MAX_UINT256));
-                break;
-              default:
-                body = err(-32000, "execution reverted");
-            }
+            const answer =
+              to?.toLowerCase() === MULTICALL3_ADDRESS
+                ? multicallAggregate3(state, data)
+                : tokenCall(state, to, data);
+            body = answer === undefined ? err(-32000, "execution reverted") : ok(answer);
+            break;
+          }
+          case "eth_getCode": {
+            const address = typeof req.params?.[0] === "string" ? req.params[0] : undefined;
+            body = ok(codeAt(state, address));
             break;
           }
           case "eth_sendRawTransaction": {
