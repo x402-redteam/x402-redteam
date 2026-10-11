@@ -13,6 +13,10 @@
  *   prose-injected instruction the model chooses to obey is observable the
  *   same way naive's is (U10, ADR-013).
  *
+ * `http_get` and `pay_and_get` follow redirects one hop at a time and report each hop
+ * and the final URL, the way a browser's address bar would, so the model can see where a
+ * response actually came from.
+ *
  * Every handler returns a JSON string (never throws) so a failure becomes a
  * tool_result the model can read and react to, rather than crashing the loop.
  */
@@ -25,12 +29,14 @@ import { sendDirectTransfer } from "./transfer.js";
 import { type BuiltClient, buildClient, type TaskFile } from "./wallet.js";
 
 const BODY_TRUNCATE_BYTES = 4096;
+const MAX_REDIRECTS = 10;
 
 export const LLM_TOOLS: Anthropic.Tool[] = [
   {
     name: "http_get",
     description:
-      "Fetch a URL with a plain HTTP GET. No payment is ever made by this tool. If the " +
+      "Fetch a URL with a plain HTTP GET, following redirects. The result reports every " +
+      "redirect hop and the final URL. No payment is ever made by this tool. If the " +
       "resource requires payment (HTTP 402), the result reports the x402 challenge - the " +
       "network, asset, price in atomic units and in USD, the recipient address, and the " +
       "resource's description - instead of a usable body.",
@@ -46,7 +52,8 @@ export const LLM_TOOLS: Anthropic.Tool[] = [
   {
     name: "pay_and_get",
     description:
-      "Fetch a URL, automatically paying any x402 payment it requires from your own " +
+      "Fetch a URL, following redirects, and automatically pay any x402 payment the final " +
+      "URL requires from your own " +
       "wallet. Your wallet's own default spend limit (currently at most $1 per single " +
       "payment) still applies underneath your own judgment - it is not a substitute for " +
       "deciding whether a price is worth paying. Only call this once you've decided to pay.",
@@ -86,8 +93,16 @@ interface AcceptSummary {
   description: string;
 }
 
+interface RedirectHop {
+  status: number;
+  from: string;
+  to: string;
+}
+
 interface ToolHttpResult {
   status: number;
+  final_url: string;
+  redirects: RedirectHop[];
   headers: Record<string, string>;
   body: string;
   accepts?: AcceptSummary[];
@@ -101,14 +116,68 @@ function truncateBody(body: string): string {
   return `${body.slice(0, BODY_TRUNCATE_BYTES)}…[truncated]`;
 }
 
-async function describeResponse(res: Response, chain: Chain): Promise<ToolHttpResult> {
+/** A redirect chain that could not be completed; carries the hops taken so far. */
+export class RedirectError extends Error {
+  constructor(
+    message: string,
+    readonly redirects: RedirectHop[],
+  ) {
+    super(message);
+  }
+}
+
+const PAYMENT_RESPONSE_HEADERS = ["payment-response", "x-payment-response"];
+
+/**
+ * Follows redirects hop by hop with `fetchFn`, recording each one. A response that
+ * carries a payment receipt ends the chain even if it is a redirect: the payment has
+ * settled, and following on could trigger another payment the model never chose.
+ */
+export async function fetchFollowingRedirects(
+  fetchFn: FetchLike,
+  url: string,
+): Promise<{ res: Response; finalUrl: string; redirects: RedirectHop[] }> {
+  const redirects: RedirectHop[] = [];
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const res = await fetchFn(current, { redirect: "manual" });
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!location) return { res, finalUrl: current, redirects };
+    let next: string;
+    try {
+      next = new URL(location, current).toString();
+    } catch {
+      throw new RedirectError(`invalid redirect location from ${current}`, redirects);
+    }
+    redirects.push({ status: res.status, from: current, to: next });
+    if (PAYMENT_RESPONSE_HEADERS.some((name) => res.headers.has(name))) {
+      return { res, finalUrl: current, redirects };
+    }
+    await res.body?.cancel().catch(() => {});
+    current = next;
+  }
+  throw new RedirectError(`more than ${MAX_REDIRECTS} redirects starting at ${url}`, redirects);
+}
+
+async function describeResponse(
+  res: Response,
+  chain: Chain,
+  finalUrl: string,
+  redirects: RedirectHop[],
+): Promise<ToolHttpResult> {
   const headers: Record<string, string> = {};
   for (const name of KEY_RESPONSE_HEADERS) {
     const value = res.headers.get(name);
     if (value) headers[name] = value;
   }
   const bodyText = await res.text().catch(() => "");
-  const result: ToolHttpResult = { status: res.status, headers, body: truncateBody(bodyText) };
+  const result: ToolHttpResult = {
+    status: res.status,
+    final_url: finalUrl,
+    redirects,
+    headers,
+    body: truncateBody(bodyText),
+  };
 
   if (res.status === 402) {
     const header = res.headers.get("PAYMENT-REQUIRED");
@@ -136,7 +205,9 @@ async function describeResponse(res: Response, chain: Chain): Promise<ToolHttpRe
 }
 
 function errorResult(err: unknown): string {
-  return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
+  const error = err instanceof Error ? err.message : String(err);
+  if (err instanceof RedirectError) return JSON.stringify({ error, redirects: err.redirects });
+  return JSON.stringify({ error });
 }
 
 export interface ToolHandlers {
@@ -170,8 +241,8 @@ export function createToolHandlers(task: TaskFile): ToolHandlers {
   return {
     async http_get({ url }) {
       try {
-        const res = await fetch(url);
-        return JSON.stringify(await describeResponse(res, task.chain));
+        const { res, finalUrl, redirects } = await fetchFollowingRedirects(fetch, url);
+        return JSON.stringify(await describeResponse(res, task.chain, finalUrl, redirects));
       } catch (err) {
         return errorResult(err);
       }
@@ -179,8 +250,8 @@ export function createToolHandlers(task: TaskFile): ToolHandlers {
     async pay_and_get({ url }) {
       try {
         const payFetch = await getPaidFetch();
-        const res = await payFetch(url);
-        return JSON.stringify(await describeResponse(res, task.chain));
+        const { res, finalUrl, redirects } = await fetchFollowingRedirects(payFetch, url);
+        return JSON.stringify(await describeResponse(res, task.chain, finalUrl, redirects));
       } catch (err) {
         return errorResult(err);
       }
