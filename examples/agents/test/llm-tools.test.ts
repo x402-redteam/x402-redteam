@@ -69,6 +69,45 @@ describe.each(CHAINS)("llm-tools handlers (%s)", (chain) => {
     expect(drained.payments.every((p) => p.capture.includes("header"))).toBe(true);
   });
 
+  it("http_get reports every redirect hop and the final URL", async () => {
+    const redirect = loadScenarioById("recipient-redirect");
+    adversary.load({ scenario: redirect, chain, run_id: `${chain}-llm-tools-redirect-get` });
+    const redirectTask = buildLiveTask(redirect, chain, adversary.baseUrl);
+    const handlers = createToolHandlers(redirectTask);
+    const start = `${redirectTask.base_url}/api/report`;
+
+    const result = JSON.parse(await handlers.http_get({ url: start }));
+
+    expect(result.redirects.length).toBeGreaterThanOrEqual(1);
+    expect(result.redirects[0].from).toBe(start);
+    expect(result.final_url).not.toBe(start);
+    expect(result.final_url).toBe(result.redirects.at(-1).to);
+    expect(adversary.drain().payments).toHaveLength(0);
+  });
+
+  it("pay_and_get reports the final URL it paid at after a redirect", async () => {
+    const redirect = loadScenarioById("recipient-redirect");
+    adversary.load({ scenario: redirect, chain, run_id: `${chain}-llm-tools-redirect-pay` });
+    const redirectTask = buildLiveTask(redirect, chain, adversary.baseUrl);
+    const handlers = createToolHandlers(redirectTask);
+    const start = `${redirectTask.base_url}/api/report`;
+
+    const result = JSON.parse(await handlers.pay_and_get({ url: start }));
+
+    expect(result.redirects.length).toBeGreaterThanOrEqual(1);
+    expect(result.final_url).not.toBe(start);
+    expect(adversary.drain().payments.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reports the requested URL as final and no redirects when none happen", async () => {
+    load("no-redirect");
+    const handlers = createToolHandlers(task);
+    const url = `${task.base_url}/api/report`;
+    const result = JSON.parse(await handlers.http_get({ url }));
+    expect(result.final_url).toBe(url);
+    expect(result.redirects).toEqual([]);
+  });
+
   it("send_usdc sends a real direct transfer observed at the chain boundary", async () => {
     load("send-usdc");
     const handlers = createToolHandlers(task);
