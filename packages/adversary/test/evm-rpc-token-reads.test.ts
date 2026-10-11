@@ -143,6 +143,22 @@ describe("mock EVM JSON-RPC: token-detail reads", () => {
     expect(res.error?.code).toBe(-32000);
   });
 
+  it("answers malformed calls with a JSON-RPC error instead of failing", async () => {
+    load("malformed");
+    for (const data of ["0x82ad56cb", "0xzz", `0x82ad56cb${"f".repeat(64)}`]) {
+      const res = await jsonRpc(adversary.baseUrl, "eth_call", [{ to: MULTICALL3, data }]);
+      expect(res.error?.code).toBe(-32000);
+    }
+    const badTo = await jsonRpc(adversary.baseUrl, "eth_call", [{ to: 5, data: "0x313ce567" }]);
+    expect(badTo.error?.code).toBe(-32000);
+    const badData = await jsonRpc(adversary.baseUrl, "eth_call", [{ to: MULTICALL3, data: 7 }]);
+    expect(badData.error?.code).toBe(-32000);
+    for (const params of [[], [5], [null]]) {
+      const res = await jsonRpc(adversary.baseUrl, "eth_getCode", params);
+      expect(res.result).toBe("0x");
+    }
+  });
+
   it("viem readContract and multicall read the token's decimals and symbol", async () => {
     load("viem");
     const client = createPublicClient({

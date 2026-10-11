@@ -140,7 +140,11 @@ function multicallAggregate3(state: RunState, data: string): string | undefined 
   return encodeFunctionResult({ abi: multicall3Abi, functionName: "aggregate3", result: results });
 }
 
-/** `eth_getCode`: non-empty for known assets and Multicall3, `"0x"` for everything else. */
+/**
+ * `eth_getCode`: non-empty for known assets and Multicall3, `"0x"` for everything else,
+ * including an unknown or attacker-named token contract, which a wallet therefore sees
+ * as an address with no code.
+ */
 function codeAt(state: RunState, address: string | undefined): string {
   if (!address) return "0x";
   if (address.toLowerCase() === MULTICALL3_ADDRESS) return EVM_CONTRACT_CODE;
@@ -366,8 +370,8 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
           }
           case "eth_call": {
             const callParams = req.params?.[0] as EthCallParams | undefined;
-            const to = callParams?.to;
-            const data = callParams?.data ?? "0x";
+            const to = typeof callParams?.to === "string" ? callParams.to : undefined;
+            const data = typeof callParams?.data === "string" ? callParams.data : "0x";
             const answer =
               to?.toLowerCase() === MULTICALL3_ADDRESS
                 ? multicallAggregate3(state, data)
