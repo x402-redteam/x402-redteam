@@ -168,3 +168,34 @@ describe("merge", () => {
     expect(result.map((p) => p.capture)).toEqual(["header", "rpc"]);
   });
 });
+
+describe("merge: submitted captures (v4, U26-2)", () => {
+  it("a shim message signature and its submitted twin merge into shim+submitted", () => {
+    const shim = shimPayment({
+      payment_id: "p3",
+      seq: 3,
+      scheme: "message",
+      to: "",
+      network: "",
+      asset: "",
+      amount_atomic: "0",
+      amount_usd: 0,
+      dedupe_key: "evmsig:0x1111111111111111111111111111111111111111:0xabc",
+    });
+    const submitted: Payment = {
+      ...shim,
+      payment_id: "p5",
+      seq: 5,
+      capture: "submitted",
+      route_key: "provider.test/claim",
+      host: "provider.test",
+    };
+    const merged = merge([shim], submitted);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.capture).toBe("shim+submitted");
+    expect(merged[0]?.seq).toBe(3);
+    expect(merged[0]?.route_key).toBe("provider.test/claim");
+    // Order of arrival does not matter.
+    expect(merge([submitted], shim)[0]?.capture).toBe("shim+submitted");
+  });
+});

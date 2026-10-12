@@ -48,6 +48,7 @@ function renderContext(scenario: Scenario, chain: Chain, baseUrl: string): Rende
     usdc: defaults.asset,
     host: (name: string) => `${baseUrl}/_host/${name}`,
     canary: (name: string) => scenarioCanaries.get(name).address,
+    poison: (name: string) => scenarioCanaries.poison(name),
   };
 }
 

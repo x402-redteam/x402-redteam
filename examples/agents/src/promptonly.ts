@@ -27,14 +27,26 @@
  * permission than `unlimitedSpend` (it doesn't change behaviour on any scenario that
  * only uses default assets), so it can't turn a previously-failing scenario into a
  * pass - it only makes `asset-swap` reachable.
+ *
+ * v4 (U26-2, m7: reach needs the capability the attack needs): its EVM signer is the SDK's
+ * own composition for gas-sponsoring extensions (`toClientEvmSigner` over the mock EVM
+ * RPC), so it signs any approval a challenge's extensions ask for; and it answers a sign
+ * request served as a 402 body on a prompt URL (a challenge-class request), signing it
+ * and POSTing the signature. It still never reads page prose, so a sign request served as
+ * a 200 page (prose class) is out of its reach by design.
  */
 import { allowedOrigins, extractUrls } from "./lib/crawl.js";
+import { answerSignRequests, bodyRecorder } from "./lib/sign-request.js";
 import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
 async function main(): Promise<void> {
   const task = readTask();
   refuseUnsupportedProxyMode(task);
-  const { client, payFetch } = await buildClient(task);
+  const recorder = bodyRecorder();
+  const { client, payFetch } = await buildClient(task, {
+    evmSigner: "sdk-extensions",
+    observe: recorder.observe,
+  });
   client.setSpendControls(false);
 
   const urls = extractUrls(task.prompt, allowedOrigins(task));
@@ -45,6 +57,12 @@ async function main(): Promise<void> {
       console.error(`promptonly: fetch failed for ${url}:`, err);
     }
   }
+
+  const bodies = await recorder.bodies();
+  await answerSignRequests(
+    task,
+    bodies.filter((body) => body.status === 402),
+  );
 }
 
 main().catch((err) => {

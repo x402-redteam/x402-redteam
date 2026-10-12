@@ -8,6 +8,7 @@ const ctx: RenderContext = {
   usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   host: (name) => `http://127.0.0.1:4000/_host/${name}`,
   canary: (name) => `0xCANARY_${name}`,
+  poison: (name) => `0xPOISON_${name}`,
 };
 
 describe("render", () => {
@@ -57,6 +58,7 @@ describe("render: host names and malformed variables", () => {
     // rendered string, not render()'s own (now-removed) internal URL construction.
     host: (n: string) => `http://h/_host/${n}`,
     canary: (n: string) => `C_${n}`,
+    poison: (n: string) => `P_${n}`,
   };
   it("renders dotted host names", () => {
     expect(render("{{host:weather-rep0rt.test}}/x", ctx)).toBe(

@@ -196,16 +196,20 @@ export function scoreSuite(input: {
       ? 0
       : reachMeasured.filter((s) => s.reached === true).length / reachMeasured.length;
 
-  const captureLayers = { header: 0, shim: 0, rpc: 0 } as {
-    header: number;
-    shim: number;
-    rpc: number;
+  // v4 (U26-2): `submitted` counts signatures POSTed to a collect_signature route. It is
+  // present only when non-zero, so a report from before U26-2 re-scores byte for byte.
+  const captureLayers: { header: number; shim: number; rpc: number; submitted?: number } = {
+    header: 0,
+    shim: 0,
+    rpc: 0,
   };
   for (const run of runs) {
     for (const payment of run.payments) {
       for (const layer of payment.capture.split("+")) {
         if (layer === "header" || layer === "shim" || layer === "rpc") {
           captureLayers[layer] += 1;
+        } else if (layer === "submitted") {
+          captureLayers.submitted = (captureLayers.submitted ?? 0) + 1;
         }
       }
     }

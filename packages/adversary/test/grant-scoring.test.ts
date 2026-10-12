@@ -13,9 +13,16 @@ import {
   ScenarioSchema,
 } from "@x402-redteam/schema";
 import { scoreRun, scoreSuite } from "@x402-redteam/scorer";
-import { getAddress, type Hex, maxUint256, serializeSignature } from "viem";
+import {
+  createPublicClient,
+  getAddress,
+  type Hex,
+  http as httpTransport,
+  maxUint256,
+  serializeSignature,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type Adversary, createAdversary } from "../src/index.js";
 
 /**
@@ -170,10 +177,15 @@ describe("grant and message legs scored from real decoder output", () => {
     return live;
   }
 
-  async function payWithPermit(opts: { sendHeader: boolean }) {
+  async function payWithPermit(opts: { sendHeader: boolean; adversaryRpc?: boolean }) {
     const url = `${adversary.baseUrl}/report`;
     const client = new x402Client();
-    registerExactEvmScheme(client, { signer: toClientEvmSigner(wrapped(), mockPublicClient) });
+    // The adversary's mock RPC counts the permits already recorded (review H1); the local
+    // mock always answers nonce 0.
+    const publicClient = opts.adversaryRpc
+      ? createPublicClient({ transport: httpTransport(`${adversary.baseUrl}/evm-rpc`) })
+      : mockPublicClient;
+    registerExactEvmScheme(client, { signer: toClientEvmSigner(wrapped(), publicClient) });
     const http = new x402HTTPClient(client);
     const probe = await fetch(url);
     const required = http.getPaymentRequiredResponse((name) => probe.headers.get(name));
@@ -208,13 +220,37 @@ describe("grant and message legs scored from real decoder output", () => {
   it("report.json minus timing is byte-identical across two runs of the permit flow", async () => {
     const scenario = buildScenario();
     const reports: string[] = [];
-    for (let i = 0; i < 2; i += 1) {
-      adversary.load({ scenario, chain: "evm", run_id: "grant-determinism" });
-      // One header submission, then a second permit and transfer seen only by the shim.
-      await payWithPermit({ sendHeader: true });
-      await payWithPermit({ sendHeader: false });
-      const { timing: _timing, ...report } = reportOf(scenario, finish("grant-determinism"));
-      reports.push(JSON.stringify(report));
+    // The SDK derives signed deadlines from the clock. The first run signs both payments
+    // within one second; the second run's payments straddle a second boundary. With the
+    // mock RPC counting permit nonces (review H1), each permit is its own leg either way,
+    // so the reports must match.
+    const base = Date.parse("2026-10-12T00:00:00Z");
+    const schedules = [
+      [base + 200, base + 400],
+      [base + 900, base + 1_100],
+    ];
+    try {
+      for (const [first, second] of schedules) {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        adversary.load({ scenario, chain: "evm", run_id: "grant-determinism" });
+        // One header submission, then a second permit and transfer seen only by the shim.
+        vi.setSystemTime(first as number);
+        await payWithPermit({ sendHeader: true, adversaryRpc: true });
+        vi.setSystemTime(second as number);
+        await payWithPermit({ sendHeader: false, adversaryRpc: true });
+        vi.useRealTimers();
+        const run = finish("grant-determinism");
+        expect(run.payments.map((p) => p.scheme).sort()).toEqual([
+          "approve",
+          "approve",
+          "exact",
+          "exact",
+        ]);
+        const { timing: _timing, ...report } = reportOf(scenario, run);
+        reports.push(JSON.stringify(report));
+      }
+    } finally {
+      vi.useRealTimers();
     }
     expect(reports[1]).toBe(reports[0]);
     expect(reports[0]).toContain('"submission"');

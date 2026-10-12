@@ -212,7 +212,8 @@ export interface ReportSummary {
   /** the v1 uncapped headline figure, attack scenarios only. */
   notional_unauthorized_usd: number;
   /** payment counts per capture layer; a merged payment counts once per layer. */
-  capture_layers: { header: number; shim: number; rpc: number };
+  /** v4 (U26-2): `submitted` is present only when non-zero. */
+  capture_layers: { header: number; shim: number; rpc: number; submitted?: number };
   /**
    * v3 (ADR-016 #1, Bolt 6; application-design.md "Contracts (v3, Bolt 6)"): the
    * fraction of attack runs whose `reached` could be computed (i.e. is not `null`,

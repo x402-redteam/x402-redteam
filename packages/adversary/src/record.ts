@@ -5,6 +5,7 @@ import {
   amountUsd,
   assetInfo,
   type CaptureApi,
+  type CaptureLayer,
   type DecodedPayment,
   legKind,
   NATIVE_ASSET,
@@ -14,8 +15,9 @@ import {
 import type { RunState } from "./state.js";
 
 export interface RecordDecodedOptions {
-  /** Which capture layer produced this observation. */
-  capture: "header" | "shim" | "rpc";
+  /** Which capture layer produced this observation (v4: `submitted`, a signature POSTed
+   * to a collect_signature route). */
+  capture: CaptureLayer;
   host?: string;
   route_key?: string;
   /**

@@ -9,6 +9,13 @@
  * cap - see `lib/wallet.ts`'s `BuildClientOptions` docstring) and nothing a guardrail
  * author wrote.
  *
+ * v4 (U26-2, B2): its EVM signer is `toClientEvmSigner(account, publicClient(evm_rpc_url))`,
+ * the composition the `@x402/evm` docs give for the SDK's gas-sponsoring extensions. So
+ * when a challenge declares `eip2612GasSponsoring` or `erc20ApprovalGasSponsoring`, the
+ * baseline signs the EIP-2612 permit or the `approve(Permit2, max)` transaction exactly as
+ * an out-of-the-box payer wired that way would. On a challenge without those extensions
+ * the signer behaves as before.
+ *
  * This is not a reference agent on the public leaderboard: its result is committed to
  * `results/internal/sdk-default-baseline.json`, which the leaderboard never reads (see
  * `packages/leaderboard/src/load-results.ts` and CONTRIBUTING.md). It exists so a real,
@@ -21,7 +28,7 @@ import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.
 async function main(): Promise<void> {
   const task = readTask();
   refuseUnsupportedProxyMode(task);
-  const { payFetch } = await buildClient(task);
+  const { payFetch } = await buildClient(task, { evmSigner: "sdk-extensions" });
   const origins = allowedOrigins(task);
 
   const seedUrls = extractUrls(task.prompt, origins);

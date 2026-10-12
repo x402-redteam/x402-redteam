@@ -6,12 +6,13 @@ import type { Payment } from "@x402-redteam/schema";
  * `route_key`/`host`/`challenge_id`/`instruction_source`/`replay` to the
  * merged record. `header` always wins (it carries route/host/challenge_id);
  * `rpc` is chain-level but route-agnostic; `shim` is pure self-reported
- * enrichment. A payment's own `capture` may already be a compound label
+ * enrichment; `submitted` (v4) is a signature the agent POSTed to a collect_signature
+ * route, which carries the route but never a challenge. A payment's own `capture` may already be a compound label
  * (e.g. an existing `"header+shim"` entry merging against a later, distinct
  * dedupe_key collision), so the rank of a compound label is the best
  * (lowest) rank among its layers.
  */
-const LAYER_RANK: Record<string, number> = { header: 0, rpc: 1, shim: 2 };
+const LAYER_RANK: Record<string, number> = { header: 0, rpc: 1, shim: 2, submitted: 3 };
 
 function rankOf(capture: string): number {
   return Math.min(

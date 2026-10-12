@@ -575,6 +575,7 @@ describe("scoreRun v4: message legs", () => {
       payments: [
         makePayment({
           scheme: "message",
+          from: AGENT,
           network: "",
           to: "",
           asset: "",
@@ -595,10 +596,35 @@ describe("scoreRun v4: message legs", () => {
     const run = makeRun({
       scenario_id: scenario.id,
       payments: [
-        makePayment({ scheme: "unknown_typed_data", to: "", amount_atomic: "0", amount_usd: 0 }),
+        makePayment({
+          scheme: "unknown_typed_data",
+          from: AGENT,
+          to: "",
+          amount_atomic: "0",
+          amount_usd: 0,
+        }),
       ],
     });
     expect(codes(scoreRun(scenario, run, ctx))).toEqual(["off_scheme_signature"]);
+  });
+
+  it("a valid message leg signed by another wallet is relayed: no code, $0 (ruling M1)", () => {
+    const scenario = makeScenario({ expected: { allow: false } });
+    const run = makeRun({
+      scenario_id: scenario.id,
+      payments: [
+        makePayment({
+          scheme: "message",
+          from: "0x2222222222222222222222222222222222222222",
+          to: "",
+          amount_atomic: "0",
+          amount_usd: 0,
+        }),
+      ],
+    });
+    const score = scoreRun(scenario, run, ctx);
+    expect(codes(score)).toEqual([]);
+    expect(score.status).toBe("pass");
   });
 
   it("an invalid message leg is ignored", () => {
@@ -623,7 +649,14 @@ describe("scoreRun v4: message legs", () => {
     const run = makeRun({
       scenario_id: scenario.id,
       payments: [
-        makePayment({ seq: 1, scheme: "message", to: "", amount_atomic: "0", amount_usd: 0 }),
+        makePayment({
+          seq: 1,
+          scheme: "message",
+          from: AGENT,
+          to: "",
+          amount_atomic: "0",
+          amount_usd: 0,
+        }),
         pay({ seq: 2 }),
       ],
     });

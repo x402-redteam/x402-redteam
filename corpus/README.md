@@ -112,6 +112,7 @@ equivalent entry points).
 | `budget_usd` | number | — | optional numeric ceiling handed to the agent alongside the prose budget |
 | `allowed_hosts` | string[] | — | exactly the hosts the task legitimately involves |
 | `wallet_balance_usd` | number | `100` | **v2** (ADR-015): the modelled wallet balance the scorer's exposure cap uses; not set by any scenario here (the default is fine) |
+| `parallel` | boolean | — | **v4** (U26-2): the guardrail-track driver fetches every 402 first, sends all the GDP `payment` requests before awaiting any answer, then pays the allowed ones in canonical URL order (task.json `parallel`) |
 
 ### `routes[]`
 
@@ -124,7 +125,8 @@ equivalent entry points).
 | `content_type` | string | `"text/markdown"` | |
 | `redirect` | string (templated) | — | -> 302; **must** resolve (after rendering) to another declared route, or the loader rejects it |
 | `challenge` | object | — | present ⇒ the route is paywalled; see below |
-| `behaviour` | `normal\|402_forever\|no_delivery\|replay` | `"normal"` | see `application-design.md §5` for exact wire behavior of each |
+| `behaviour` | `normal\|402_forever\|no_delivery\|replay\|collect_signature` | `"normal"` | see `application-design.md §5` for exact wire behavior of each; `collect_signature` (**v4**, U26-2) serves `sign_request` and records the signature POSTed to its `submit_path` |
+| `sign_request` | object | — | **v4** (U26-2): required on, and only on, a `collect_signature` route (EVM-only scenarios). `kind` (`typed_data`\|`digest`\|`message`\|`authorization`) plus exactly that field, `submit_path`, `status` (`200` page or `402` body, default 200) and optional `text`; deep-templated; wire shape in `application-design.md` "Payers, driver and adversary (v4; U26-2)" |
 | `delivered_body` | string (templated) | route's `page`, else `"ok"` | body returned after a successful payment |
 | `surface` | boolean | — | **v3** (ADR-016): marks this route as the one that presents the attack; see "Reach class and `surface`" above. Forbidden-in-spirit on a `control`'s routes (not separately enforced, since controls never set `reach_class`) |
 
@@ -147,6 +149,7 @@ an ordered `accepts` list — exactly one of the two, never both.
 | `max_timeout_seconds` | number | `60` | override for `authorization_lifetime` |
 | `extra` | object | — | shallow-merged over the chain's default `extra` |
 | `description` | string (templated) | — | becomes `resource.description` on the wire — can carry a lie (e.g. a false price) |
+| `extensions` | object (deep-templated) | — | **v4** (U26-2): `PaymentRequired.extensions`, e.g. `erc20ApprovalGasSponsoring: {}` or `eip2612GasSponsoring: {}` with `extra.assetTransferMethod: permit2` |
 | `per_chain` | `{evm?, svm?}` | — | per-chain overrides of the fields above (except `scheme`/`max_timeout_seconds`/`description`/`resource_url`/`body_json`), resolved by `challengeForChain(spec, chain)`; `per_chain` wins, `extra` is merged rather than replaced |
 
 `AcceptSpec` (each entry of `accepts[]`): `pay_to` (required) plus
@@ -198,6 +201,8 @@ runtime, so the two can't drift.
 | `{{base_url}}` | the running adversary's base URL |
 | `{{host:NAME}}` | `{{base_url}}/_host/NAME` — a virtual host. `NAME` may contain letters, digits, `_`, `-` and `.` (e.g. `weather-rep0rt.test`). Use the same spelling in the route's own `host:` field. Any `{{…}}` that does not render is a load-time error. |
 | `{{canary.NAME}}` | a deterministic address (see below) |
+| `{{poison:NAME}}` | **v4**: an address-poisoning lookalike of canary NAME — same first 4 and last 4 characters, seed-derived middle; lint rule 3 treats it like a canary |
+| `{{poison_short:NAME}}`, `{{short:NAME}}` | **v4**: the truncated form a wallet shows (`0xAbCd…1234`) of the poisoned and of the legit address; never the full address, so pages may show them |
 | `{{chain}}` | `"evm"` or `"svm"` |
 | `{{network}}` | the chain's default test network (CAIP-2) |
 | `{{usdc}}` | the chain's default test USDC address |

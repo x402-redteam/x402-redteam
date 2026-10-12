@@ -98,6 +98,10 @@ export const ChallengeSpecSchema = z
     extra: z.record(z.string(), z.unknown()).optional(),
     description: z.string().optional(),
     per_chain: PerChainOverrideSchema.optional(),
+    // v4 (U26-2): `PaymentRequired.extensions`, the server-declared extensions object
+    // (e.g. `erc20ApprovalGasSponsoring`, `eip2612GasSponsoring`). Deep-templated like
+    // `body_json`; the SDK passes it to the scheme as context.
+    extensions: z.record(z.string(), z.unknown()).optional(),
   })
   .superRefine((c, ctx) => {
     const hasPayTo = c.pay_to !== undefined;
@@ -135,6 +139,57 @@ export const ChallengeSpecSchema = z
   });
 export type ChallengeSpec = z.infer<typeof ChallengeSpecSchema>;
 
+/**
+ * v4 (U26-2, M2): what a `collect_signature` route asks the agent to sign. Exactly one of
+ * `typed_data`, `digest`, `message` or `authorization` is set, matching `kind`. Every
+ * string inside is templated. EVM only.
+ */
+export const SignRequestSpecSchema = z
+  .object({
+    kind: z.enum(["typed_data", "digest", "message", "authorization"]),
+    /** EIP-712 typed data, as passed to viem's `signTypedData`. */
+    typed_data: z
+      .object({
+        domain: z.record(z.string(), z.unknown()),
+        types: z.record(z.string(), z.unknown()),
+        primaryType: z.string(),
+        message: z.record(z.string(), z.unknown()),
+      })
+      .optional(),
+    /** A 32-byte hex digest, signed as-is (viem `sign({hash})`). */
+    digest: z.string().optional(),
+    /** An EIP-191 personal message. */
+    message: z.string().optional(),
+    /** An EIP-7702 authorization tuple: delegate `address`, `chain_id` (0 = any chain). */
+    authorization: z
+      .object({
+        chain_id: z.number().int().nonnegative(),
+        address: z.string(),
+        nonce: z.number().int().nonnegative().default(0),
+      })
+      .optional(),
+    /** Where the signature is POSTed: a path on the route's own host. */
+    submit_path: z.string(),
+    /** 200 serves the request as a page; 402 serves it as a 402 body with no x402
+     * challenge header. */
+    status: z.union([z.literal(200), z.literal(402)]).default(200),
+    /** Prose served alongside the request (the cover story). */
+    text: z.string().optional(),
+  })
+  .superRefine((r, ctx) => {
+    const set = (["typed_data", "digest", "message", "authorization"] as const).filter(
+      (k) => r[k] !== undefined,
+    );
+    if (set.length !== 1 || set[0] !== r.kind) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["kind"],
+        message: `sign_request must set exactly the field named by kind ("${r.kind}")`,
+      });
+    }
+  });
+export type SignRequestSpec = z.infer<typeof SignRequestSpecSchema>;
+
 export const RouteSchema = z.object({
   host: z.string().default("provider.test"),
   path: z.string(),
@@ -143,7 +198,11 @@ export const RouteSchema = z.object({
   content_type: z.string().default("text/markdown"),
   redirect: z.string().optional(),
   challenge: ChallengeSpecSchema.optional(),
-  behaviour: z.enum(["normal", "402_forever", "no_delivery", "replay"]).default("normal"),
+  behaviour: z
+    .enum(["normal", "402_forever", "no_delivery", "replay", "collect_signature"])
+    .default("normal"),
+  // v4 (U26-2, M2): required on, and only on, a `collect_signature` route.
+  sign_request: SignRequestSpecSchema.optional(),
   delivered_body: z.string().optional(),
   // v3 (ADR-016 reach/`reached`): marks the route whose request presents the attack
   // (corpus/README.md documents the tagging convention). Optional, no default - a
@@ -162,6 +221,10 @@ export const TaskSchema = z.object({
   // that a v1 scenario that never sets this field parses to byte-identical JSON and
   // `corpusHash` is unchanged.
   wallet_balance_usd: z.number().positive().optional(),
+  // v4 (U26-2, B4): the guardrail-track driver fetches every 402 first and sends all the
+  // GDP `payment` requests before awaiting any answer. Optional, no default, so existing
+  // scenarios parse to the same JSON and `corpusHash` is unchanged.
+  parallel: z.boolean().optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;
 

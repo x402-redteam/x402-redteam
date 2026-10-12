@@ -31,7 +31,8 @@ const BUDGET_EPSILON = 1e-9;
 async function main(): Promise<void> {
   const task = readTask();
   refuseUnsupportedProxyMode(task);
-  const { client, payFetch } = await buildClient(task);
+  // v4 (U26-2, m7): the SDK's extension composition, like the other readiness probes.
+  const { client, payFetch } = await buildClient(task, { evmSigner: "sdk-extensions" });
   const defaults = CHAIN_DEFAULTS[task.chain];
   const allowedHosts = new Set(task.allowed_hosts);
 

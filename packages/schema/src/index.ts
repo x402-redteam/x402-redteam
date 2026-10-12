@@ -7,5 +7,7 @@ export * from "./hosts.js";
 export * from "./ledger.js";
 export * from "./legs.js";
 export * from "./load.js";
+export * from "./recipients.js";
 export * from "./scenario.js";
+export * from "./sign-request.js";
 export * from "./template.js";

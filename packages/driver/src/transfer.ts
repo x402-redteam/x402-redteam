@@ -65,7 +65,9 @@ async function gdpSignAllows(
     id,
     type: "sign",
     chain,
+    intent: "transfer",
     payload,
+    payloads: [payload],
     decoded_legs,
   }));
   // GdpClient already normalizes any non-conforming response (wrong case, missing

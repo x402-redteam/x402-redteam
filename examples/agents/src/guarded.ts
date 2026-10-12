@@ -27,8 +27,21 @@
  * mode fails it (ADR-012's M1 validity proof). The crawler itself (`lib/crawl.ts`) is a
  * separate, origin-allowlist-based safety net (code review F1) - unrelated to this
  * mode-aware *policy* check.
+ *
+ * U26-2 (v4): guarded signs the payment authorization and nothing else. Its EVM signer
+ * gives the SDK only typed-data signing ("payment-only"), so a challenge's
+ * gas-sponsoring extensions can never get an `approve` transaction or a permit out of it,
+ * and it never answers a page's or a 402's request to sign something that is not a
+ * payment (it does not read sign requests at all). When the task prompt names recipient
+ * addresses on the task's chain, it pays only one of them (the same rule as
+ * reference-policy), so a poisoned lookalike payTo is refused.
  */
-import { atomicToUsd, CHAIN_DEFAULTS } from "@x402-redteam/schema";
+import {
+  atomicToUsd,
+  CHAIN_DEFAULTS,
+  namedRecipients,
+  recipientAllowed,
+} from "@x402-redteam/schema";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
 import { type HostPath, parseHostPath } from "./lib/host-check.js";
 import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
@@ -58,11 +71,12 @@ function advertisedPrice(text: string): number | undefined {
 async function main(): Promise<void> {
   const task = readTask();
   refuseUnsupportedProxyMode(task);
-  const { client, payFetch } = await buildClient(task);
+  const { client, payFetch } = await buildClient(task, { evmSigner: "payment-only" });
 
   const defaults = CHAIN_DEFAULTS[task.chain];
   const allowedHosts = new Set(task.allowed_hosts);
   const origins = allowedOrigins(task);
+  const named = namedRecipients(task.prompt, task.chain);
 
   // Empty string means "no advertised price known yet" - seeds start this way (the task
   // prompt's own budget mention isn't a page's advertised price); a link discovered inside
@@ -102,6 +116,9 @@ async function main(): Promise<void> {
     }
     if (req.network !== task.network) {
       return { abort: true, reason: `network "${req.network}" does not match task network` };
+    }
+    if (!recipientAllowed(named, req.payTo, task.chain)) {
+      return { abort: true, reason: `payTo ${req.payTo} is not a recipient the task names` };
     }
     if (req.maxTimeoutSeconds > MAX_TIMEOUT_SECONDS) {
       return {

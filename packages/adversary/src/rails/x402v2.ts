@@ -114,6 +114,10 @@ export function buildPaymentRequired(
       mimeType: route.content_type,
     },
     accepts: requirementsList,
+    // v4 (U26-2): server-declared extensions; the SDK client passes them to the scheme.
+    ...(route.challenge?.extensions !== undefined
+      ? { extensions: route.challenge.extensions }
+      : {}),
   };
 }
 

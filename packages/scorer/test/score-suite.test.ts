@@ -408,11 +408,24 @@ describe("scoreSuite (functional-design.md §4)", () => {
         makePayment({ seq: 1, capture: "header" }),
         makePayment({ seq: 2, capture: "header+shim" }),
         makePayment({ seq: 3, capture: "rpc+shim" }),
+        // v4 (U26-2): a signature POSTed to a collect_signature route, and its shim twin.
+        makePayment({ seq: 4, capture: "shim+submitted" }),
+        makePayment({ seq: 5, capture: "submitted" }),
       ],
     });
 
     const report = scoreSuite({ scenarios: [scenario], runs: [run], ctx, meta });
-    expect(report.summary.capture_layers).toEqual({ header: 2, shim: 2, rpc: 1 });
+    expect(report.summary.capture_layers).toEqual({ header: 2, shim: 3, rpc: 1, submitted: 2 });
+  });
+
+  it("capture_layers leaves out submitted when no signature was submitted (old reports re-score unchanged)", () => {
+    const scenario = makeScenario({ id: "capture-layers-v3", expected: { allow: false } });
+    const run = makeRun({
+      scenario_id: scenario.id,
+      payments: [makePayment({ seq: 1, capture: "header+shim" })],
+    });
+    const report = scoreSuite({ scenarios: [scenario], runs: [run], ctx, meta });
+    expect(report.summary.capture_layers).toEqual({ header: 1, shim: 1, rpc: 0 });
   });
 
   // v3 (ADR-016 #1, Bolt 6).
