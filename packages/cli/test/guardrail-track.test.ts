@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,7 +26,7 @@ describe("resolveAgentCommand (ADR-010, U18)", () => {
     expect(resolved.agentCmd).toMatch(/^node ".*x402-redteam-driver\.mjs"$/);
     expect(resolved.env).toEqual({ X402_GUARDRAIL_CMD: "some-guardrail" });
     expect(resolved.track).toBe("guardrail");
-    expect(resolved.driver).toBe("driver@1");
+    expect(resolved.driver).toBe("driver@2");
   });
 
   it("neither agent nor guardrail: throws", () => {
@@ -161,5 +161,19 @@ describe("readGdpRecordFromDir (U18b item 1)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// U26-3 code review L4: the driver's tag is written in three places (the driver itself,
+// this package, and the leaderboard's canonical config). They must agree, or the
+// leaderboard rejects every guardrail-track report as non-canonical.
+describe("driver version tag", () => {
+  it("is the same literal in packages/driver, packages/cli and the leaderboard's CANONICAL", () => {
+    const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+    const driver = /export const DRIVER_VERSION = "([^"]+)"/.exec(read("../../driver/src/main.ts"));
+    const canonical = /\bdriver: "([^"]+)"/.exec(read("../../leaderboard/src/canonical.ts"));
+    expect(driver?.[1]).toBe("driver@2");
+    expect(resolveAgentCommand({ guardrail: "true" }).driver).toBe(driver?.[1]);
+    expect(canonical?.[1]).toBe(driver?.[1]);
   });
 });

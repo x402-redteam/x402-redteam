@@ -88,7 +88,7 @@ interface Expected {
 ```
 
 ### Templating
-`{{base_url}}`, `{{host:NAME}}` (renders to `{{base_url}}/_host/NAME`), `{{canary.NAME}}`, `{{chain}}`, `{{network}}` and `{{usdc}}`. Rendering is pure: `render(template, ctx)`. An unknown variable is a load-time error.
+`{{base_url}}`, `{{host:NAME}}` (renders to `{{base_url}}/_host/NAME`), `{{canary.NAME}}`, `{{chain}}`, `{{network}}` and `{{usdc}}`; v4 adds `{{poison:NAME}}`, `{{poison_short:NAME}}`, `{{short:NAME}}` (U26-2) and `{{lower:NAME}}` (U26-3, below). Rendering is pure: `render(template, ctx)`. An unknown variable is a load-time error.
 
 ### Canaries (deterministic)
 `canaries(seed, scenarioId, chain)` returns named addresses. EVM: private key = keccak256(`${seed}:${scenarioId}:evm:${name}`), address derived via viem. SVM: ed25519 seed = sha256(same string with `svm`), then the base58 pubkey. Names referenced in the YAML are generated lazily. Reserved names: `legit`, `attacker`, `prose`, `lookalike`. The agent wallet is `canaries(seed, "agent", chain).wallet`, which also returns the secret. The default seed is `"x402-redteam-v1"`, overridable with `--seed`.
@@ -410,7 +410,7 @@ interface DecodeHints { /* v2 */ knownTokenAccounts?: Record<string, { owner: st
 - `IssuedChallenge += { rail, challenge_ref? }`, and `Payment.invalid_reason += "challenge_mismatch"`.
 
 ## Contracts (v4, Bolt 9) — U26 real-world attack techniques (ADR-030, proposed)
-Additive. This section grows with each U26 piece; U26-1a (capture), U26-1b (scoring) and U26-2 (payers, driver and adversary) add the parts below. The new categories and `Scenario.technique` come with U26-3.
+Additive. This section grows with each U26 piece; U26-1a (capture), U26-1b (scoring) and U26-2 (payers, driver and adversary) and U26-3 (corpus: the new categories, `Scenario.technique`, `{{lower:NAME}}` and `driver@2`) add the parts below.
 
 ### Capture (v4; U26-1a): every signature is a ledger event
 ```ts
@@ -575,3 +575,19 @@ interface GdpSignRequest { /* v1 */
 - allow-all is unchanged (all hooks, always allow).
 
 **Reach (m7, ADR-016 amendment).** Reach requires the readiness probes to have the capability the attack needs: `transfer_method_switch` is `challenge` class (promptonly's signer signs the SDK approval); `concurrent_spend` is `crawl`; `signature_request` is `prose` for a page sign request (naive) and `challenge` for a 402-body sign request on a prompt URL (promptonly).
+
+### Corpus (v4; U26-3)
+Signed off by senior-architect 2026-10-12 (architecture-review-u26.md, "U26-3 sign-off").
+
+```ts
+type Category = /* v3 */ ... | "transfer_method_switch" | "signature_request" | "concurrent_spend";
+interface Scenario { /* v3 */ technique?: string; }   // non-empty free text
+```
+- **Categories.** `Category` is still a closed enum, iterated by the scorer, SARIF, `by_category` and `redact`. The three new categories add zeroed `by_category` rows to every report.
+- **`Scenario.technique`.** Non-empty free text naming the real-world technique a scenario models inside its category (`address_poisoning`, `discovery_poisoning`, `agent_lure`). It is never aggregated, never iterated and not part of any score. It has no default, so `corpusHash` is unchanged for scenarios that omit it.
+- **Template `{{lower:NAME}}`.** Canary NAME in lower case. Lint rule 3 treats it as canary NAME (the same EVM account), and a scenario that uses it anywhere must set `chains: ["evm"]` (base58 is case-sensitive, so a lower-cased SVM address names a different account).
+- **Placement rule.** A new category is added only when its measured signature is new (a signed artifact, a scoring code or a timing dimension). Technique families that reuse an existing measurement go into the existing category with `technique` (review M5).
+- **Controls (v4).** `control-permit2-payment` (a Permit2 payment), `control-permit2-gas-sponsored` (both gas-sponsoring extensions; only the benign exact-amount EIP-2612 permit may be signed) and `control-recipient-letter-case` (the payTo is the recipient the task names, in lower case). All are EVM only. Controls are always run, so every agent and guardrail must pay the Permit2 and extension paths correctly to be valid.
+- **Driver tag.** `config.driver` is `driver@2` from corpus v4 (`CANONICAL.driver`). driver@2 adds GDP `intent`/`payloads`/`source`, sign intents, the `parallel` fan-out and the `toClientEvmSigner` signer. reference-policy's hello hooks are `["payment", "transfer", "sign"]`.
+- **Corpus versioning.** Corpus v4 is 71 scenarios: 64 attacks and 7 controls (counts per category in `corpus/README.md`; `transfer_method_switch` is 2 attacks plus 2 controls). Reports against earlier corpora show as stale (corpus hash mismatch) and are not ranked until re-run. Season 1 keeps its frozen corpus and harness; the v4 categories and scorer semantics apply from Season 2.
+- **Reference payers.** The Python reference payer (`examples/agents-py`) installs `x402[evm,httpx]==2.25.0` and `jsonschema==4.26.0`, pinned exactly in `uv.lock` (jsonschema directly rather than the `extensions` extra, which would also pull `signinwithethereum` and hold `web3` at 7.x; orchestrator follow-up to the U26-3 sign-off). Without jsonschema, `x402` 2.25.0 rejects any challenge that declares extensions ("Extensions validation requires jsonschema").

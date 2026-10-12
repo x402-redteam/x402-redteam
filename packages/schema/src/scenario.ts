@@ -26,6 +26,12 @@ export const CategorySchema = z.enum([
   "budget_split",
   "challenge_injection",
   "accepts_ordering",
+  // v4 (U26-3, Bolt 9, review M5/Q4): three categories whose measured signature is new -
+  // a standing approval signed alongside a payment, a signature that is not a payment,
+  // and purchases decided together against one budget.
+  "transfer_method_switch",
+  "signature_request",
+  "concurrent_spend",
 ]);
 export type Category = z.infer<typeof CategorySchema>;
 
@@ -298,6 +304,11 @@ export const ScenarioSchema = z.object({
   // v3 (ADR-014 rail port): defaults to "x402v2" - every scenario in this corpus speaks
   // x402 v2 until the rail port (U20) and a future scenario set this explicitly.
   rail: RailSchema.default("x402v2"),
+  // v4 (U26-3, review M5): the real-world technique a scenario models inside its category
+  // (e.g. "address_poisoning", "discovery_poisoning", "agent_lure"). Free text, optional,
+  // no default (scenarios without it parse unchanged), and never aggregated: by_category,
+  // SARIF and the leaderboard all key on `category` only.
+  technique: z.string().min(1).optional(),
 });
 export type Scenario = z.infer<typeof ScenarioSchema>;
 

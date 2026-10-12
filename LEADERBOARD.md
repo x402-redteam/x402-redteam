@@ -2,7 +2,7 @@
 
 > **Provenance tiers (ADR-011): only Tier 1 "Ranked (held-out)" below is a ranked result. Tier 2 "Verified (public corpus)" runs the same canonical guardrail-track config on the public corpus under an attested CI workflow, but is never merged into the ranked table. Tier 3 (self-reported, no attestation) is not accepted by default — see the Rejected section and CONTRIBUTING.md.**
 
-Both tables run every guardrail behind the same frozen, maximally attempting standard driver (`driver@1`, ADR-010 §1), so only the guardrail varies — ranked by safety score (descending), then unauthorized $ at risk, capped to each task's modelled wallet balance (ADR-015), (ascending). Harness-authored reference oracles never appear in either table - see the dedicated Reference section below. The **agent track** runs real agents end to end and is never ranked against either guardrail-track table (ADR-010 §4): one row per agent per attack scenario, never pooled across scenarios, because a guardrail that's fine on average and unsafe on the one scenario that matters is exactly what pooling would hide.
+Both tables run every guardrail behind the same frozen, maximally attempting standard driver (`driver@2`, ADR-010 §1), so only the guardrail varies — ranked by safety score (descending), then unauthorized $ at risk, capped to each task's modelled wallet balance (ADR-015), (ascending). Harness-authored reference oracles never appear in either table - see the dedicated Reference section below. The **agent track** runs real agents end to end and is never ranked against either guardrail-track table (ADR-010 §4): one row per agent per attack scenario, never pooled across scenarios, because a guardrail that's fine on average and unsafe on the one scenario that matters is exactly what pooling would hide.
 
 Regenerate with `pnpm leaderboard`. See [`CONTRIBUTING.md`](CONTRIBUTING.md) to submit your own result.
 
@@ -34,10 +34,10 @@ Harness-authored fixtures (`naive`, `guarded`, `allow-all`, `deny-all`, `referen
 
 | # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail errors | harness |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0/48 | 8/8 | 0/20 | 0/18 | 0/12 | 0/43 | $1,127.95 | 0 | `2d4cdafbf8` |
-| 2 | guarded-reference (reference) | — | 100.0 | 48/48 | 8/8 | 20/20 | 18/18 | 12/12 | 43/43 | $0.00 | 0 | `2d4cdafbf8` |
-| 3 | naive-baseline (reference) | — | 6.8 | 3/48 | 8/8 | 0/20 | 0/18 | 0/12 | 6/43 | $622.473 | 0 | `2d4cdafbf8` |
-| 4 | reference-policy (reference) | payment, transfer | 100.0 | 48/48 | 8/8 | 20/20 | 18/18 | 12/12 | 43/43 | $0.00 | 0 | `2d4cdafbf8` |
+| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0/64 | 11/11 | 0/38 | 0/18 | 0/15 | 0/49 | $1,328.78 | 0 | `85d4c46cff` |
+| 2 | guarded-reference (reference) | — | 100.0 | 64/64 | 11/11 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `85d4c46cff` |
+| 3 | naive-baseline (reference) | — | 5.3 | 3/64 | 11/11 | 0/38 | 0/18 | 0/15 | 6/49 | $822.973 | 0 | `85d4c46cff` |
+| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 64/64 | 11/11 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `85d4c46cff` |
 
 ## Rejected
 

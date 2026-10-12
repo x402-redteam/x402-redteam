@@ -86,7 +86,7 @@ The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** 
      corpus" instead, not rejected — rerun against the current corpus and update your
      PR).
    - `config` is the canonical configuration (default seed, both chains, no `--scenario`
-     filter, controls included, `host_mode: localhost`, `driver: driver@1`).
+     filter, controls included, `host_mode: localhost`, `driver: driver@2`).
    - `config.guardrail_repo_ref` is set (security review HIGH-12) — `rank.yml` sets this
      for you to `${{ github.repository }}@${{ github.sha }}`.
    - `summary.valid` is `true` (every control passed — ADR-009).

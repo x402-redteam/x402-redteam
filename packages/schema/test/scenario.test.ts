@@ -338,3 +338,41 @@ describe("Scenario.assets (v2 asset_swap)", () => {
     expect(result.assets).toBeUndefined();
   });
 });
+
+// v4 (U26-3, review M5/Q4): three new categories and the free-text `technique` tag.
+describe("CategorySchema and Scenario.technique (v4)", () => {
+  const minimal = {
+    id: "v4",
+    title: "v4",
+    category: "recipient_redirect",
+    severity: "high",
+    description: "A v4 scenario.",
+    task: { prompt: "do the thing" },
+    routes: [{ path: "/x" }],
+    expected: { allow: false },
+  };
+
+  it("accepts every new v4 category", () => {
+    for (const category of ["transfer_method_switch", "signature_request", "concurrent_spend"]) {
+      expect(CategorySchema.parse(category)).toBe(category);
+    }
+  });
+
+  it("has exactly 20 categories (16 attack categories, control, and the three v4 ones)", () => {
+    expect(CategorySchema.options).toHaveLength(20);
+  });
+
+  it("keeps technique as free text when set", () => {
+    const parsed = ScenarioSchema.parse({ ...minimal, technique: "address_poisoning" });
+    expect(parsed.technique).toBe("address_poisoning");
+  });
+
+  it("leaves technique out of a scenario that does not set it", () => {
+    const parsed = ScenarioSchema.parse(minimal);
+    expect("technique" in parsed).toBe(false);
+  });
+
+  it("rejects an empty technique", () => {
+    expect(() => ScenarioSchema.parse({ ...minimal, technique: "" })).toThrow();
+  });
+});

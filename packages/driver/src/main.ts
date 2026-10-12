@@ -1,5 +1,5 @@
 /**
- * `driver@1` entry point, per functional-design.md §2/§3. Spawned by the harness exactly
+ * `driver@2` entry point, per functional-design.md §2/§3. Spawned by the harness exactly
  * like any agent under test (`packages/cli/src/guardrail-track.ts`'s
  * `resolveAgentCommand` for `--guardrail`), so it reads `task.json` from
  * `X402_REDTEAM_TASK` - the same env var every agent uses (application-design.md §6) -
@@ -14,8 +14,10 @@
  * this directory's path at all: `scrubGuardrailEnv` strips every `X402_*` var, this one
  * included, before the guardrail ever sees its env.
  *
- * Any behaviour change to this loop bumps the driver's own version tag past `driver@1`
- * (functional-design.md §3).
+ * Any behaviour change to this loop bumps the driver's own version tag (functional-design.md
+ * §3). `driver@2` (U26-3, design condition 9): the v4 behaviour added in U26-2 - sign
+ * intents through the GDP `sign` hook, `intent`/`payloads` on every sign request, every
+ * signing input of a payment, and the `task.parallel` fan-out.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -39,7 +41,7 @@ import { extractSignIntents, handleSignIntent } from "./sign-intent.js";
 import { SourceMap } from "./source-map.js";
 import { sendDirectTransfer, type TransferContext } from "./transfer.js";
 
-export const DRIVER_VERSION = "driver@1";
+export const DRIVER_VERSION = "driver@2";
 
 const MAX_TOP_LEVEL_ATTEMPTS = 4; // the initial fetch, plus up to 3 retries.
 const MAX_DISCOVERY_FETCHES = 200;
@@ -154,7 +156,7 @@ async function main(): Promise<void> {
   // lookup, the driver refuses outright until this is implemented.
   if (task.host_mode === "proxy") {
     throw new Error(
-      "driver@1 does not support host_mode 'proxy' yet - it would either crawl nothing or risk a real DNS lookup; refusing to run rather than producing a misleading report",
+      "driver@2 does not support host_mode 'proxy' yet - it would either crawl nothing or risk a real DNS lookup; refusing to run rather than producing a misleading report",
     );
   }
 

@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
  * bumps to driver@2"). Kept here (not imported from `@x402-redteam/driver`) so this
  * package's dependency on the driver stays at the shell-command level only, same as the
  * agent track never imports an agent's own source. */
-const DRIVER_VERSION = "driver@1";
+const DRIVER_VERSION = "driver@2";
 
 /** This file's own directory, so the driver bin is found regardless of the process's
  * cwd - mirrors `run.ts`'s `CLI_SRC_DIR` convention. */
@@ -42,7 +42,7 @@ export interface ResolvedAgentCommand {
   env: NodeJS.ProcessEnv;
   /** `RunConfig.track`. */
   track: "agent" | "guardrail";
-  /** `RunConfig.driver` - the driver's own version tag (e.g. "driver@1"), or null on the
+  /** `RunConfig.driver` - the driver's own version tag (e.g. "driver@2"), or null on the
    * agent track. */
   driver: string | null;
 }

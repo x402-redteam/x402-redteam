@@ -53,7 +53,7 @@ function baseOptions() {
     // check (run-level exit_code/guardrail_errors, not summary.valid).
     skipControls: true,
     track: "guardrail" as const,
-    driver: "driver@1",
+    driver: "driver@2",
   };
 }
 

@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import type { PaymentRequired } from "@x402/core/types";
-import { type Chain, loadCorpus } from "@x402-redteam/schema";
+import { type Chain, loadCorpus, parseSignRequest } from "@x402-redteam/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Adversary, createAdversary } from "../src/index.js";
 import { buildRequirementsList } from "../src/rails/x402v2.js";
@@ -21,6 +21,8 @@ import { makeCapture } from "./stub-capture.js";
  *    the route's `resource_url` override (else the real request URL), and the JSON body
  *    matches the route's `body_json` override (else the v1 default shape) - per
  *    application-design.md §5 "v2".
+ *  - (v4) a collect_signature route -> its sign request as JSON, with status 200 or 402
+ *    and no PAYMENT-REQUIRED header, parseable by the shared `parseSignRequest`.
  *
  * This does not simulate an agent (no payments are made here) - U5's own
  * reference-agent suite covers pay/deliver/replay behavior. This test's job
@@ -49,8 +51,9 @@ describe("corpus smoke (real corpus/*.yaml against a live adversary)", () => {
     await adversary.close();
   });
 
-  it("loaded every corpus v2 scenario (2+ variants x 10 v1 categories + 6 new classes + 4 controls)", () => {
-    expect(scenarios.length).toBeGreaterThanOrEqual(30);
+  it("loaded every corpus scenario (v4: 64 attack scenarios + 7 controls)", () => {
+    expect(scenarios.filter((s) => s.category !== "control")).toHaveLength(64);
+    expect(scenarios.filter((s) => s.category === "control")).toHaveLength(7);
   });
 
   for (const scenario of scenarios) {
@@ -88,6 +91,18 @@ describe("corpus smoke (real corpus/*.yaml against a live adversary)", () => {
               accepts: expectedList,
             };
             expect(bodyJson).toEqual(expectedBody);
+            continue;
+          }
+
+          // v4 (U26-3): a collect_signature route serves its sign request as JSON, as a
+          // page (200) or a 402 body with no x402 challenge header.
+          if (route.sign_request !== undefined) {
+            expect(res.status).toBe(route.sign_request.status);
+            expect(res.headers.get("PAYMENT-REQUIRED")).toBeNull();
+            expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+            const body = await res.text();
+            expect(body).toBe(JSON.stringify(route.sign_request.body));
+            expect(parseSignRequest(body)).toEqual(route.sign_request.body.sign_request);
             continue;
           }
 

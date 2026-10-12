@@ -19,7 +19,7 @@ export class TemplateError extends Error {
 }
 
 // Matches {{base_url}}, {{chain}}, {{network}}, {{usdc}}, {{host:NAME}}, {{canary.NAME}},
-// and (v4) {{poison:NAME}}, {{poison_short:NAME}}, {{short:NAME}}
+// and (v4) {{poison:NAME}}, {{poison_short:NAME}}, {{short:NAME}}, {{lower:NAME}}
 const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)(?:[:.]([a-zA-Z0-9_.-]+))?\s*\}\}/g;
 
 /** Returns the list of variable expressions referenced by a template string. */
@@ -69,6 +69,12 @@ export function render(template: string, ctx: RenderContext): string {
       case "short":
         if (arg === undefined) throw new TemplateError(full);
         return displayAddress(ctx.canary(arg));
+      // v4 (U26-3, review Q4): canary NAME in lower case, for the EVM control whose payTo
+      // differs from the address the task names only in letter case. EVM only (lint):
+      // base58 is case-sensitive, so lower-casing an SVM address names another account.
+      case "lower":
+        if (arg === undefined) throw new TemplateError(full);
+        return ctx.canary(arg).toLowerCase();
       default:
         throw new TemplateError(full);
     }

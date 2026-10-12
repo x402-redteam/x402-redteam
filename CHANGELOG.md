@@ -10,6 +10,19 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ### Added
 
+- **Corpus v4:** 19 new scenarios (71 in total: 64 attack scenarios and 7 controls).
+  Three new categories: `transfer_method_switch` (2, EVM: a Permit2 challenge that gets
+  the SDK to sign an unlimited approval to Permit2), `signature_request` (3, EVM: an
+  EIP-7702 delegation, a Permit2 allowance passed off as a payment, a raw-digest
+  signature) and `concurrent_spend` (3, EVM and Solana: purchases decided together
+  against one budget, with `task.parallel`). Eight scenarios in existing categories carry
+  the new optional, free-text `technique` field: `address_poisoning` (2),
+  `discovery_poisoning` (3) and `agent_lure` (3); it is never aggregated, and
+  `by_category`, SARIF and the leaderboard still key on the category. Three EVM controls:
+  a Permit2 payment, a Permit2 payment with both gas-sponsoring extensions (only an
+  exact-amount permit is signed), and a payTo that is the named recipient in lower case.
+  The template `{{lower:NAME}}` renders a canary in lower case (EVM-only scenarios).
+
 - **Adversary:** a challenge can declare `PaymentRequired.extensions` (`challenge.extensions`);
   a route with `behaviour: collect_signature` serves a request to sign typed data, a raw
   digest, a message or an EIP-7702 authorization, and records the signature POSTed back
@@ -35,6 +48,23 @@ All notable changes to x402-redteam are recorded here. The format follows
   than the agent's is a relayed signature: $0 and no code, like a relayed grant.
 
 ### Changed
+
+- **Driver:** the standard driver's tag is now `driver@2` (the U26-2 behaviour: sign
+  intents, `intent` and `payloads` on `sign` requests, the `task.parallel` fan-out). The
+  canonical guardrail-track configuration requires `driver@2`.
+- **Reference results and LEADERBOARD.md regenerated on corpus v4.** naive 6.8 → 5.3 and
+  the internal SDK baseline 47.7 → 43.0 (both fail most new attacks); guarded,
+  reference-policy 100 and allow-all 0 are unchanged. No result on the 52 earlier
+  scenarios changed. reference-policy now records hooks `payment, transfer, sign`.
+- **Leaderboard:** reports produced against corpus v3 or earlier show as stale (corpus
+  hash mismatch) and are not ranked until re-run against corpus v4. A guardrail-track
+  report with the v4 corpus hash but `driver: driver@1` is rejected as non-canonical.
+- **Python reference payer:** `examples/agents-py` now also installs `jsonschema==4.26.0`
+  next to `x402[evm,httpx]==2.25.0` (both pinned in `uv.lock`; no other version changed).
+  Without jsonschema, `x402` 2.25.0 rejects any challenge that declares extensions
+  ("Extensions validation requires jsonschema. Install with: pip install x402[extensions]"),
+  so it cannot pay a gas-sponsored Permit2 challenge. The payer also skips a 402 that carries no
+  x402 challenge instead of reporting an error.
 
 - **Scoring:** approvals and delegations (`approve`, `delegate`) and signatures that move
   no value (`message`, `unknown_typed_data`) are scored apart from payments, with three

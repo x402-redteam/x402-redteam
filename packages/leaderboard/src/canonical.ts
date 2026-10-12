@@ -12,8 +12,9 @@ export const CANONICAL = {
   timeout_s: 60,
   startup_timeout_s: 120,
   host_mode: "localhost" as HostMode,
-  /** The guardrail-track standard driver's version tag (ADR-010 §1). */
-  driver: "driver@1",
+  /** The guardrail-track standard driver's version tag (ADR-010 §1). `driver@2` from
+   * corpus v4 (U26-3, design condition 9); reports from `driver@1` are not canonical. */
+  driver: "driver@2",
 } as const;
 
 /**

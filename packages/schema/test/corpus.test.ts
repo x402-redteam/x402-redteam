@@ -49,12 +49,28 @@ describe("real corpus", () => {
   // validAfter mechanism has no svm equivalent), so this no longer requires every
   // scenario to declare both chains - it requires every scenario to declare at least
   // one, and every evm-only scenario to be justified.
-  it("every scenario declares at least one chain, and evm-only is limited to authorization_lifetime", () => {
+  // v4 (U26-3): transfer_method_switch (Permit2) and signature_request (EVM signatures,
+  // lint-enforced for collect_signature) are EVM-only too, and so are the three v4
+  // controls whose mechanism is EVM-only (Permit2 twice, and EVM letter case).
+  const EVM_ONLY_CATEGORIES = new Set([
+    "authorization_lifetime",
+    "transfer_method_switch",
+    "signature_request",
+  ]);
+  const EVM_ONLY_CONTROLS = new Set([
+    "control-permit2-payment",
+    "control-permit2-gas-sponsored",
+    "control-recipient-letter-case",
+  ]);
+  it("every scenario declares at least one chain, and evm-only is limited to the justified set", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
     for (const scenario of scenarios) {
       expect(scenario.chains.length).toBeGreaterThan(0);
       if (scenario.chains.length === 1) {
-        expect(scenario.category).toBe("authorization_lifetime");
+        expect(
+          EVM_ONLY_CATEGORIES.has(scenario.category) || EVM_ONLY_CONTROLS.has(scenario.id),
+          `${scenario.id} is single-chain without a justification`,
+        ).toBe(true);
         expect(scenario.chains).toEqual(["evm"]);
       }
     }
@@ -86,6 +102,42 @@ describe("real corpus", () => {
     const categories = new Set(scenarios.map((s) => s.category));
     for (const category of V2_CATEGORIES) {
       expect(categories.has(category)).toBe(true);
+    }
+  });
+
+  // v4 (U26-3, design §4): the three new categories and the technique-tagged scenarios.
+  it("has at least two attack scenarios per v4 category", () => {
+    const scenarios = loadCorpus(CORPUS_DIR);
+    for (const category of ["transfer_method_switch", "signature_request", "concurrent_spend"]) {
+      const count = scenarios.filter((s) => s.category === category).length;
+      expect(count, category).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("tags the technique families and keeps them in existing categories", () => {
+    const scenarios = loadCorpus(CORPUS_DIR);
+    const tagged = (technique: string) => scenarios.filter((s) => s.technique === technique);
+    expect(tagged("address_poisoning").map((s) => s.category)).toEqual([
+      "recipient_redirect",
+      "recipient_redirect",
+    ]);
+    expect(new Set(tagged("discovery_poisoning").map((s) => s.category))).toEqual(
+      new Set(["lookalike_domain", "recipient_redirect"]),
+    );
+    expect(new Set(tagged("agent_lure").map((s) => s.category))).toEqual(
+      new Set(["ghost_paywall", "challenge_injection", "resource_spoof"]),
+    );
+    for (const scenario of scenarios.filter((s) => s.technique !== undefined)) {
+      expect(scenario.category, scenario.id).not.toBe("control");
+    }
+  });
+
+  it("every concurrent_spend scenario asks for parallel fetching", () => {
+    const scenarios = loadCorpus(CORPUS_DIR).filter((s) => s.category === "concurrent_spend");
+    expect(scenarios.length).toBeGreaterThan(0);
+    for (const scenario of scenarios) {
+      expect(scenario.task.parallel, scenario.id).toBe(true);
+      expect(scenario.reach_class, scenario.id).toBe("crawl");
     }
   });
 

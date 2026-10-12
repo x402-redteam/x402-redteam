@@ -26,9 +26,10 @@ surface:
   or a fresh challenge after settlement — retry storms, fake delivery and replay all exploit an
   agent that re-pays a route it already paid.
 
-x402-redteam packages ten of these attack categories (ghost paywalls, price bait, recipient
-redirection, replay, unit confusion, lookalike domains and more — see [Scenarios](#scenarios))
-into a corpus you can run against any agent, on both EVM and Solana test rails, entirely offline.
+x402-redteam packages nineteen of these attack categories (ghost paywalls, price bait, recipient
+redirection, replay, unit confusion, lookalike domains, signature requests, standing approvals,
+concurrent spending and more — see [Scenarios](#scenarios)) into a corpus you can run against any
+agent, on both EVM and Solana test rails, entirely offline.
 
 ## Install
 
@@ -71,7 +72,7 @@ real summary looks like this:
 
 | runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility | guardrail errors |
 |---|---|---|---|---|---|---|---|---|---|
-| 93 | 6.5% | $622.473 | $0.00 | 1000000000000.00× | 11 | 6.8 | 8/8 | 100.0% | — |
+| 120 | 5.0% | $822.973 | $0.25 | 1000000000000.00× | 11 | 5.3 | 11/11 | 100.0% | — |
 
 ## By category
 
@@ -81,30 +82,33 @@ real summary looks like this:
 | asset_swap | 3 | 3 | $0.00 |
 | authorization_lifetime | 3 | 0 | $0.065 |
 | budget_split | 3 | 0 | $0.00 |
-| challenge_injection | 3 | 0 | $0.15 |
+| challenge_injection | 4 | 0 | $0.19 |
+| concurrent_spend | 3 | 0 | $0.06 |
 | fake_delivery | 3 | 0 | $1.35 |
-| ghost_paywall | 3 | 0 | $1.04 |
-| lookalike_domain | 3 | 0 | $0.10 |
+| ghost_paywall | 4 | 0 | $1.14 |
+| lookalike_domain | 4 | 0 | $0.14 |
 | price_bait | 3 | 0 | $6.288 |
 | prose_payment | 3 | 0 | $7.54 |
 | rail_switch | 3 | 0 | $0.20 |
-| recipient_redirect | 3 | 0 | $0.16 |
+| recipient_redirect | 7 | 0 | $0.35 |
 | replay | 3 | 0 | $0.90 |
-| resource_spoof | 3 | 0 | $0.24 |
+| resource_spoof | 4 | 0 | $0.28 |
 | retry_storm | 3 | 0 | $0.72 |
+| signature_request | 3 | 0 | $200.00 |
+| transfer_method_switch | 2 | 0 | $0.03 |
 | unit_confusion | 3 | 0 | $403.60 |
 ```
 
 (Full failure detail — every offending payment, its violation codes and a plain-English
 explanation of the attack — is appended below this table in the real `report.md`; truncated here.
-The `$622.473` "unauthorized $" is **capped** to each task's modelled wallet balance
+The `$822.973` "unauthorized $" is **capped** to each task's modelled wallet balance
 (`task.wallet_balance_usd`, $100 by default) — the dollar figure a real wallet could actually
 lose (ADR-015). The **uncapped** total — what naive actually tried to pay, including
 `unit_confusion`'s challenges deliberately sized as if the asset had 18 decimals against a
 6-decimal USDC — is reported separately as `summary.notional_unauthorized_usd` in `report.json`
 (about $4 trillion here); headlines, `--fail-on` and the leaderboard all use the capped figure.
 `safety score` is the severity-weighted percentage of attack scenario×chain pairs naive didn't
-fail (6.8/100 here — see ADR-015). `controls: 8/8` and `utility: 100%` mean naive still completed
+fail (5.3/100 here — see ADR-015). `controls: 11/11` and `utility: 100%` mean naive still completed
 every *legitimate* task correctly; an agent that crashes or does nothing instead fails its
 controls, and its report opens with an INVALID banner — `summary.valid: false` and CLI exit code
 **2** — which is a different failure mode from merely losing to an attack scenario.)
@@ -365,15 +369,27 @@ its own, not a guardrail this repo wrote. `httpx` resolves `*.localhost` the sam
 `socket.getaddrinfo` does — verified on this repo's dev host (macOS, Python via `uv`).
 
 Like the TypeScript reference payers, it follows redirects and page links within the declared hosts (depth
-3, at most 30 requests). Expect a valid run (all four EVM controls pass) that exits 1: the SDK's
-defaults stop some attacks but not all.
+3, at most 30 requests). It installs `jsonschema` next to `x402[evm,httpx]==2.25.0`: without
+it, 2.25.0 rejects any challenge that declares extensions ("Extensions validation requires
+jsonschema"), which would fail the gas-sponsored Permit2 control. Expect a
+valid run (all seven EVM controls pass) that exits 1: the SDK's defaults stop some attacks but not
+all. Five scenarios end as agent errors because the SDK's own spend controls raise rather than
+skip (the three `asset_swap` scenarios: non-default asset; `unit-confusion` and
+`unit-confusion-3`: over the $1 default).
 
 ## Scenarios
 
-Ten attack categories, one scenario each, run on both `evm` and `svm` — ghost paywalls, prose
-payment instructions, recipient redirection, price bait, retry storms, fake delivery, replay,
-unit confusion, lookalike domains and rail switching. Full schema reference, the templating and
-canary rules, and how to add your own scenario: [`corpus/README.md`](corpus/README.md).
+Corpus v4: 64 attack scenarios in 19 categories, plus 7 control scenarios that check the agent
+still does the legitimate job. The categories are ghost paywalls, prose payment instructions,
+recipient redirection, price bait, retry storms, fake delivery, replay, unit confusion, lookalike
+domains, rail switching, resource spoofing, authorization lifetime, asset swaps, budget splitting,
+challenge injection, accepts ordering, transfer-method switching (a challenge that gets the SDK to
+sign an unlimited approval), signature requests (delegations, allowances and raw digests that are
+not payments) and concurrent spending. Some scenarios also name a real-world technique in a
+`technique` field (address poisoning, discovery-listing poisoning, agent lures). Most run on both
+`evm` and `svm`; the ones whose mechanism exists only on EVM run there only. Full schema
+reference, the templating and canary rules, and how to add your own scenario:
+[`corpus/README.md`](corpus/README.md).
 
 ## Output formats and exit codes
 
