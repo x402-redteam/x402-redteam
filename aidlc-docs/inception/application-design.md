@@ -408,3 +408,52 @@ interface DecodeHints { /* v2 */ knownTokenAccounts?: Record<string, { owner: st
 ### Rail port (ADR-014; U20)
 - The `Rail` interface is defined in ADR-014. `routes.ts` and `challenge.ts` depend on `Rail` only.
 - `IssuedChallenge += { rail, challenge_ref? }`, and `Payment.invalid_reason += "challenge_mismatch"`.
+
+## Contracts (v4, Bolt 9) — U26 real-world attack techniques (ADR-030, proposed)
+Additive. This section grows with each U26 piece; U26-1a (capture) adds the part below. Scoring of the new schemes, the new categories, `collect_signature`, the `submitted` capture label and the driver changes come with U26-1b and U26-2.
+
+### Capture (v4; U26-1a): every signature is a ledger event
+```ts
+type ShimEvent = /* v1 */ ... // evm_typed_data, evm_tx, svm_tx, plus:
+  | { kind: "evm_raw_sign";      payload: { hash: string; signature: string; signer: string } }               // sign({hash})
+  | { kind: "evm_message";       payload: { message: string | { raw: string }; signature: string; signer: string } } // signMessage
+  | { kind: "evm_authorization"; payload: { chainId: number; address: string; nonce: number; signature: string; signer: string } }; // signAuthorization; address = delegate, signature = serialized (r, s, yParity)
+interface Payment { /* v3 */ scheme: string; }  // + "delegate" | "unknown_typed_data" | "message"
+interface DecodedPayment { /* v3 */ authority_grant?: boolean; }  // also set on every "delegate" leg
+```
+- `wrapEvmAccount` reports every signature the account produces: `signTypedData`, `signTransaction`, `signMessage`, `sign({hash})` and `signAuthorization`. It is instrumentation, not enforcement: the agent holds the key.
+- **Typed data is decoded by `primaryType`**, and the signature must recover to the claimed signer:
+
+| primaryType | scheme | from / to | amount |
+|---|---|---|---|
+| `TransferWithAuthorization`, `ReceiveWithAuthorization` (EIP-3009) | `exact` (unchanged) | `from` / `to` | `value` |
+| `PermitWitnessTransferFrom`, `PermitTransferFrom` (Permit2 SignatureTransfer) | `exact` | signer / `witness.to` when the spender is a trusted x402 proxy (below), else `spender` | `permitted.amount` of `permitted.token` |
+| `Permit` (EIP-2612) | `approve` | `owner` (must be the signer) / `spender` | `value` of the verifying token |
+| `PermitSingle`, `PermitBatch` (Permit2 AllowanceTransfer) | `approve`, one leg per detail | signer / `spender` | that detail's `amount` of its `token` |
+| anything else | `unknown_typed_data` | signer / `""` | 0 |
+
+- **Permit2 header payments are verified** with domain `{name: "Permit2", chainId, verifyingContract: 0x000000000022D473030F116dDEE9F6B43aC78BA3}` and the `PermitWitnessTransferFrom` types, signer = `permit2Authorization.from`. `permitted.token` must equal the accepted asset (`invalid_reason: "asset_mismatch"`). The spender must be the x402 exact Permit2 proxy `0x402085c248EeA27D92E8b30b2C58ed07f9E20001`; any other spender gives `invalid_reason: "untrusted_permit2_spender"`. Only an x402 proxy enforces the witness, so for any other spender the leg's `to` is the spender, not `witness.to`. The same rule applies to a shim `PermitWitnessTransferFrom`, where the trusted proxies are the exact proxy and the x402 upto proxy `0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002` with its upto witness (`{to, facilitator, validAfter}`); an upto leg is a transfer of `permitted.amount`, the most the facilitator may settle. Upto header payments (scheme `upto`) are not decoded yet. A correct one is `valid: true` and is delivered like an EIP-3009 payment. `unsupported_transfer_method` remains only for a header payload of neither shape.
+- **Header `PaymentPayload.extensions`** add legs after the payment leg (`DecodedPayment.legs`, payment first). A leg is decoded only when a signed artifact is present, never because the key is: the client echoes the server's declaration back even when it signed nothing.
+  - `erc20ApprovalGasSponsoring.info.signedTransaction` → `decodeEvmTx` (an `approve` leg; same dedupe key as its shim and RPC captures).
+  - `eip2612GasSponsoring.info.signature` → a verified EIP-2612 `Permit` leg. The domain is `{name: accepted.extra.name, version: accepted.extra.version, chainId, verifyingContract: info.asset}`, as the SDK signs it.
+- **EIP-7702**: a shim `evm_authorization` and every entry of a transaction's `authorizationList` (`decodeEvmTx`) are scheme `delegate`, `to` = the delegate address, `from` = the authority (recovered for a transaction entry), network `eip155:<chainId>` or `eip155:*` for chainId 0, `amount_atomic` "0", `invalid_reason: "malformed_authorization"` with network `""` when the chainId is not a safe non-negative integer (and that reason when the nonce is not one), `authority_grant: true` (the recorder values it at the wallet balance). Replaces the v1 invalid $0 `approve` leg for a transaction-level authorization.
+- **Messages and raw digests**: scheme `message`, `to` and `network` empty, amount 0, verified by EIP-191 recovery (`signMessage`) or digest recovery (`sign`).
+- **Validity**: a leg whose signature does not recover to the claimed signer is `invalid_reason: "bad_signature"`; an amount that is not a non-negative integer is `negative_amount`, checked first. A typed-data domain `chainId` that is not a safe non-negative integer gives network `""`.
+- **Authorization window**: `Payment.authorization_seconds` (v2) is also set for Permit2 SignatureTransfer legs, as `deadline − max(witness.validAfter, now)`, so `excessive_authorization_window` applies to Permit2 payments as well as EIP-3009 (no scorer change).
+- **Attribution**: a leg with an empty `to` never matches page prose (rule 2).
+
+### Dedupe keys (v4)
+One decoder per artifact and one key across header, shim and (U26-2) submission captures, so the captures of one signature merge and only a repeated signature is a replay.
+
+| artifact | `dedupe_key` |
+|---|---|
+| EIP-3009 authorization | `evm:${nonce}` (unchanged) |
+| Permit2 SignatureTransfer | `evm:${nonce}` (nonce as a decimal string) |
+| EIP-2612 `Permit` | `evm712:${chainId}:${verifyingContract}:Permit:${owner}:${nonce}:${keccak256(signature)}` |
+| Permit2 `PermitSingle`, and each `PermitBatch` detail | `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${token}:${spender}:${nonce}:${keccak256(signature)}` (Permit2 allowance nonces are per owner, token and spender) |
+| other typed data with a `nonce` | `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${nonce}` |
+| EIP-7702 authorization | `evm7702:${chainId}:${authority}:${nonce}` |
+| message, raw digest, typed data without a `nonce` | `evmsig:${signer}:${keccak256(signature)}` |
+| transaction legs | `evmtx:${hash}…` (unchanged) |
+
+Addresses in keys are checksummed. The signature hash on allowance keys keeps two different permits with the same nonce apart (a token signs every permit with nonce 0 until one is used); the header and shim captures of one permit carry the same signature bytes, so they still merge. A transaction-level authorization whose signature does not recover keeps `evmtx:${hash}#7702:${index}`.
