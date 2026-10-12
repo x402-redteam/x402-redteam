@@ -46,12 +46,20 @@ const DUMMY_CTX: RenderContext = {
   usdc: "0xUSDC",
   host: (name) => `${BASE_MARKER}/_host/${name}`,
   canary: (name) => `@@CANARY_${name}@@`,
+  poison: (name) => `@@POISON_${name}@@`,
 };
 
 const CANARY_VAR_RE = /\{\{\s*canary\.([a-zA-Z0-9_-]+)\s*\}\}/g;
+// v4 (U26-2, M4): the full poisoned address is a recipient like a canary, so rule 3
+// tracks it under its own key. The short display forms never contain a full address.
+const POISON_VAR_RE = /\{\{\s*poison:([a-zA-Z0-9_.-]+)\s*\}\}/g;
 
+/** Rule 3 keys: `NAME` for `{{canary.NAME}}`, `poison:NAME` for `{{poison:NAME}}`. */
 function extractCanaryNames(template: string): string[] {
-  return [...template.matchAll(CANARY_VAR_RE)].map((m) => m[1] as string);
+  return [
+    ...[...template.matchAll(CANARY_VAR_RE)].map((m) => m[1] as string),
+    ...[...template.matchAll(POISON_VAR_RE)].map((m) => `poison:${m[1] as string}`),
+  ];
 }
 
 /** One `collectVars()` match against the `{{host:NAME}}` shape, for lint rule 6 (code
@@ -170,6 +178,20 @@ function pageTextFields(scenario: Scenario): TemplatedField[] {
         value: JSON.stringify(route.challenge.body_json),
       });
     }
+    // v4 (U26-2, review L4): extensions go to the agent in the 402 header.
+    if (route.challenge?.extensions !== undefined) {
+      fields.push({
+        path: `routes[${i}].challenge.extensions`,
+        value: JSON.stringify(route.challenge.extensions),
+      });
+    }
+    // v4 (U26-2): a sign request is served to the agent like a page.
+    if (route.sign_request !== undefined) {
+      fields.push({
+        path: `routes[${i}].sign_request`,
+        value: JSON.stringify(route.sign_request),
+      });
+    }
   });
   return fields;
 }
@@ -278,14 +300,24 @@ function lintScenario(
   // v2 (challenge_injection): every string leaf of body_json is templated too, checked
   // via the shared `renderJsonStrings` (code review L6) rather than a hand-rolled walk.
   scenario.routes.forEach((route, i) => {
-    if (route.challenge?.body_json === undefined) return;
-    try {
-      renderJsonStrings(route.challenge.body_json, DUMMY_CTX);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new CorpusError(file, `routes[${i}].challenge.body_json`, message);
+    // v4 (U26-2): extensions and sign requests are deep-templated the same way.
+    const deep: [string, unknown][] = [
+      [`routes[${i}].challenge.body_json`, route.challenge?.body_json],
+      [`routes[${i}].challenge.extensions`, route.challenge?.extensions],
+      [`routes[${i}].sign_request`, route.sign_request],
+    ];
+    for (const [path, value] of deep) {
+      if (value === undefined) continue;
+      try {
+        renderJsonStrings(value, DUMMY_CTX);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CorpusError(file, path, message);
+      }
     }
   });
+
+  lintCollectSignature(file, scenario);
 
   // ADR-004 canary channel separation: a canary used as a payment recipient must never
   // also appear in any page-visible text (`page`, `delivered_body` or, v2, `body_json`),
@@ -439,6 +471,55 @@ function lintScenario(
       );
     }
   }
+}
+
+/**
+ * v4 (U26-2, M2): `behaviour: collect_signature` and `sign_request` go together, such a
+ * route serves the request itself (no x402 challenge), its submit path is not another
+ * declared route, and the scenario is EVM only (every sign request kind is an EVM
+ * signature).
+ */
+function lintCollectSignature(file: string, scenario: Scenario): void {
+  const declared = new Set(scenario.routes.map((r) => routeKey(r.host, r.path)));
+  scenario.routes.forEach((route, i) => {
+    const collects = route.behaviour === "collect_signature";
+    if (collects !== (route.sign_request !== undefined)) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].sign_request`,
+        "sign_request is required on, and only allowed on, a collect_signature route",
+      );
+    }
+    if (!collects || route.sign_request === undefined) return;
+    if (route.challenge !== undefined) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].challenge`,
+        "a collect_signature route serves a sign request, not an x402 challenge",
+      );
+    }
+    if (!route.sign_request.submit_path.startsWith("/")) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].sign_request.submit_path`,
+        "sign_request.submit_path must be a path starting with /",
+      );
+    }
+    if (declared.has(routeKey(route.host, route.sign_request.submit_path))) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].sign_request.submit_path`,
+        "sign_request.submit_path must not be another declared route",
+      );
+    }
+    if (scenario.chains.some((chain) => chain !== "evm")) {
+      throw new CorpusError(
+        file,
+        "chains",
+        'a scenario with a collect_signature route must set chains: ["evm"]',
+      );
+    }
+  });
 }
 
 /** Parses, zod-validates and lints a single scenario YAML file. */

@@ -6,11 +6,12 @@ import {
 } from "@solana/kit";
 import { x402Client } from "@x402/core/client";
 import type { Network } from "@x402/core/types";
+import { toClientEvmSigner } from "@x402/evm";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { wrapEvmAccount, wrapSvmSigner } from "@x402-redteam/capture";
-import type { LocalAccount } from "viem";
+import { createPublicClient, http, type LocalAccount } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { FetchLike } from "./crawl.js";
 
@@ -18,7 +19,7 @@ import type { FetchLike } from "./crawl.js";
  * and "Contracts (v3, Bolt 6)"), per application-design.md §6. Kept local (rather than
  * importing `@x402-redteam/cli`) so the example agents don't depend on the CLI. */
 export interface TaskFile {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   run_id: string;
   prompt: string;
   base_url: string;
@@ -43,6 +44,8 @@ export interface TaskFile {
   /** v3 only (ADR-012): every virtual host this scenario declares, mapped to its
    * rendered origin under `host_mode`. */
   hosts?: Record<string, string>;
+  /** v4 only (U26-2): the scenario asks for its items in parallel. */
+  parallel?: boolean;
 }
 
 /** Reads and parses `task.json` from `X402_REDTEAM_TASK`. */
@@ -100,6 +103,25 @@ export interface BuildClientOptions {
   unlimitedSpend?: boolean;
   /** v2 (ADR-013, NAIVE_NO_SHIM): see `walletSigner`. */
   noShim?: boolean;
+  /**
+   * v4 (U26-2, B2): how the EVM account is handed to the x402 SDK.
+   * - "account" (default): the bare viem account. It has no chain reads, so the SDK's
+   *   gas-sponsoring extensions never sign anything.
+   * - "sdk-extensions": `toClientEvmSigner(account, publicClient(task.evm_rpc_url))`, the
+   *   SDK's own composition for its extensions. When a challenge declares
+   *   `eip2612GasSponsoring` or `erc20ApprovalGasSponsoring`, the SDK signs the EIP-2612
+   *   permit or the `approve(Permit2, max)` transaction a real payer would.
+   * - "payment-only": only the account's address and typed-data signing, so the SDK can
+   *   sign the payment authorization itself and nothing else (no approval transaction,
+   *   no permit).
+   */
+  evmSigner?: "account" | "sdk-extensions" | "payment-only";
+  /**
+   * v4 (U26-2): called with every response the x402 client receives before it pays,
+   * including a 402 that is not a payable x402 challenge (the client throws on those,
+   * so the caller would otherwise never see the body).
+   */
+  observe?: (url: string, response: Response) => void;
 }
 
 /** Either chain's wallet signer, wrapped or not - see `walletSigner`. */
@@ -157,7 +179,7 @@ export async function buildClient(
 
   const signer = await walletSigner(task, { noShim: opts.noShim });
   if (signer.chain === "evm") {
-    registerExactEvmScheme(client, { signer: signer.account });
+    registerExactEvmScheme(client, { signer: evmClientSigner(task, signer.account, opts) });
   } else {
     // Registered against the "solana:*" wildcard (per functional-design.md §5), not just
     // `task.network`: a rail-switch challenge legitimately names a different solana:* network
@@ -170,6 +192,34 @@ export async function buildClient(
     );
   }
 
-  const payFetch = wrapFetchWithPayment(fetch, client) as FetchLike;
+  const observe = opts.observe;
+  const innerFetch: typeof fetch = observe
+    ? async (input, init) => {
+        const response = await fetch(input, init);
+        const url = input instanceof Request ? input.url : String(input);
+        observe(url, response.clone());
+        return response;
+      }
+    : fetch;
+  const payFetch = wrapFetchWithPayment(innerFetch, client) as FetchLike;
   return { client, payFetch };
+}
+
+/** The EVM signer handed to the x402 SDK - see `BuildClientOptions.evmSigner`. */
+function evmClientSigner(task: TaskFile, account: LocalAccount, opts: BuildClientOptions) {
+  switch (opts.evmSigner ?? "account") {
+    case "sdk-extensions": {
+      const publicClient = task.evm_rpc_url
+        ? createPublicClient({ transport: http(task.evm_rpc_url) })
+        : undefined;
+      return toClientEvmSigner(account, publicClient);
+    }
+    case "payment-only":
+      return toClientEvmSigner({
+        address: account.address,
+        signTypedData: (message) => account.signTypedData(message),
+      });
+    default:
+      return account;
+  }
 }

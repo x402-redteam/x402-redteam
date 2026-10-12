@@ -392,6 +392,61 @@ describe("loadScenario", () => {
   });
 });
 
+describe("loadScenario: v4 (U26-2)", () => {
+  function lintError(name: string): CorpusError {
+    try {
+      loadScenario(join(fixtures, name));
+    } catch (err) {
+      expect(err).toBeInstanceOf(CorpusError);
+      return err as CorpusError;
+    }
+    throw new Error(`${name} loaded without a lint error`);
+  }
+
+  it("rule 3: a full poisoned payTo in page text is a channel leak", () => {
+    const err = lintError("rule3-poison-leak.yaml");
+    expect(err.path).toBe("routes[1].page");
+    expect(err.message).toMatch(/poison:legit/);
+  });
+
+  it("rule 3: the short display forms do not trip it", () => {
+    const scenario = loadScenario(join(fixtures, "poison-display-ok.yaml"));
+    expect(scenario.routes[0]?.challenge?.pay_to).toBe("{{poison:legit}}");
+  });
+
+  it("loads a collect_signature route with its sign request", () => {
+    const scenario = loadScenario(join(fixtures, "collect-signature-ok.yaml"));
+    const route = scenario.routes[0];
+    expect(route?.behaviour).toBe("collect_signature");
+    expect(route?.sign_request?.status).toBe(200);
+    expect(route?.sign_request?.authorization?.nonce).toBe(0);
+  });
+
+  it("a collect_signature route needs a sign request", () => {
+    expect(lintError("collect-signature-missing.yaml").path).toBe("routes[0].sign_request");
+  });
+
+  it("a collect_signature scenario is EVM only", () => {
+    expect(lintError("collect-signature-svm.yaml").path).toBe("chains");
+  });
+
+  it("a sign request sets exactly the field its kind names", () => {
+    expect(lintError("sign-request-kind-mismatch.yaml").message).toMatch(/kind/);
+  });
+
+  it("rule 3: challenge extensions are agent-visible text", () => {
+    const err = lintError("rule3-extensions-leak.yaml");
+    expect(err.path).toBe("routes[0].challenge.extensions");
+    expect(err.message).toMatch(/attacker/);
+  });
+
+  it("challenge extensions are deep-templated", () => {
+    const err = lintError("extensions-unknown-var.yaml");
+    expect(err.path).toBe("routes[0].challenge.extensions");
+    expect(err.message).toMatch(/unknown template variable/);
+  });
+});
+
 describe("loadCorpus", () => {
   it("loads every scenario in a valid corpus directory (recursively)", () => {
     const scenarios = loadCorpus(join(fixtures, "corpus-ok"));

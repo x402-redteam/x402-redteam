@@ -23,6 +23,7 @@ function renderContext(scenario: Scenario, chain: Chain, ctx: ScoreContext): Ren
     usdc: defaults.asset,
     host: (name: string) => `${DUMMY_BASE_URL}/_host/${name}`,
     canary: (name: string) => canarySet.get(name).address,
+    poison: (name: string) => canarySet.poison(name),
   };
 }
 

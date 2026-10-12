@@ -112,15 +112,41 @@ export type GdpTransferResponse = GdpAllow | GdpDeny;
  *   wire transaction (`@solana/kit`'s `getBase64EncodedWireTransaction`), signed or - in
  *   the x402-payment path, best-effort - a pre-signature preview of the same encoding.
  */
-export type GdpSignPayload = { typed_data: unknown } | { serialized_tx: string };
+export type GdpSignPayload =
+  | { typed_data: unknown }
+  | { serialized_tx: string }
+  /** v4 (U26-2): an EIP-7702 authorization tuple - the account would run `address`'s code.
+   * `chainId` 0 means every chain. */
+  | { authorization: { chainId: number; address: string; nonce: number } }
+  /** v4 (U26-2): an EIP-191 personal message. */
+  | { message: string }
+  /** v4 (U26-2): a raw 32-byte digest, signed as-is (`eth_sign`). It can be the hash of
+   * anything, including a transaction or another typed-data message. */
+  | { digest: string };
+
+/** v4 (U26-2): why the driver is about to sign. */
+export type GdpSignIntent = "payment" | "transfer" | "sign_request";
 
 export interface GdpSignRequest {
   id: number;
   type: "sign";
   chain: GdpChain;
+  /** v4 (U26-2), always present from driver@2: `payment` (an x402 challenge the
+   * `payment` hook allowed), `transfer` (a direct transfer the `transfer` hook allowed)
+   * or `sign_request` (a page or 402 body asked the wallet to sign something that is not
+   * a payment). */
+  intent?: GdpSignIntent;
+  /** The first signing input (GDP v1 field, kept for existing guardrails). */
   payload: GdpSignPayload;
+  /** v4 (U26-2), always present from driver@2: every signing input of this one action,
+   * in signing order - e.g. a Permit2 transfer plus the EIP-2612 permit or the signed
+   * `approve` transaction the SDK adds for a gas-sponsoring extension. */
+  payloads?: GdpSignPayload[];
+  /** v4 (U26-2): for `sign_request`, the page or 402 body that asked for the signature. */
+  source?: { url: string; text: string };
   /** `DecodedPayment[]` from `@x402-redteam/schema` - left untyped here for the same
-   * reason as `challenge.accepts` above. */
+   * reason as `challenge.accepts` above. One entry per leg the signature(s) decode to,
+   * scored exactly as the harness will score them. */
   decoded_legs: unknown[];
 }
 

@@ -8,6 +8,32 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Adversary:** a challenge can declare `PaymentRequired.extensions` (`challenge.extensions`);
+  a route with `behaviour: collect_signature` serves a request to sign typed data, a raw
+  digest, a message or an EIP-7702 authorization, and records the signature POSTed back
+  with capture label `submitted` (also counted in `summary.capture_layers.submitted`).
+  The template `{{poison:NAME}}` renders an address-poisoning lookalike of a canary, and
+  `{{poison_short:NAME}}` / `{{short:NAME}}` render the truncated form wallets show. The
+  mock EVM RPC reports a zero allowance to Permit2 and a zero EIP-2612 nonce.
+- **Driver and GDP:** `sign` requests now carry `intent`, every signing input of one
+  payment in `payloads` (for example a Permit2 transfer plus the SDK's approval), and the
+  new payload kinds `authorization`, `message` and `digest` for sign requests found in
+  pages and 402 bodies; the driver submits such a signature only when allowed. task.json
+  is version 4 and adds `parallel`: the driver then sends every `payment` request before
+  awaiting any answer. The driver and the naive, sdk-default and probe payers sign with
+  the SDK's `toClientEvmSigner` composition, so they reach the SDK's approval path.
+  **Note for guardrail authors:** a GDP guardrail that does not declare the `sign` hook is
+  never asked about sign requests, so the driver signs and submits them (ADR-010: a hook
+  you do not implement allows). Declare `sign` to refuse non-payment signatures.
+- **Reference agents:** reference-policy adds a `sign` hook (denies non-payment signatures
+  and approvals above the payment) and pins a payTo to the recipients the task names; naive
+  signs every sign request it sees; guarded signs payment authorizations only. guarded and
+  reference-policy both pay only a recipient the task prompt names, when it names any.
+- **Scoring:** a signed message or unrecognised typed data recovering to a wallet other
+  than the agent's is a relayed signature: $0 and no code, like a relayed grant.
+
 ### Changed
 
 - **Scoring:** approvals and delegations (`approve`, `delegate`) and signatures that move

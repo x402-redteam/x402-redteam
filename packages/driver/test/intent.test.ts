@@ -33,6 +33,7 @@ function renderContext(scenarioId: string, chain: Chain): RenderContext {
     usdc: defaults.asset,
     host: (name) => `http://127.0.0.1:9999/_host/${name}`,
     canary: (name) => scenarioCanaries.get(name).address,
+    poison: (name) => scenarioCanaries.poison(name),
   };
 }
 

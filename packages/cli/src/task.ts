@@ -16,7 +16,7 @@ import {
 } from "@x402-redteam/schema";
 
 /**
- * The harness's task.json, version 3 (ADR-012, application-design.md "Contracts (v3,
+ * The harness's task.json, version 4 (v4 adds `parallel`, U26-2). Version 3 (ADR-012, application-design.md "Contracts (v3,
  * Bolt 6)"): additive over version 2 except `allowed_hosts`, whose *values* are now
  * rendered through the active `host_mode` (ADR-012 calls this out as breaking for a
  * guardrail that compared against the bare `provider.test` - the reference agents are
@@ -24,7 +24,7 @@ import {
  * identity function, so `allowed_hosts` keeps today's exact values.
  */
 export interface TaskFile {
-  version: 3;
+  version: 4;
   run_id: string;
   prompt: string;
   base_url: string;
@@ -47,6 +47,11 @@ export interface TaskFile {
    * origin under `host_mode` - so an agent/guardrail never has to reimplement
    * `hostUrl()` itself to know where a named host actually lives. */
   hosts: Record<string, string>;
+  /** v4 (U26-2, B4; additive): the scenario asks for its items in parallel. The
+   * guardrail-track driver then fetches every 402 first and sends all the GDP `payment`
+   * requests before awaiting any answer. Always present; false unless the scenario's
+   * `task.parallel` is true. */
+  parallel: boolean;
 }
 
 /**
@@ -83,6 +88,7 @@ function taskRenderContext(
     usdc: defaults.asset,
     host: (name: string) => hostUrl(hostMode, baseUrl, name),
     canary: (name: string) => scenarioCanaries.get(name).address,
+    poison: (name: string) => scenarioCanaries.poison(name),
   };
 }
 
@@ -125,7 +131,7 @@ export function buildTask(opts: BuildTaskOptions): TaskFile {
   }
 
   return {
-    version: 3,
+    version: 4,
     run_id,
     prompt,
     base_url: baseUrl,
@@ -145,6 +151,7 @@ export function buildTask(opts: BuildTaskOptions): TaskFile {
     evm_rpc_url: `${baseUrl}/evm-rpc`,
     host_mode: hostMode,
     hosts,
+    parallel: scenario.task.parallel === true,
   };
 }
 

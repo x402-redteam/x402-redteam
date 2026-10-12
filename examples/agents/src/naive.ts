@@ -8,11 +8,18 @@
  * (U10, ADR-013) - not a self-report via the capture shim. No LLM is
  * involved - this models a maximally gullible payment client.
  *
+ * v4 (U26-2): its EVM signer is the SDK's own composition for gas-sponsoring extensions
+ * (`toClientEvmSigner` over the mock EVM RPC), so it signs whatever approval a challenge's
+ * extensions ask for; and it signs every sign request (an EIP-7702 delegation, a raw
+ * digest, a message, typed data) it finds in a page or a 402 body and POSTs the signature
+ * where the request says - the same gullibility as its prose transfers.
+ *
  * `NAIVE_NO_SHIM=1` disables signer wrapping entirely (see `lib/wallet.ts`'s
  * `walletSigner`), so the direct transfer produces no shim event at all - proving
  * that the mock chain RPC alone observes it (functional-design.md §6).
  */
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
+import { answerSignRequests, bodyRecorder } from "./lib/sign-request.js";
 import { sendDirectTransfer } from "./lib/transfer.js";
 import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
 
@@ -49,7 +56,13 @@ const noShim = process.env.NAIVE_NO_SHIM === "1";
 async function main(): Promise<void> {
   const task = readTask();
   refuseUnsupportedProxyMode(task);
-  const { payFetch } = await buildClient(task, { unlimitedSpend: true, noShim });
+  const recorder = bodyRecorder();
+  const { payFetch } = await buildClient(task, {
+    unlimitedSpend: true,
+    noShim,
+    evmSigner: "sdk-extensions",
+    observe: recorder.observe,
+  });
   const fetchWithRetries = withRetries(payFetch);
   const origins = allowedOrigins(task);
 
@@ -92,6 +105,9 @@ async function main(): Promise<void> {
       console.error(`naive: sendDirectTransfer failed for ${page.url}:`, err);
     }
   }
+
+  // v4 (U26-2): every sign request in any response it saw, page or 402 body.
+  await answerSignRequests(task, await recorder.bodies(), { noShim });
 }
 
 main().catch((err) => {

@@ -26,7 +26,13 @@ pnpm x402-redteam run --guardrail "python3 my_guardrail.py"
    - `transfer`: a direct (non-x402) transfer instruction found in a page. Reply
      `{"id":N,"decision":"allow"}` or a `deny`.
    - `sign`: the exact payload about to be signed, plus decoded legs (the wallet-policy
-     view). Reply `allow`/`deny` the same way.
+     view). Reply `allow`/`deny` the same way. `intent` says why: `payment` (an x402
+     challenge you allowed), `transfer`, or `sign_request` (a page or 402 body asked the
+     wallet to sign something that is not a payment: an EIP-7702 `authorization`, a
+     `message`, a raw `digest` or `typed_data`). `payloads` lists every signing input of
+     the one action - a payment can include an EIP-2612 permit or an `approve`
+     transaction the SDK signs for a gas-sponsoring extension - and `decoded_legs` has
+     one entry per leg, scored the way the harness scores it.
 3. Any `deny` blocks the payment. A hook you don't implement is simply never asked -
    everything proceeds at the SDK's default behaviour for that decision point. A 5s
    response timeout counts as a deny.
@@ -75,4 +81,6 @@ for line in sys.stdin:
 - `hostname-allowlist.ts`: a plain `new URL(u).hostname ∈ allowed_hosts` check. Only
   meaningful once the harness runs in `localhost` host mode (ADR-012); in the default
   `path` mode every request shares one hostname.
-- `reference-policy.ts`: `examples/agents/src/guarded.ts`'s policy, ported to GDP.
+- `reference-policy.ts`: `examples/agents/src/guarded.ts`'s policy, ported to GDP. It
+  also denies every non-payment signature and any approval larger than the payment it
+  comes with, and only pays a recipient the task names when the task names any.

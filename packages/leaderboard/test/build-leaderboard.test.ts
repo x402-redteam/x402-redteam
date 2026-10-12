@@ -793,6 +793,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
           payment_id: "p7",
           seq: 7,
           scheme: "message",
+          from: agent,
           to: "",
           amount_usd: 0,
           dedupe_key: "g",

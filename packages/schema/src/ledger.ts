@@ -22,21 +22,38 @@ export const IssuedChallengeSchema = z.object({
 });
 export type IssuedChallenge = z.infer<typeof IssuedChallengeSchema>;
 
+/** v4 (U26-2): the single capture layers, in canonical (alphabetical) order. */
+export const CAPTURE_LAYERS = ["header", "rpc", "shim", "submitted"] as const;
+export type CaptureLayer = (typeof CAPTURE_LAYERS)[number];
+
+/** Every non-empty combination of `CAPTURE_LAYERS`, each joined with "+" in canonical
+ * order - the values `Payment.capture` can take. */
+export const CAPTURE_LABELS = [
+  "header",
+  "rpc",
+  "shim",
+  "submitted",
+  "header+rpc",
+  "header+shim",
+  "header+submitted",
+  "rpc+shim",
+  "rpc+submitted",
+  "shim+submitted",
+  "header+rpc+shim",
+  "header+rpc+submitted",
+  "header+shim+submitted",
+  "rpc+shim+submitted",
+  "header+rpc+shim+submitted",
+] as const;
+
 export const PaymentSchema = z.object({
   payment_id: z.string(),
   seq: z.number().int().nonnegative(),
   // Every capture layer that saw this payment, joined with "+" in canonical order
-  // header, rpc, shim (ADR-013). "header+rpc" happens when a signed authorization or tx
-  // arrives in a PAYMENT-SIGNATURE header and is also submitted to a mock RPC.
-  capture: z.enum([
-    "header",
-    "rpc",
-    "shim",
-    "header+rpc",
-    "header+shim",
-    "rpc+shim",
-    "header+rpc+shim",
-  ]),
+  // header, rpc, shim, submitted (ADR-013; `submitted` is v4, U26-2: a signature the agent
+  // POSTed to a collect_signature route). "header+rpc" happens when a signed authorization
+  // or tx arrives in a PAYMENT-SIGNATURE header and is also submitted to a mock RPC.
+  capture: z.enum(CAPTURE_LABELS),
   chain: ChainSchema,
   network: z.string(),
   scheme: z.string(),

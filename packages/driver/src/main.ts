@@ -27,8 +27,15 @@ import { privateKeyToAccount } from "viem/accounts";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls } from "./crawl.js";
 import { DEFAULT_HELLO_TIMEOUT_MS, GdpClient } from "./gdp.js";
 import { extractTransferIntents, type TransferIntent } from "./intent.js";
-import { buildPayFetch, type PayContext } from "./pay.js";
+import {
+  buildDeferringFetch,
+  buildPayFetch,
+  type PayContext,
+  type PendingChallenge,
+  payDeferred,
+} from "./pay.js";
 import type { GdpHook, GdpTransferResponse } from "./protocol.js";
+import { extractSignIntents, handleSignIntent } from "./sign-intent.js";
 import { SourceMap } from "./source-map.js";
 import { sendDirectTransfer, type TransferContext } from "./transfer.js";
 
@@ -64,7 +71,8 @@ function scrubGuardrailEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return scrubbed;
 }
 
-/** `task.json` (version 3, application-design.md "Contracts (v3, Bolt 6)"). Kept local
+/** `task.json` (version 3, application-design.md "Contracts (v3, Bolt 6)"; version 4 adds
+ * `parallel`, U26-2). Kept local
  * (rather than depending on `@x402-redteam/cli`) - the driver is self-contained,
  * functional-design.md §5. */
 interface TaskFile {
@@ -85,6 +93,8 @@ interface TaskFile {
   evm_rpc_url: string;
   host_mode: string;
   hosts: Record<string, string>;
+  /** v4 (U26-2, B4): absent before task.json v4. */
+  parallel?: boolean;
 }
 
 function readTask(): TaskFile {
@@ -205,6 +215,7 @@ async function main(): Promise<void> {
         evmAccount,
         svmSigner,
         solanaRpcUrl: task.solana_rpc_url,
+        evmRpcUrl: task.evm_rpc_url,
       },
       log,
       challengeTexts: [],
@@ -231,10 +242,17 @@ async function main(): Promise<void> {
       referrerBody: task.prompt,
     }));
 
-    const payFetch = buildPayFetch(payCtx, (url) => sourceByUrl.lookup(url));
-    const fetchWithRetries = withRetries(payFetch);
+    // v4 (U26-2, B4): with `task.parallel`, the crawl pays nothing and keeps every 402;
+    // `payDeferred` then sends all the GDP `payment` requests before awaiting any answer
+    // and pays the allowed ones one at a time, in canonical URL order. Otherwise every
+    // 402 is paid as it is met, with retries, as before.
+    const referrerOf = (url: string) => sourceByUrl.lookup(url);
+    const deferred = new Map<string, PendingChallenge>();
+    const crawlFetch = task.parallel
+      ? buildDeferringFetch(payCtx, referrerOf, deferred)
+      : withRetries(buildPayFetch(payCtx, referrerOf));
 
-    const pages = await crawl(fetchWithRetries, seeds, {
+    const crawled = await crawl(crawlFetch, seeds, {
       origins,
       maxDepth: MAX_DEPTH,
       maxFetches: MAX_DISCOVERY_FETCHES,
@@ -242,6 +260,7 @@ async function main(): Promise<void> {
         sourceByUrl.record(url, referrerUrl, referrerBody);
       },
     });
+    const pages = task.parallel ? [...crawled, ...(await payDeferred(payCtx, deferred))] : crawled;
 
     // functional-design.md §3 step 5: every fetched page body, plus every 402
     // body/error text the driver saw along the way (even one later superseded by a
@@ -298,6 +317,11 @@ async function main(): Promise<void> {
           log(`sendDirectTransfer failed for ${intent.to}: ${err}`);
         }
       }
+    }
+
+    // v4 (U26-2, M2): sign requests found in any page or 402 body, in source order.
+    for (const intent of extractSignIntents(intentSources)) {
+      await handleSignIntent({ gdp, hooks, evmAccount, origins, log }, intent);
     }
 
     // Code review finding 4 (BLOCK): written once, at the very end of a successful run,

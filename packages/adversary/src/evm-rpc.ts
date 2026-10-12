@@ -1,5 +1,6 @@
 import {
   assetInfo,
+  CANONICAL_PERMIT2_ADDRESS,
   CHAIN_DEFAULTS,
   NATIVE_ASSET,
   usdToAtomic,
@@ -51,6 +52,8 @@ const SELECTOR_DECIMALS = "0x313ce567";
 const SELECTOR_SYMBOL = "0x95d89b41";
 const SELECTOR_NAME = "0x06fdde03";
 const SELECTOR_ALLOWANCE = "0xdd62ed3e";
+/** EIP-2612 `nonces(address)`. */
+const SELECTOR_NONCES = "0x7ecebe00";
 
 function evmChainId(): number {
   const match = /^eip155:(\d+)$/.exec(CHAIN_DEFAULTS.evm.network);
@@ -91,6 +94,34 @@ const multicall3Abi = parseAbi([
  * contracts (known assets and Multicall3). Never executed; it only needs to be non-empty. */
 const EVM_CONTRACT_CODE = "0x6080604052600080fdfe";
 
+const CANONICAL_PERMIT2_LOWER = CANONICAL_PERMIT2_ADDRESS.toLowerCase();
+
+/** The address in the `index`-th 32-byte argument word of `data`, lowercased. */
+function callArgAddress(data: string, index: number): string {
+  const hex = data.replace(/^0x/, "");
+  const word = hex.slice(8 + index * 64, 8 + (index + 1) * 64);
+  return `0x${word.slice(24)}`.toLowerCase();
+}
+
+/** Distinct valid EIP-2612 `Permit` legs recorded this run for (owner, token). Their
+ * dedupe key is `evm712:{chainId}:{token}:Permit:{owner}:{nonce}:{signature hash}`. */
+function permitsRecorded(state: RunState, token: string, owner: string): number {
+  const keys = new Set<string>();
+  for (const payment of state.payments) {
+    if (payment.scheme !== "approve" || !payment.valid) continue;
+    const parts = payment.dedupe_key.split(":");
+    if (
+      parts[0] === "evm712" &&
+      parts[3] === "Permit" &&
+      parts[2]?.toLowerCase() === token.toLowerCase() &&
+      parts[4]?.toLowerCase() === owner
+    ) {
+      keys.add(payment.dedupe_key);
+    }
+  }
+  return keys.size;
+}
+
 /** Answers a read-only call to a known ERC-20 asset, or `undefined` for a revert. */
 function tokenCall(state: RunState, to: string | undefined, data: string): string | undefined {
   const info = to ? assetInfo("evm", to, state.scenario.assets) : undefined;
@@ -109,7 +140,17 @@ function tokenCall(state: RunState, to: string | undefined, data: string): strin
     case SELECTOR_NAME:
       return encodeAbiString(info.symbol);
     case SELECTOR_ALLOWANCE:
-      return encodeUint256(MAX_UINT256);
+      // v4 (U26-2, B2): the wallet has not approved canonical Permit2 yet, so the x402
+      // SDK's gas-sponsoring extensions (an EIP-2612 permit or an approve transaction)
+      // fire when a challenge declares them. Every other spender keeps an unlimited
+      // allowance, as before.
+      return encodeUint256(callArgAddress(data, 1) === CANONICAL_PERMIT2_LOWER ? 0n : MAX_UINT256);
+    case SELECTOR_NONCES:
+      // v4 (U26-2, B2 as amended by review H1): the number of distinct valid EIP-2612
+      // permits already recorded this run for this owner and token, as a real token's
+      // nonce would be once those payments settled. Each new permit then gets its own
+      // nonce, whatever second it is signed in.
+      return encodeUint256(BigInt(permitsRecorded(state, to as string, callArgAddress(data, 0))));
     default:
       return undefined;
   }

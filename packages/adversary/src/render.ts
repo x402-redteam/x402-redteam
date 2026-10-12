@@ -11,6 +11,10 @@ import {
   render,
   renderJsonStrings,
   type Scenario,
+  type SignRequestBody,
+  type SignRequestSpec,
+  type SignRequestTypedData,
+  type SignRequestWire,
 } from "@x402-redteam/schema";
 
 /** One resolved, rendered `accepts[]` entry (v1's single-option challenge resolves to a
@@ -34,6 +38,16 @@ export interface RenderedChallenge {
   resource_url?: string;
   body_json?: unknown;
   description?: string;
+  /** v4 (U26-2): `PaymentRequired.extensions`, deep-rendered. */
+  extensions?: Record<string, unknown>;
+}
+
+/** v4 (U26-2, M2): a `collect_signature` route's rendered sign request. */
+export interface RenderedSignRequest {
+  status: 200 | 402;
+  submit_path: string;
+  /** The JSON body the route serves (application-design.md v4 sign-request shape). */
+  body: SignRequestBody;
 }
 
 /** A route with every templated field resolved for one (scenario, chain, baseUrl) load. */
@@ -45,9 +59,10 @@ export interface RenderedRoute {
   content_type: string;
   redirect?: string;
   challenge?: RenderedChallenge;
-  behaviour: "normal" | "402_forever" | "no_delivery" | "replay";
+  behaviour: "normal" | "402_forever" | "no_delivery" | "replay" | "collect_signature";
   delivered_body?: string;
   route_key: string;
+  sign_request?: RenderedSignRequest;
 }
 
 export interface RenderedScenario {
@@ -59,9 +74,22 @@ export interface RenderedScenario {
   knownOwners: string[];
   /** v3 (ADR-012): the host mode this load was rendered under. */
   host_mode: HostMode;
+  /** v4 (U26-2): `POST ${host}\u0000${submit_path}` -> the collect_signature route that
+   * served the sign request. */
+  submitRoutes: Map<string, RenderedRoute>;
 }
 
 const CANARY_VAR_RE = /\{\{\s*canary\.([a-zA-Z0-9_-]+)\s*\}\}/g;
+const POISON_VAR_RE = /\{\{\s*poison:([a-zA-Z0-9_.-]+)\s*\}\}/g;
+
+/** v4 (U26-2, M4): every canary name a `{{poison:NAME}}` refers to, anywhere in the
+ * scenario. Their poisoned addresses join `knownOwners`, so an SVM transfer to one's
+ * token account resolves back to it. */
+function collectPoisonNames(scenario: Scenario): string[] {
+  return [
+    ...new Set([...JSON.stringify(scenario).matchAll(POISON_VAR_RE)].map((m) => m[1] as string)),
+  ];
+}
 
 function collectCanaryNames(text: string, out: Set<string>): void {
   for (const match of text.matchAll(CANARY_VAR_RE)) {
@@ -157,7 +185,51 @@ function buildRenderContext(
     usdc: defaults.asset,
     host: (name: string) => hostUrl(hostMode, baseUrl, name),
     canary: (name: string) => scenarioCanaries.get(name).address,
+    poison: (name: string) => scenarioCanaries.poison(name),
   };
+}
+
+/** v4 (U26-2): the served sign request; `submit_url` is the submit path on the route's
+ * own host, rendered under the active host mode. */
+function renderSignRequest(
+  spec: SignRequestSpec,
+  host: string,
+  ctx: RenderContext,
+): RenderedSignRequest {
+  const r = (value: string) => render(value, ctx);
+  const origin = host === DEFAULT_HOST ? ctx.base_url : ctx.host(host);
+  const submit_url = `${origin}${spec.submit_path}`;
+  let wire: SignRequestWire;
+  if (spec.kind === "typed_data" && spec.typed_data !== undefined) {
+    wire = {
+      kind: "typed_data",
+      typed_data: renderJsonStrings(spec.typed_data, ctx) as SignRequestTypedData,
+      submit_url,
+    };
+  } else if (spec.kind === "digest" && spec.digest !== undefined) {
+    wire = { kind: "digest", digest: r(spec.digest), submit_url };
+  } else if (spec.kind === "message" && spec.message !== undefined) {
+    wire = { kind: "message", message: r(spec.message), submit_url };
+  } else if (spec.kind === "authorization" && spec.authorization !== undefined) {
+    wire = {
+      kind: "authorization",
+      authorization: {
+        chainId: spec.authorization.chain_id,
+        address: r(spec.authorization.address),
+        nonce: spec.authorization.nonce,
+      },
+      submit_url,
+    };
+  } else {
+    // Unreachable for a scenario that passed SignRequestSpecSchema.
+    throw new Error(`renderSignRequest: sign_request kind ${spec.kind} has no matching field`);
+  }
+  const body: SignRequestBody = {
+    ...(spec.status === 402 ? { error: "signature_required" as const } : {}),
+    ...(spec.text !== undefined ? { text: r(spec.text) } : {}),
+    sign_request: wire,
+  };
+  return { status: spec.status, submit_path: spec.submit_path, body };
 }
 
 function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRoute {
@@ -197,7 +269,14 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
         challenge.body_json !== undefined ? renderJsonStrings(challenge.body_json, ctx) : undefined,
       description:
         challenge.description !== undefined ? render(challenge.description, ctx) : undefined,
+      // v4 (U26-2): deep-rendered like body_json.
+      ...(challenge.extensions !== undefined
+        ? { extensions: renderJsonStrings(challenge.extensions, ctx) as Record<string, unknown> }
+        : {}),
     };
+  }
+  if (route.sign_request !== undefined) {
+    rendered.sign_request = renderSignRequest(route.sign_request, route.host, ctx);
   }
   return rendered;
 }
@@ -218,18 +297,35 @@ export function renderScenario(
   const ctx = buildRenderContext(seed, scenario.id, chain, baseUrl, hostMode);
   const routes = scenario.routes.map((route) => renderRoute(route, chain, ctx));
   const byKey = new Map<string, RenderedRoute>();
+  const submitRoutes = new Map<string, RenderedRoute>();
   for (const route of routes) {
     byKey.set(lookupKey(route.method, route.host, route.path), route);
+    if (route.sign_request !== undefined) {
+      submitRoutes.set(lookupKey("POST", route.host, route.sign_request.submit_path), route);
+    }
   }
   const owners = new Set<string>();
   for (const name of collectScenarioCanaryNames(scenario)) {
     owners.add(ctx.canary(name));
   }
+  for (const name of collectPoisonNames(scenario)) {
+    owners.add(ctx.poison(name));
+  }
   for (const route of routes) {
     // v2 (accepts_ordering): every entry's payTo, not just a single one.
     for (const accept of route.challenge?.accepts ?? []) owners.add(accept.pay_to);
   }
-  return { routes, byKey, ctx, knownOwners: [...owners], host_mode: hostMode };
+  return { routes, byKey, ctx, knownOwners: [...owners], host_mode: hostMode, submitRoutes };
+}
+
+/** v4 (U26-2): the collect_signature route whose sign request POSTs to (host, path). */
+export function findSubmitRoute(
+  rendered: RenderedScenario,
+  method: string,
+  host: string,
+  path: string,
+): RenderedRoute | undefined {
+  return rendered.submitRoutes.get(lookupKey(method, host, path));
 }
 
 export function findRoute(

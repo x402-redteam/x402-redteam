@@ -1,12 +1,18 @@
-import type { RequestLog } from "@x402-redteam/schema";
+import {
+  type DecodedPayment,
+  type RequestLog,
+  recoverSignRequestSigner,
+  signRequestEvent,
+} from "@x402-redteam/schema";
 import type { Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { fakeTransactionHash } from "./fake-hash.js";
 import { resolveHost } from "./hosts.js";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
 import { railFor } from "./rails/index.js";
 import type { Rail } from "./rails/rail.js";
 import { recordDecodedLegs } from "./record.js";
-import { findRoute, type RenderedRoute, type RenderedScenario } from "./render.js";
+import { findRoute, findSubmitRoute, type RenderedRoute, type RenderedScenario } from "./render.js";
 import type { Shared } from "./shared.js";
 import type { RunState } from "./state.js";
 
@@ -26,8 +32,14 @@ export function registerScenarioRoutes(app: Hono, shared: Shared): void {
 
     const route = findRoute(rendered, method, host, path);
     if (!route) {
+      const collector = findSubmitRoute(rendered, method, host, path);
+      if (collector) return acceptSignature(c, shared, state, rendered, collector, host, path);
       logRequest(state, { method, host, path, status: 404, paid: false });
       return c.body("not found", 404);
+    }
+
+    if (route.behaviour === "collect_signature" && route.sign_request) {
+      return serveSignRequest(c, state, route, method, host, path);
     }
 
     if (!route.challenge) {
@@ -41,6 +53,113 @@ export function registerScenarioRoutes(app: Hono, shared: Shared): void {
     const rail = state.rail ?? railFor(state.scenario.rail, state.scenario.id);
     return serveChallenge(c, shared, state, rendered, route, method, host, path, rail);
   });
+}
+
+/**
+ * v4 (U26-2, M2): serves a collect_signature route's sign request as JSON, with status
+ * 200 (a page) or 402 (a 402 body with no x402 challenge header). Like any page, the body
+ * is page-visible text for prose attribution.
+ */
+function serveSignRequest(
+  c: Context,
+  state: RunState,
+  route: RenderedRoute,
+  method: string,
+  host: string,
+  path: string,
+): Response {
+  const signRequest = route.sign_request as NonNullable<RenderedRoute["sign_request"]>;
+  const body = JSON.stringify(signRequest.body);
+  state.pageBodies.push(body);
+  logRequest(state, { method, host, path, status: signRequest.status, paid: false });
+  return c.body(body, signRequest.status, { "content-type": "application/json" });
+}
+
+const SIGNATURE_RE = /^0x[0-9a-fA-F]{130}$/;
+const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** v4 (U26-2, review L1): the largest submission body accepted. */
+const SUBMIT_MAX_BYTES = 16 * 1024;
+
+/**
+ * v4 (U26-2, M2): accepts a signature POSTed to a collect_signature route's submit path.
+ * The signer is always the one recovered from the signature and the request this route
+ * served, because that is the wallet an attacker could use (review M1). A claimed
+ * `address` that differs is kept only as an annotation in `raw`, which report.json
+ * never carries; a signature recovering to a wallet other than the agent's is then a
+ * relayed signature for the scorer. The signature is recorded through the decoder the EVM
+ * shim uses for the same signing call, with capture label `submitted`, so it merges with
+ * a shim capture of the same signature. Nothing is delivered. Only a malformed body or
+ * signature is the agent's 400; a decoder or recorder failure is a harness error and
+ * surfaces as one (review M2).
+ */
+async function acceptSignature(
+  c: Context,
+  shared: Shared,
+  state: RunState,
+  rendered: RenderedScenario,
+  route: RenderedRoute,
+  host: string,
+  path: string,
+): Promise<Response> {
+  let response: Response | undefined;
+  const limited = await bodyLimit({
+    maxSize: SUBMIT_MAX_BYTES,
+    onError: (ctx) => {
+      logRequest(state, { method: "POST", host, path, status: 413, paid: false });
+      return ctx.json({ error: "submission_too_large" }, 413);
+    },
+  })(c, async () => {
+    response = await recordSubmission(c, shared, state, rendered, route, host, path);
+  });
+  return limited instanceof Response ? limited : (response as Response);
+}
+
+async function recordSubmission(
+  c: Context,
+  shared: Shared,
+  state: RunState,
+  rendered: RenderedScenario,
+  route: RenderedRoute,
+  host: string,
+  path: string,
+): Promise<Response> {
+  const wire = (route.sign_request as NonNullable<RenderedRoute["sign_request"]>).body.sign_request;
+  const reject = (): Response => {
+    logRequest(state, { method: "POST", host, path, status: 400, paid: false });
+    return c.json({ error: "invalid_signature" }, 400);
+  };
+  const submission = (await c.req.json().catch(() => null)) as {
+    signature?: unknown;
+    address?: unknown;
+  } | null;
+  const signature = submission?.signature;
+  if (typeof signature !== "string" || !SIGNATURE_RE.test(signature)) return reject();
+  let signer: string;
+  try {
+    signer = await recoverSignRequestSigner(wire, signature);
+  } catch {
+    return reject();
+  }
+
+  const claimed = submission?.address;
+  const claimedDiffers =
+    typeof claimed === "string" &&
+    EVM_ADDRESS_RE.test(claimed) &&
+    claimed.toLowerCase() !== signer.toLowerCase();
+  const decoded = await shared.capture.decodeShimEvent(signRequestEvent(wire, signature, signer), {
+    knownOwners: rendered.knownOwners,
+  });
+  const annotate = (leg: DecodedPayment): DecodedPayment =>
+    claimedDiffers ? { ...leg, raw: { submitted: leg.raw, claimed_address: claimed } } : leg;
+  recordDecodedLegs(
+    state,
+    shared.capture,
+    { ...annotate(decoded), ...(decoded.legs ? { legs: decoded.legs.map(annotate) } : {}) },
+    { capture: "submitted", host, route_key: route.route_key },
+  );
+  logRequest(state, { method: "POST", host, path, status: 200, paid: false });
+  return c.json({ ok: true });
 }
 
 function serveFree(

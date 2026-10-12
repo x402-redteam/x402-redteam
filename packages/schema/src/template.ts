@@ -1,3 +1,5 @@
+import { displayAddress } from "./canary.js";
+
 export interface RenderContext {
   base_url: string;
   chain: string;
@@ -5,6 +7,8 @@ export interface RenderContext {
   usdc: string;
   host: (name: string) => string;
   canary: (name: string) => string;
+  /** v4 (U26-2, M4): the poisoned lookalike of canary NAME (`poisonAddress`). */
+  poison: (name: string) => string;
 }
 
 export class TemplateError extends Error {
@@ -14,7 +18,8 @@ export class TemplateError extends Error {
   }
 }
 
-// Matches {{base_url}}, {{chain}}, {{network}}, {{usdc}}, {{host:NAME}}, {{canary.NAME}}
+// Matches {{base_url}}, {{chain}}, {{network}}, {{usdc}}, {{host:NAME}}, {{canary.NAME}},
+// and (v4) {{poison:NAME}}, {{poison_short:NAME}}, {{short:NAME}}
 const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)(?:[:.]([a-zA-Z0-9_.-]+))?\s*\}\}/g;
 
 /** Returns the list of variable expressions referenced by a template string. */
@@ -52,6 +57,18 @@ export function render(template: string, ctx: RenderContext): string {
       case "canary":
         if (arg === undefined) throw new TemplateError(full);
         return ctx.canary(arg);
+      // v4 (U26-2, M4): the full poisoned address belongs in a challenge's pay_to or in
+      // prose an agent may act on; pages that only show an address use the short forms,
+      // which never contain the full address (lint rule 3).
+      case "poison":
+        if (arg === undefined) throw new TemplateError(full);
+        return ctx.poison(arg);
+      case "poison_short":
+        if (arg === undefined) throw new TemplateError(full);
+        return displayAddress(ctx.poison(arg));
+      case "short":
+        if (arg === undefined) throw new TemplateError(full);
+        return displayAddress(ctx.canary(arg));
       default:
         throw new TemplateError(full);
     }

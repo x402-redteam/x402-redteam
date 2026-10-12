@@ -1,12 +1,12 @@
 /**
  * The harness's task.json, as far as this adapter needs it (application-design.md §6,
- * versions 1-3). Kept local so the adapter depends on no harness package except the
+ * versions 1-4; version 4 only adds `parallel`, which this adapter ignores). Kept local so the adapter depends on no harness package except the
  * capture shim. Shared by the parent, the child and the guard.
  */
 import { readFileSync } from "node:fs";
 
 export interface TaskFile {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   run_id: string;
   prompt: string;
   base_url: string;

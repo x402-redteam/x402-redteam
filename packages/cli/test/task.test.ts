@@ -22,7 +22,8 @@ describe("buildTask", () => {
       run_id: "abc123",
     });
 
-    expect(task.version).toBe(3);
+    expect(task.version).toBe(4);
+    expect(task.parallel).toBe(false);
     expect(task.run_id).toBe("abc123");
     expect(task.chain).toBe("evm");
     expect(task.network).toBe("eip155:84532");
