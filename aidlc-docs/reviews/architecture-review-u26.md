@@ -271,3 +271,40 @@ Scope: the "Payers, driver and adversary (v4; U26-2)" section that worktree comm
 - The FYI items are fine and need no contract ruling. The CHANGELOG note about guardrails without a `sign` hook is the right disclosure for that default.
 
 The U26-2 sign-off stands, with changes 1–3 plus H1 and M1, all folded into the v4 contract text.
+
+## U26-3 sign-off (2026-10-12)
+
+Scope: worktree commit `12556ce` (corpus v4). I read the schema, template and lint changes, the new scenarios' metadata, and the regenerated headline numbers as reported. This is not a code review.
+
+The headline numbers move in the expected direction. naive 6.8→5.3 and sdk-default 47.7→43.0 (new attacks they fail). guarded and reference-policy hold at 100 and allow-all at 0. Because no earlier scenario's per-chain result changed, the U26-1/2 semantics did not alter v3 behaviour.
+
+1. **`{{lower:NAME}}`: accepted.**
+   - It is a pure, additive template.
+   - Lint rule 3 treats it as NAME, which is correct: it is the same EVM account.
+   - The EVM-only lint is required, because base58 is case-sensitive and a lower-cased SVM address names a different account.
+2. **Python example agent: (a).** Add the `extensions` extra to `examples/agents-py`, pinned exactly in the uv lock (jsonschema and its transitive dependencies), keeping `x402==2.25.0`. The agent should be configured the way a user who pays gas-sponsored servers must configure it.
+   - Also record in its README and in the CHANGELOG that without the extra, `x402` 2.25.0 rejects any challenge that declares extensions ("Extensions validation requires jsonschema"). That is a real interoperability fact worth publishing.
+   - Option (b) would leave a reference payer INVALID on the current corpus, and `summary.valid=false` hides all of its scores.
+   - CLAUDE.md's description of the Python environment must be updated to name the extra.
+3. **transfer_method_switch with 2 attacks plus 2 controls: accepted.**
+   - The family has two distinct SDK mechanisms. The approval transaction is attacked, by a plain and a lure variant (the 2 attacks). The benign permit and the plain Permit2 payment are utility checks (the 2 controls).
+   - A third attack would duplicate S2.
+   - The corpus README and the category table must give the count honestly ("2 attacks + 2 controls"), not imply 3. Add a third only when a distinct mechanism appears.
+4. **"Stale", not "rejected": confirmed.** The leaderboard lists a pre-v4 report as stale on a `corpus_hash` mismatch, before any re-score. The CHANGELOG should say: "Reports produced against corpus v3 or earlier show as stale (corpus hash mismatch) and are not ranked until re-run against corpus v4." This corrects the word "rejected" in my M6 and in design §5.
+5. **Contract text to add to `application-design.md`**, under "Contracts (v4, Bolt 9)", as a "Corpus (v4; U26-3)" subsection:
+   - `type Category = /* v3 */ ... | "transfer_method_switch" | "signature_request" | "concurrent_spend";` Still a closed enum, iterated by the scorer, SARIF, `by_category` and `redact`. The new categories add zeroed `by_category` rows to every report.
+   - `interface Scenario { /* v3 */ technique?: string; }`: non-empty free text naming the real-world technique a scenario models inside its category (`address_poisoning`, `discovery_poisoning`, `agent_lure`). It is never aggregated, never iterated, and not part of any score. It has no default, so `corpusHash` is unchanged for scenarios that omit it.
+   - Template `{{lower:NAME}}`: canary NAME in lower case. Lint rule 3 treats it as NAME, and a scenario that uses it must set `chains: ["evm"]`. Add it to the §3 templating list next to `poison`, `poison_short` and `short`.
+   - **Placement rule.** A new category is added only when its measured signature is new (a signed artifact, a scoring code or a timing dimension). Technique families that reuse an existing measurement go into the existing category with `technique` (M5).
+   - **Controls (v4):** the Permit2 payment control, the gas-sponsored Permit2 control (only the benign exact-amount permit may be signed), and the recipient letter-case control. All are EVM only. Controls are always run, so every agent and guardrail must pay the Permit2 and extension paths correctly to be valid.
+   - **Driver tag:** `config.driver` is `driver@2` from corpus v4. driver@2 adds GDP `intent`/`payloads`/`source`, sign intents, `parallel` fan-out and the `toClientEvmSigner` signer. reference-policy's hello hooks are now `["payment", "transfer", "sign"]`.
+   - **Corpus versioning:** corpus v4 = 71 scenarios (the count of attacks/controls per category is in `corpus/README.md`). Reports against earlier corpora show as stale. Season 1 keeps its frozen corpus and harness, and the v4 categories and scorer semantics apply from Season 2.
+   - **Reference payers:** the Python reference payer (`examples/agents-py`) installs `x402[evm,httpx,extensions]==2.25.0` (after item 2).
+
+**Verdict: sign off with changes.**
+1. Python extra plus documentation (item 2).
+2. README/category counts stated honestly (item 3).
+3. CHANGELOG wording "stale" (item 4).
+4. The contract text in item 5, written into `application-design.md`.
+
+No re-review is needed. The orchestrator checks these at merge.

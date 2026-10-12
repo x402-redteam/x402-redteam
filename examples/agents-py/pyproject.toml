@@ -5,6 +5,7 @@ description = "Python x402 reference payer for x402-redteam (U12, Bolt 5) - a he
 requires-python = ">=3.10"
 dependencies = [
     "x402[evm,httpx]==2.25.0",
+    "jsonschema==4.26.0",
 ]
 
 [tool.uv]

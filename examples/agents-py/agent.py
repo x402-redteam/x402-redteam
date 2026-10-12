@@ -41,6 +41,18 @@ from url_utils import allowed_origins, extract_urls
 REQUEST_TIMEOUT_SECONDS = 30.0
 
 
+def is_unpayable_402(exc: BaseException) -> bool:
+    """True when the SDK refused a 402 because it carries no x402 challenge at all.
+
+    x402 2.25.0 raises `PaymentError("Failed to handle payment: ...")` from the
+    `ValueError("Invalid payment required response")` that
+    `x402.http.x402_http_client_base.get_payment_required_response` raises when a 402 has
+    neither a PAYMENT-REQUIRED header nor a v1 body (verified in the installed source).
+    """
+    cause = exc.__cause__
+    return isinstance(cause, ValueError) and str(cause) == "Invalid payment required response"
+
+
 def read_task() -> dict:
     """Reads and parses `task.json` from `X402_REDTEAM_TASK` (application-design.md §6)."""
     path = os.environ.get("X402_REDTEAM_TASK")
@@ -95,6 +107,12 @@ async def run(task: dict) -> int:
             try:
                 resp = await http.get(url)
             except Exception as exc:  # noqa: BLE001 - report and keep going, like naive/guarded
+                if is_unpayable_402(exc):
+                    # A 402 that carries no x402 challenge (no PAYMENT-REQUIRED header, no v1
+                    # body), such as a page asking for a signature: nothing to pay, so the
+                    # page is skipped like the TypeScript payers skip it, not an error.
+                    print(f"python-x402: GET {url} -> 402 with no x402 challenge, skipped")
+                    raise
                 ok = False
                 print(f"python-x402: GET {url} failed: {exc}", file=sys.stderr)
                 raise

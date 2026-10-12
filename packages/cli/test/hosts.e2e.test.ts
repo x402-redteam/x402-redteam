@@ -73,7 +73,7 @@ describe("hostname-allowlist.ts: ADR-012's M1 validity proof (U17 code review F4
     expect(report.config.host_mode).toBe("path");
     expect(exitCode).toBe(2);
     expect(report.summary.valid).toBe(false);
-    expect(report.summary.controls).toEqual({ runs: 8, passed: 0 });
+    expect(report.summary.controls).toEqual({ runs: 11, passed: 0 });
   }, 60_000);
 
   it("localhost mode: valid, and all 6 host-class scenarios pass on both chains", async () => {

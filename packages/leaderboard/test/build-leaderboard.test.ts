@@ -208,7 +208,7 @@ function repeatedRuns(
 /**
  * The canonical CLI configuration (functional-design.md §3.3 + ADR-016 §3's full v3
  * fingerprint, U16): the guardrail track's own canonical shape, since it's the only
- * ranked track at launch (ADR-010 §1) - `driver@1`, a non-empty `guardrail_hooks`,
+ * ranked track at launch (ADR-010 §1) - `driver@2`, a non-empty `guardrail_hooks`,
  * `host_mode: "localhost"`, and `repeat: 1` (the only canonical value for a
  * deterministic guardrail - code review round 1, item 6). `harness_commit` is a
  * 40-hex-char placeholder SHA (code review round 1, item 4: the real field must look
@@ -225,7 +225,7 @@ const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   startup_timeout_s: 120,
   host_mode: "localhost",
   track: "guardrail",
-  driver: "driver@1",
+  driver: "driver@2",
   guardrail_hooks: ["payment"],
   guardrail_nondeterministic: false,
   harness_commit: "a".repeat(40),

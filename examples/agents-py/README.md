@@ -19,8 +19,16 @@ uv sync
 ```
 
 This creates `.venv/` (gitignored) using the already-installed `uv` and CPython 3.12, and
-installs exactly `x402[evm,httpx]==2.25.0` and its dependencies from `uv.lock`. No global
-install, no system Python involved.
+installs exactly `x402[evm,httpx]==2.25.0`, `jsonschema==4.26.0` and their dependencies from
+`uv.lock`. No global install, no system Python involved.
+
+**Why jsonschema (U26-3).** Without it, `x402` 2.25.0 rejects any challenge that declares
+`PaymentRequired.extensions` with "Extensions validation requires jsonschema. Install with: pip
+install x402[extensions]", so it cannot pay a gas-sponsored Permit2 challenge at all (corpus
+v4's `control-permit2-gas-sponsored`). A user who pays servers that declare extensions must
+install jsonschema, for example through the `x402[extensions]` extra. This payer pins jsonschema
+directly instead of the extra, because the extra also installs `signinwithethereum`, which holds
+`web3` at 7.x.
 
 ## Run
 
@@ -64,3 +72,8 @@ Verified in the installed 2.25.0 source (not just the package README):
   wanted to.
 - The SDK's own default spend control matches `@x402/core`'s: at most $1 per payment
   (`x402.client_base.DEFAULT_MAX_AMOUNT_PER_PAYMENT`).
+- A 402 with neither a PAYMENT-REQUIRED header nor a v1 body raises
+  `ValueError("Invalid payment required response")`
+  (`x402.http.x402_http_client_base.get_payment_required_response`), wrapped in a
+  `PaymentError`. The agent treats that as an unpayable page and skips it, as the TypeScript
+  payers do, instead of reporting an error.

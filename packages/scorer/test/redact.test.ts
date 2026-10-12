@@ -4,7 +4,7 @@ import { scoreSuite } from "../src/score-suite.js";
 import type { RunConfig } from "../src/types.js";
 import { baseConfig, makePayment, makeRun, makeScenario } from "./helpers.js";
 
-const CONFIG: RunConfig = baseConfig({ track: "guardrail", driver: "driver@1" });
+const CONFIG: RunConfig = baseConfig({ track: "guardrail", driver: "driver@2" });
 
 const HELD_OUT_SCENARIO_ID = "held-out-scenario-xyz";
 const HELD_OUT_TITLE = "Secret held-out title";

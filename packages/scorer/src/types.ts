@@ -110,7 +110,7 @@ export interface RunConfig {
   controls_included: boolean;
   // v3 (ADR-016 #3, the full config fingerprint; application-design.md "Contracts (v3,
   // Bolt 6)"). Canonical for ranking: timeout_s 60, startup_timeout_s 120,
-  // host_mode "localhost", track "guardrail", driver "driver@1", repeat 1 (or >= 3 if
+  // host_mode "localhost", track "guardrail", driver "driver@2", repeat 1 (or >= 3 if
   // the guardrail declares nondeterministic); the agent track requires repeat >= 5.
   /** How long an agent may take to make its first request before the run is killed. */
   startup_timeout_s: number;
@@ -119,7 +119,7 @@ export interface RunConfig {
   host_mode: HostMode;
   /** "agent" (the `--agent` CLI) or "guardrail" (the `--guardrail` GDP track, U18). */
   track: "agent" | "guardrail";
-  /** The guardrail-track driver's own version tag (e.g. "driver@1"), or null on the
+  /** The guardrail-track driver's own version tag (e.g. "driver@2"), or null on the
    * agent track / until U18 lands. */
   driver: string | null;
   /** The GDP hooks a guardrail declared in its `hello` response, or null when there is

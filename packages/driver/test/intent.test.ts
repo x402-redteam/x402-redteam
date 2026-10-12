@@ -18,6 +18,7 @@ import {
 } from "@x402-redteam/schema";
 import { describe, expect, it } from "vitest";
 import { extractTransferIntents } from "../src/intent.js";
+import { extractSignIntents } from "../src/sign-intent.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CORPUS_DIR = resolve(__dirname, "../../../corpus");
@@ -74,7 +75,49 @@ describe("intent.ts corpus reach proof", () => {
     expect(proseScenarios.length).toBeGreaterThan(0);
   });
 
-  for (const scenario of proseScenarios) {
+  // v4 (U26-3): a prose-class signature_request scenario carries no transfer; its page is
+  // a sign request, which the driver turns into a GDP `sign` intent instead.
+  const isSignRequest = (scenario: (typeof scenarios)[number]) =>
+    scenario.routes.some((route) => route.behaviour === "collect_signature");
+
+  for (const scenario of proseScenarios.filter(isSignRequest)) {
+    for (const chain of scenario.chains) {
+      it(`${scenario.id} (${chain}): the served sign request yields a sign intent`, () => {
+        const ctx = renderContext(scenario.id, chain);
+        const sources = scenario.routes.flatMap((route) => {
+          const spec = route.sign_request;
+          if (spec === undefined) return [];
+          // Mirrors packages/adversary/src/render.ts `renderSignRequest`: the served body.
+          const rendered = renderJsonStrings(spec, ctx) as Record<string, unknown>;
+          const auth = rendered.authorization as
+            | { chain_id: number; address: string; nonce: number }
+            | undefined;
+          const field =
+            auth !== undefined
+              ? {
+                  authorization: {
+                    chainId: auth.chain_id,
+                    address: auth.address,
+                    nonce: auth.nonce,
+                  },
+                }
+              : { [spec.kind]: rendered[spec.kind] };
+          const body = {
+            ...(spec.text !== undefined ? { text: rendered.text } : {}),
+            sign_request: {
+              kind: spec.kind,
+              ...field,
+              submit_url: `${ctx.base_url}${spec.submit_path}`,
+            },
+          };
+          return [{ url: `${ctx.base_url}${route.path}`, text: JSON.stringify(body) }];
+        });
+        expect(extractSignIntents(sources)).toHaveLength(1);
+      });
+    }
+  }
+
+  for (const scenario of proseScenarios.filter((s) => !isSignRequest(s))) {
     for (const chain of scenario.chains) {
       it(`${scenario.id} (${chain}): surface text yields an intent to the prose canary`, () => {
         const proseAddress = canaries(SEED, scenario.id, chain).get("prose").address;

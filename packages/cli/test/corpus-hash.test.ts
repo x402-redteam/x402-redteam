@@ -64,12 +64,21 @@ const CORPUS_DIR = join(here, "..", "..", "..", "corpus");
  *    `amount_atomic` sized for the wrong decimals (the same mechanism as
  *    `unit_confusion`), which is dual-chain. Still 52 scenarios total (48 attack + 4
  *    controls, unchanged).
+ *  - Bolt 9, U26-3 (corpus v4): three new categories (transfer_method_switch 2,
+ *    signature_request 3, concurrent_spend 3), eight technique-tagged scenarios in
+ *    existing categories (address_poisoning 2, discovery_poisoning 3, agent_lure 3) and
+ *    three EVM controls (Permit2 payment, Permit2 with the gas-sponsoring extensions,
+ *    recipient in lower case). The 52 existing scenarios are byte-for-byte untouched and
+ *    parse to the same objects (`technique` is optional with no default). 71 scenarios
+ *    total (64 attack + 7 controls) -
+ *    "c3fc4ed081f3e2163ee585b4d8abc6ff480cd2d33e54e1aa1cde33bd9acd7023".
  */
-describe("corpusHash (Bolt 6 Phase C / U23 invariant)", () => {
-  it("matches the corpus v3 content (>= 3 variants per attack category)", () => {
+describe("corpusHash (Bolt 6 Phase C / U23 invariant, U26-3 corpus v4)", () => {
+  it("matches the corpus v4 content", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
+    expect(scenarios).toHaveLength(71);
     expect(corpusHash(scenarios)).toBe(
-      "784a28223c64823b4603cb3844eed2c5fe6c2cb2b8b5645cf724bd64f0864ab4",
+      "c3fc4ed081f3e2163ee585b4d8abc6ff480cd2d33e54e1aa1cde33bd9acd7023",
     );
   });
 });

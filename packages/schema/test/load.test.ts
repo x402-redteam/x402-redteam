@@ -414,6 +414,21 @@ describe("loadScenario: v4 (U26-2)", () => {
     expect(scenario.routes[0]?.challenge?.pay_to).toBe("{{poison:legit}}");
   });
 
+  it("U26-3: {{lower:NAME}} loads on an EVM-only scenario", () => {
+    const scenario = loadScenario(join(fixtures, "lower-evm-ok.yaml"));
+    expect(scenario.routes[0]?.challenge?.pay_to).toBe("{{lower:legit}}");
+  });
+
+  it("U26-3: {{lower:NAME}} is EVM only", () => {
+    expect(lintError("lower-svm.yaml").path).toBe("chains");
+  });
+
+  it("U26-3: rule 3 treats {{lower:NAME}} as canary NAME", () => {
+    const err = lintError("rule3-lower-leak.yaml");
+    expect(err.path).toBe("routes[1].page");
+    expect(err.message).toMatch(/canary "attacker"/);
+  });
+
   it("loads a collect_signature route with its sign request", () => {
     const scenario = loadScenario(join(fixtures, "collect-signature-ok.yaml"));
     const route = scenario.routes[0];

@@ -49,7 +49,11 @@ const DUMMY_CTX: RenderContext = {
   poison: (name) => `@@POISON_${name}@@`,
 };
 
-const CANARY_VAR_RE = /\{\{\s*canary\.([a-zA-Z0-9_-]+)\s*\}\}/g;
+// v4 (U26-3): `{{lower:NAME}}` is canary NAME in lower case, the same recipient, so rule 3
+// tracks it under the same key.
+const CANARY_VAR_RE = /\{\{\s*(?:canary\.|lower:)([a-zA-Z0-9_-]+)\s*\}\}/g;
+/** v4 (U26-3): any `{{lower:NAME}}` reference, for the EVM-only lint. */
+const LOWER_VAR_RE = /\{\{\s*lower:/;
 // v4 (U26-2, M4): the full poisoned address is a recipient like a canary, so rule 3
 // tracks it under its own key. The short display forms never contain a full address.
 const POISON_VAR_RE = /\{\{\s*poison:([a-zA-Z0-9_.-]+)\s*\}\}/g;
@@ -318,6 +322,7 @@ function lintScenario(
   });
 
   lintCollectSignature(file, scenario);
+  lintLowerCase(file, scenario);
 
   // ADR-004 canary channel separation: a canary used as a payment recipient must never
   // also appear in any page-visible text (`page`, `delivered_body` or, v2, `body_json`),
@@ -470,6 +475,23 @@ function lintScenario(
           'route with "surface: true" - its "reached" will be null (lint rule 7)',
       );
     }
+  }
+}
+
+/**
+ * v4 (U26-3): `{{lower:NAME}}` lower-cases an address, which names the same account only
+ * on EVM (base58 is case-sensitive), so a scenario that uses it anywhere is EVM only.
+ */
+function lintLowerCase(file: string, scenario: Scenario): void {
+  const used = LOWER_VAR_RE.test(
+    JSON.stringify({ task: scenario.task, routes: scenario.routes, expected: scenario.expected }),
+  );
+  if (used && scenario.chains.some((chain) => chain !== "evm")) {
+    throw new CorpusError(
+      file,
+      "chains",
+      'a scenario that uses {{lower:NAME}} must set chains: ["evm"]',
+    );
   }
 }
 

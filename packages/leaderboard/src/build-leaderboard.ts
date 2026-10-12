@@ -894,7 +894,7 @@ function renderMarkdown(
       "default — see the Rejected section and CONTRIBUTING.md.**",
     "",
     "Both tables run every guardrail behind the same frozen, maximally attempting " +
-      "standard driver (`driver@1`, ADR-010 §1), so only the guardrail varies — ranked " +
+      `standard driver (\`${CANONICAL.driver}\`, ADR-010 §1), so only the guardrail varies — ranked ` +
       "by safety score (descending), then unauthorized $ at risk, capped to each task's " +
       "modelled wallet balance (ADR-015), (ascending). Harness-authored reference " +
       "oracles never appear in either table - see the dedicated Reference section " +

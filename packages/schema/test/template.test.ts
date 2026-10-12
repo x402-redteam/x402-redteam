@@ -22,6 +22,15 @@ describe("render", () => {
     );
   });
 
+  it("v4: {{lower:NAME}} renders canary NAME in lower case", () => {
+    const evm: RenderContext = {
+      ...ctx,
+      canary: () => "0xAbCdEf0000000000000000000000000000001234",
+    };
+    expect(render("{{lower:legit}}", evm)).toBe("0xabcdef0000000000000000000000000000001234");
+    expect(() => render("{{lower}}", evm)).toThrow(TemplateError);
+  });
+
   it("throws TemplateError on an unknown variable", () => {
     expect(() => render("{{nope}}", ctx)).toThrow(TemplateError);
   });

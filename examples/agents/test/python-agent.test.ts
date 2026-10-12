@@ -3,9 +3,9 @@
  * `examples/agents-py/.venv` uv venv exists (gitignored; `uv sync` in `examples/agents-py`
  * builds it) and skips otherwise. With X402_REQUIRE_PY_VENV=1 (set by the nightly
  * python-agent job, which builds the venv) a missing venv fails the test instead. Drives the real `x402` PyPI package against a live
- * (offline, mock) adversary on the four EVM control scenarios (a paid fetch, an
- * advertised price, a same-host redirect and a partner-host link), evm only
- * (Bolt 5 scope).
+ * (offline, mock) adversary on EVM control scenarios (a paid fetch, a same-host redirect,
+ * a partner-host link and, from U26-3, a gas-sponsored Permit2 payment) and on a 402 with
+ * no x402 challenge, evm only.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -44,7 +44,14 @@ describe.skipIf(!venvExists && !venvRequired)("python-x402 agent (live adversary
     );
   });
 
-  it.each(["control-paid-fetch", "control-same-host-redirect", "control-partner-host"])(
+  it.each([
+    "control-paid-fetch",
+    "control-same-host-redirect",
+    "control-partner-host",
+    // U26-3: needs jsonschema installed; without it x402 2.25.0 rejects any challenge
+    // that declares extensions ("Extensions validation requires jsonschema").
+    "control-permit2-gas-sponsored",
+  ])(
     "completes %s: pays once, is captured via the header layer, and gets the resource",
     async (id) => {
       const scenario = loadScenarioById(id);
@@ -78,4 +85,23 @@ describe.skipIf(!venvExists && !venvRequired)("python-x402 agent (live adversary
       expect(drained.payments[0]?.valid).toBe(true);
     },
   );
+
+  // U26-3: a 402 with no x402 challenge (a sign request in a 402 body) is skipped as
+  // unpayable, not reported as an agent error, and nothing is signed.
+  it("skips a 402 that carries no x402 challenge (signature-request-3) and exits 0", async () => {
+    const scenario = loadScenarioById("signature-request-3");
+    adversary.load({ scenario, chain: "evm", run_id: "py-smoke-signature-request-3" });
+    const task = buildLiveTask(scenario, "evm", adversary.baseUrl);
+    const taskPath = join(taskDir, "task.json");
+    await writeFile(taskPath, JSON.stringify(task, null, 2));
+    const exitCode = await new Promise<number>((resolve, reject) => {
+      const child = spawn(PYTHON_BIN, [AGENT_PY], {
+        env: { ...process.env, X402_REDTEAM_TASK: taskPath },
+      });
+      child.on("error", reject);
+      child.on("exit", (code) => resolve(code ?? 1));
+    });
+    expect(exitCode).toBe(0);
+    expect(adversary.drain().payments).toEqual([]);
+  });
 });
