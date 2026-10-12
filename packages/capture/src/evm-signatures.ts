@@ -1,4 +1,4 @@
-import type { DecodedPayment } from "@x402-redteam/schema";
+import { CANONICAL_PERMIT2_ADDRESS, type DecodedPayment } from "@x402-redteam/schema";
 import {
   getAddress,
   type Hex,
@@ -42,7 +42,7 @@ import {
  */
 
 /** Canonical Permit2 contract (same address on every chain). */
-export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+export const PERMIT2_ADDRESS = CANONICAL_PERMIT2_ADDRESS;
 /** The x402 exact-scheme Permit2 proxy, the only spender an x402 exact Permit2 payment may name. */
 export const X402_EXACT_PERMIT2_PROXY = "0x402085c248EeA27D92E8b30b2C58ed07f9E20001";
 /** The x402 upto-scheme Permit2 proxy. Its witness adds a `facilitator` field. */
@@ -104,6 +104,8 @@ interface TypedLeg {
   dedupe_key: string;
   authorization_seconds?: number;
   authority_grant?: boolean;
+  /** The signed deadline, so the recorder can pair an allowance with its Permit2 transfer. */
+  deadline?: string;
   /** Checked after the signature verifies, e.g. the payer named in the message. */
   postCheck?: (recovered: string) => string | undefined;
 }
@@ -156,6 +158,11 @@ function allowanceKey(
   return `${typedKey(chainId, verifyingContract, primaryType, owner, nonce)}:${sigHash}`;
 }
 
+/** A deadline as a decimal string, or undefined when it does not parse as an integer. */
+function deadlineString(value: unknown): string | undefined {
+  return toBigIntOrUndefined(value)?.toString();
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
@@ -201,6 +208,7 @@ function permit2TransferLeg(input: TypedDataInput): TypedLeg {
     amount_atomic: amountString(permitted.amount),
     dedupe_key: `evm:${nonceString(message.nonce)}`,
     authorization_seconds: authorizationSeconds(witness?.validAfter ?? 0, message.deadline),
+    deadline: deadlineString(message.deadline),
     postCheck: () => (withWitness && !trustedProxy ? "untrusted_permit2_spender" : undefined),
   };
 }
@@ -224,6 +232,7 @@ function eip2612Leg(input: TypedDataInput, chainId: number | undefined): TypedLe
       nonceString(message.nonce),
       input.signature,
     ),
+    deadline: deadlineString(message.deadline),
     postCheck: (recovered) => (sameAddress(recovered, owner) ? undefined : "bad_signature"),
   };
 }
@@ -253,6 +262,7 @@ function permit2AllowanceLegs(input: TypedDataInput, chainId: number | undefined
         `${token}:${spender}:${nonceString(detail.nonce)}`,
         input.signature,
       ),
+      deadline: deadlineString(message.sigDeadline),
     };
   });
 }
@@ -356,6 +366,7 @@ function finishTypedLeg(
     ...(leg.authorization_seconds !== undefined
       ? { authorization_seconds: leg.authorization_seconds }
       : {}),
+    ...(leg.deadline !== undefined ? { deadline: leg.deadline } : {}),
     raw,
   };
   if (!isNonNegativeIntegerString(base.amount_atomic)) {

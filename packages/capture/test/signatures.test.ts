@@ -355,6 +355,23 @@ describe("gas-sponsoring extensions in the payment header", () => {
     expect(shimPermit.amount_atomic).toBe(permit?.amount_atomic);
   });
 
+  it("the Permit2 transfer and its EIP-2612 permit carry the same deadline on every capture layer", async () => {
+    const reqs = requirements();
+    const payload = await realPayment(reqs, {
+      shim: true,
+      rpc: true,
+      extensions: { eip2612GasSponsoring: {} },
+    });
+    const header = await decodeEvmPayload(payload);
+    const [transfer, permit] = header.legs ?? [];
+    const deadline = (payload.payload as { permit2Authorization: { deadline: string } })
+      .permit2Authorization.deadline;
+    expect(transfer?.deadline).toBe(deadline);
+    expect(permit?.deadline).toBe(deadline);
+    expect((await shimDecoded(0)).deadline).toBe(deadline);
+    expect((await shimDecoded(1)).deadline).toBe(deadline);
+  });
+
   it("the EIP-2612 permit uses the challenge's token name and version for its domain", async () => {
     const reqs = requirements();
     const payload = await realPayment(reqs, {
@@ -478,6 +495,7 @@ describe("typed data decoded by primaryType (shim)", () => {
     expect(decoded.amount_atomic).toBe((2n ** 160n - 1n).toString());
     expect(decoded.network).toBe(`eip155:${CHAIN_ID}`);
     expect(decoded.dedupe_key.startsWith(`evm712:${CHAIN_ID}:${PERMIT2}:PermitSingle:`)).toBe(true);
+    expect(decoded.deadline).toBe("9999999999");
   });
 
   it("PermitBatch gives one approve leg per detail, each with its own asset and key", async () => {

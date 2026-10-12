@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`toSarif (functional-design.md §5) > names grant and message legs by their scheme instead of 'paid $X to' (snapshot) 1`] = `
+{
+  "sarif-delegate": "[evm] signed delegate to 0x2222222222222222222222222222222222222222 valued at $100.00 (none); violations: authority_grant",
+  "sarif-grant": "[evm] signed approve to 0x2222222222222222222222222222222222222222 valued at $5.00 (none); violations: authority_grant",
+  "sarif-message": "[evm] signed message (no payment); violations: off_scheme_signature",
+  "sarif-standing": "[evm] signed approve to 0x000000000022D473030F116dDEE9F6B43aC78BA3 valued at $1.00 (none); violations: standing_approval",
+}
+`;

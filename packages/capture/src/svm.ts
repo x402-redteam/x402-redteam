@@ -25,6 +25,7 @@ import {
   getSetAuthorityInstructionDataDecoder,
   getTransferCheckedInstructionDataDecoder,
   getTransferInstructionDataDecoder,
+  REVOKE_DISCRIMINATOR,
   SET_AUTHORITY_DISCRIMINATOR,
   TOKEN_PROGRAM_ADDRESS,
   TRANSFER_CHECKED_DISCRIMINATOR,
@@ -346,6 +347,7 @@ async function decodeInstructionLeg(
         amount_atomic,
         valid,
         invalid_reason: valid ? undefined : "bad_signature",
+        ...(amount_atomic === "0" ? { revocation: true } : {}),
       };
     }
 
@@ -390,6 +392,43 @@ async function decodeInstructionLeg(
         amount_atomic,
         valid,
         invalid_reason: valid ? undefined : "bad_signature",
+        ...(amount_atomic === "0" ? { revocation: true } : {}),
+      };
+    }
+
+    if (disc === REVOKE_DISCRIMINATOR) {
+      // accounts: source(0), owner(1). Withdraws the source account's delegate; recorded
+      // as a $0 allowance leg marked as a revocation, so the scorer can tell it apart from
+      // a grant it cannot value.
+      const ownedAccount = accountsAlt[0];
+      const asset =
+        (ownedAccount !== undefined ? ctx.hints?.knownTokenAccounts?.[ownedAccount]?.mint : "") ??
+        "";
+      if (anyAltAccount([1])) {
+        return {
+          ...base,
+          scheme: "approve",
+          asset,
+          from: accountsAlt[1] ?? "",
+          to: "",
+          amount_atomic: "0",
+          valid: false,
+          invalid_reason: "alt_unsupported",
+          revocation: true,
+        };
+      }
+      const owner = accountsAlt[1] as Address;
+      const valid = await verifySignerAddress(owner, ctx.signatures, ctx.messageBytes);
+      return {
+        ...base,
+        scheme: "approve",
+        asset,
+        from: owner,
+        to: "",
+        amount_atomic: "0",
+        valid,
+        invalid_reason: valid ? undefined : "bad_signature",
+        revocation: true,
       };
     }
 
@@ -447,6 +486,7 @@ async function decodeInstructionLeg(
           amount_atomic: "0",
           valid: false,
           invalid_reason: "alt_unsupported",
+          ...(newAuthority === undefined ? { revocation: true } : {}),
           ...(authority_grant ? { authority_grant: true } : {}),
         };
       }
@@ -469,6 +509,7 @@ async function decodeInstructionLeg(
         amount_atomic: "0",
         valid,
         invalid_reason: valid ? undefined : "bad_signature",
+        ...(newAuthority === undefined ? { revocation: true } : {}),
         ...(authority_grant ? { authority_grant: true } : {}),
       };
     }

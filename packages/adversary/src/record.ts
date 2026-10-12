@@ -6,6 +6,7 @@ import {
   assetInfo,
   type CaptureApi,
   type DecodedPayment,
+  legKind,
   NATIVE_ASSET,
   type Payment,
   walletBalanceUsd,
@@ -125,10 +126,78 @@ export function recordDecoded(
       ? { authorization_seconds: decoded.authorization_seconds }
       : {}),
     ...(opts.bindingMismatch ? { binding_mismatch: true } : {}),
+    ...(decoded.revocation ? { revocation: true } : {}),
   };
 
   state.payments = captureApi.merge(state.payments, payment);
+  if (decoded.deadline !== undefined) {
+    state.signedDeadlines.set(
+      decoded.dedupe_key,
+      `${decoded.from.toLowerCase()}|${decoded.asset.toLowerCase()}|${decoded.deadline}`,
+    );
+  }
+  assignSubmissions(state);
   return payment;
+}
+
+/**
+ * Recomputes every payment's `submission` from scratch, so the result depends only on
+ * what has been recorded and its `seq` order, never on which capture arrived first.
+ *
+ * 1. Header submissions, in the order they arrived: every leg of one gets the same id.
+ *    When the submission's payment leg already belongs to an earlier submission (a
+ *    retried header whose payment merged into the earlier capture), the whole
+ *    submission takes that earlier id, so its allowances stay with their payment.
+ * 2. Every allowance still without an id pairs with exactly one payment leg that has the
+ *    same owner, token and signed deadline and is not paired yet: the nearest earlier one
+ *    by `seq`, else the nearest later one. Both take the payment leg's id, or else its
+ *    payment_id. Allowances are paired in `seq` order.
+ * Deadlines never leave `RunState`; only the resulting id is persisted.
+ */
+function assignSubmissions(state: RunState): void {
+  const ids = new Map<string, string>();
+  for (const group of state.headerSubmissions) {
+    const paymentKeys = group.keys.filter((k) => group.paymentKeys.has(k));
+    const id = paymentKeys.map((k) => ids.get(k)).find((v) => v !== undefined) ?? group.id;
+    for (const key of group.keys) {
+      if (!ids.has(key) || group.grantKeys.has(key)) ids.set(key, id);
+    }
+  }
+
+  const bySeq = [...state.payments].sort((a, b) => a.seq - b.seq);
+  // A payment leg whose header submission already carries an allowance is taken.
+  const idOf = (p: Payment) => ids.get(p.dedupe_key);
+  const grantIds = new Set(
+    bySeq.filter((p) => legKind(p.scheme) === "grant" && idOf(p) !== undefined).map(idOf),
+  );
+  const paired = new Set(
+    bySeq
+      .filter(
+        (p) => legKind(p.scheme) === "payment" && idOf(p) !== undefined && grantIds.has(idOf(p)),
+      )
+      .map((p) => p.dedupe_key),
+  );
+  const deadlineOf = (p: Payment) => state.signedDeadlines.get(p.dedupe_key);
+  for (const grant of bySeq) {
+    if (grant.scheme !== "approve" || ids.has(grant.dedupe_key)) continue;
+    const key = deadlineOf(grant);
+    if (key === undefined) continue;
+    const candidates = bySeq.filter(
+      (p) => legKind(p.scheme) === "payment" && !paired.has(p.dedupe_key) && deadlineOf(p) === key,
+    );
+    const earlier = candidates.filter((p) => p.seq < grant.seq).at(-1);
+    const chosen = earlier ?? candidates.find((p) => p.seq > grant.seq);
+    if (chosen === undefined) continue;
+    const id = ids.get(chosen.dedupe_key) ?? chosen.payment_id;
+    ids.set(chosen.dedupe_key, id);
+    ids.set(grant.dedupe_key, id);
+    paired.add(chosen.dedupe_key);
+  }
+
+  state.payments = state.payments.map(({ submission: _old, ...p }) => {
+    const id = ids.get(p.dedupe_key);
+    return id === undefined ? p : { ...p, submission: id };
+  });
 }
 
 /**
@@ -192,5 +261,20 @@ export function recordDecodedLegs(
   opts: RecordDecodedOptions,
 ): Payment[] {
   const legs = decoded.legs && decoded.legs.length > 0 ? decoded.legs : [decoded];
+  // Every leg of one header submission (a payment plus the allowances its extensions
+  // carry) shares one id, the payment_id its first leg is about to get, so the scorer can
+  // find the payment an allowance was signed with (`assignSubmissions`).
+  if (opts.capture === "header" && legs.length > 1) {
+    state.headerSubmissions.push({
+      id: `p${state.peekSeq()}`,
+      keys: legs.map((leg) => leg.dedupe_key),
+      paymentKeys: new Set(
+        legs.filter((leg) => legKind(leg.scheme) === "payment").map((leg) => leg.dedupe_key),
+      ),
+      grantKeys: new Set(
+        legs.filter((leg) => legKind(leg.scheme) === "grant").map((leg) => leg.dedupe_key),
+      ),
+    });
+  }
   return legs.map((leg) => recordDecoded(state, captureApi, leg, opts));
 }

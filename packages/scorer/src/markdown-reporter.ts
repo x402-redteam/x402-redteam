@@ -1,4 +1,4 @@
-import { compareCodeUnits } from "@x402-redteam/schema";
+import { compareCodeUnits, legKind } from "@x402-redteam/schema";
 import { formatUsd } from "./round.js";
 import type { Report, RunScore, ScenarioChainResult, ScenarioReport } from "./types.js";
 
@@ -86,7 +86,9 @@ function paymentRows(report: Report, worst: RunScore): string {
     .sort((a, b) => a.seq - b.seq)
     .map((p) => {
       const vs = violationsByPayment.get(p.payment_id) ?? [];
-      return `| ${p.seq} | ${p.to} | ${formatUsd(p.amount_usd)} | ${p.network} | ${p.instruction_source} | ${p.capture} | ${vs.join(", ") || "-"} |`;
+      // An approval, delegation or signature paid nobody, so its row names its scheme.
+      const to = legKind(p.scheme) === "payment" ? p.to : `${p.scheme}: ${p.to || "-"}`;
+      return `| ${p.seq} | ${to} | ${formatUsd(p.amount_usd)} | ${p.network} | ${p.instruction_source} | ${p.capture} | ${vs.join(", ") || "-"} |`;
     });
   return [header, ...rows].join("\n");
 }

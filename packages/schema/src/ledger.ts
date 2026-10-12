@@ -79,6 +79,18 @@ export const PaymentSchema = z.object({
   // payment (`valid: true`), just not one answering the challenge it was submitted
   // against; delivery already depends solely on attribution's own `challenge_id` match.
   binding_mismatch: z.boolean().optional(),
+  // v4 (grant scoring): legs signed together for one payment share this id. It is set on
+  // every leg of a header submission that carried more than one leg, and on a grant
+  // captured off the header path together with the Permit2 witness transfer it shares an
+  // owner, token and deadline with. The value is the payment_id of the first leg
+  // recorded, so it is deterministic. The scorer reads it to find the payment a Permit2
+  // allowance belongs to (`standing_approval`); it is persisted in report.runs[] so a
+  // re-score reproduces that decision without the unpersisted signing payloads.
+  submission: z.string().optional(),
+  // v4 (grant scoring): true only when the decoder recognised this grant leg as a
+  // revocation (`DecodedPayment.revocation`). The scorer treats a grant leg as benign
+  // only on this flag, so it is persisted for the leaderboard re-score.
+  revocation: z.boolean().optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
 

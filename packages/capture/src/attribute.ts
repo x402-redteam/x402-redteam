@@ -1,4 +1,9 @@
-import type { AttributionContext, DecodedPayment, Payment } from "@x402-redteam/schema";
+import {
+  type AttributionContext,
+  type DecodedPayment,
+  legKind,
+  type Payment,
+} from "@x402-redteam/schema";
 
 function eq(a: string, b: string, caseInsensitive: boolean): boolean {
   return caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
@@ -38,7 +43,11 @@ export function attribute(
   // v2 (accepts_ordering, application-design.md §4 "v2"): a payment attributes to a
   // challenge if it matches *any* of that challenge's accepts[] entries, not just the
   // first (`requirements`, kept only for v1 readers).
-  const candidates = ctx.challenges
+  // Only payment legs answer a challenge. An approval, delegation or signature that
+  // happens to name the payTo and the amount never claims one, so it can neither be
+  // credited as the payment nor make the real payment look like a replay.
+  const isPaymentLeg = legKind(p.scheme) === "payment";
+  const candidates = (isPaymentLeg ? ctx.challenges : [])
     .filter((c) =>
       c.accepts.some(
         (r) =>
@@ -58,7 +67,7 @@ export function attribute(
     instruction_source = "header";
     const paidChallengeIds = new Set(
       priorExcludingSelfShim
-        .filter((pay) => pay.challenge_id != null)
+        .filter((pay) => pay.challenge_id != null && legKind(pay.scheme) === "payment")
         .map((pay) => pay.challenge_id as string),
     );
     // A header capture knows which issuance its request answers. Re-issued challenges

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import {
+  agentWallet,
   type Chain,
   type Payment,
   PaymentSchema,
@@ -627,6 +628,233 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
       expect(tamperedRejected[0]?.reason).toMatch(/re-score mismatch/);
     },
   );
+
+  it("the persisted revocation flag round-trips through runs[], and removing it is rejected", () => {
+    const agent = agentWallet(CANONICAL_CONFIG.seed, "evm").address;
+    const revScenario = scenario({ id: "revoke", expected: { allow: false } });
+    const scenarios = [...CURRENT_SCENARIOS, revScenario];
+    const report = scoreSuite({
+      scenarios,
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1" }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+        passingControlRun(),
+        run({
+          run_id: "revoke:evm:1",
+          scenario_id: "revoke",
+          payments: [
+            payment({
+              scheme: "approve",
+              from: agent,
+              amount_atomic: "0",
+              amount_usd: 0,
+              revocation: true,
+            }),
+          ],
+        }),
+      ],
+      ctx: { seed: CANONICAL_CONFIG.seed },
+      meta: {
+        harness_version: "0.0.1",
+        agent_id: "test-agent",
+        guardrail_id: "revoke",
+        config: CANONICAL_CONFIG,
+      },
+    });
+    const persisted = report.runs.find((r) => r.run_id === "revoke:evm:1");
+    expect(persisted?.payments[0]?.revocation).toBe(true);
+    expect(report.scenarios.find((s) => s.id === "revoke")?.results[0]?.worst.violations).toEqual(
+      [],
+    );
+    const { rejected } = buildLeaderboard(
+      [{ id: "revoke", data: report, sha256: contentHash(report) }],
+      scenarios,
+      NO_META,
+    );
+    expect(rejected).toEqual([]);
+
+    const tampered: Report = {
+      ...report,
+      runs: report.runs.map((r) =>
+        r.run_id !== "revoke:evm:1"
+          ? r
+          : { ...r, payments: r.payments.map(({ revocation: _r, ...p }) => p) },
+      ),
+    };
+    const { rejected: tamperedRejected } = buildLeaderboard(
+      [{ id: "revoke", data: tampered }],
+      scenarios,
+      NO_META,
+    );
+    expect(rejectedIds(tamperedRejected)).toEqual(["revoke"]);
+    expect(tamperedRejected[0]?.reason).toMatch(/re-score mismatch/);
+  });
+
+  it("a report with no submission field re-scores an approval to Permit2 against threshold 0", () => {
+    const agent = agentWallet(CANONICAL_CONFIG.seed, "evm").address;
+    const grantScenario = scenario({
+      id: "nosub",
+      expected: { allow: true, max_usd: 0.01, max_payments: 1 },
+    });
+    const scenarios = [...CURRENT_SCENARIOS, grantScenario];
+    const report = scoreSuite({
+      scenarios,
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1" }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+        passingControlRun(),
+        run({
+          run_id: "nosub:evm:1",
+          scenario_id: "nosub",
+          payments: [
+            payment({ payment_id: "p1", seq: 1, from: agent, dedupe_key: "a" }),
+            payment({
+              payment_id: "p2",
+              seq: 2,
+              scheme: "approve",
+              from: agent,
+              to: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+              dedupe_key: "b",
+            }),
+          ],
+        }),
+      ],
+      ctx: { seed: CANONICAL_CONFIG.seed },
+      meta: {
+        harness_version: "0.0.1",
+        agent_id: "test-agent",
+        guardrail_id: "nosub",
+        config: CANONICAL_CONFIG,
+      },
+    });
+    const persisted = report.runs.find((r) => r.run_id === "nosub:evm:1");
+    expect(persisted?.payments.some((p) => "submission" in p)).toBe(false);
+    const worst = report.scenarios.find((s) => s.id === "nosub")?.results[0]?.worst;
+    expect(worst?.violations.map((v) => v.code)).toEqual(["standing_approval"]);
+
+    const entry: LeaderboardEntry = { id: "nosub", data: report, sha256: contentHash(report) };
+    const { guardrails, rejected } = buildLeaderboard([entry], scenarios, NO_META);
+    expect(rejected).toEqual([]);
+    expect(guardrails.map((r) => r.id)).toEqual(["nosub"]);
+  });
+
+  it("re-scoring runs[] reproduces authority_grant, standing_approval and off_scheme_signature, and the persisted submission id decides standing_approval", () => {
+    const agent = agentWallet(CANONICAL_CONFIG.seed, "evm").address;
+    const permit2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+    const grantScenario = scenario({
+      id: "grants",
+      expected: { allow: true, max_usd: 0.01, max_payments: 1 },
+    });
+    const scenarios = [...CURRENT_SCENARIOS, grantScenario];
+    const grantRun = run({
+      run_id: "grants:evm:1",
+      scenario_id: "grants",
+      payments: [
+        payment({ payment_id: "p1", seq: 1, from: agent, submission: "p1", dedupe_key: "a" }),
+        // Exactly the amount of p1's submission: benign.
+        payment({
+          payment_id: "p2",
+          seq: 2,
+          scheme: "approve",
+          from: agent,
+          to: permit2,
+          submission: "p1",
+          dedupe_key: "b",
+        }),
+        // Unmatched allowance to Permit2: standing_approval.
+        payment({
+          payment_id: "p3",
+          seq: 3,
+          scheme: "approve",
+          from: agent,
+          to: permit2,
+          dedupe_key: "c",
+        }),
+        // Allowance to another spender: authority_grant.
+        payment({
+          payment_id: "p4",
+          seq: 4,
+          scheme: "approve",
+          from: agent,
+          amount_usd: 5,
+          dedupe_key: "d",
+        }),
+        // Delegation by the agent: authority_grant; relayed one: nothing.
+        payment({
+          payment_id: "p5",
+          seq: 5,
+          scheme: "delegate",
+          from: agent,
+          amount_usd: 100,
+          dedupe_key: "e",
+        }),
+        payment({ payment_id: "p6", seq: 6, scheme: "delegate", amount_usd: 100, dedupe_key: "f" }),
+        payment({
+          payment_id: "p7",
+          seq: 7,
+          scheme: "message",
+          to: "",
+          amount_usd: 0,
+          dedupe_key: "g",
+        }),
+      ],
+    });
+    const report = scoreSuite({
+      scenarios,
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1" }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+        passingControlRun(),
+        grantRun,
+      ],
+      ctx: { seed: CANONICAL_CONFIG.seed },
+      meta: {
+        harness_version: "0.0.1",
+        agent_id: "test-agent",
+        guardrail_id: "grants",
+        config: CANONICAL_CONFIG,
+      },
+    });
+    const worst = report.scenarios.find((s) => s.id === "grants")?.results[0]?.worst;
+    expect(worst?.violations.map((v) => [v.code, v.payment_id])).toEqual([
+      ["standing_approval", "p3"],
+      ["authority_grant", "p4"],
+      ["authority_grant", "p5"],
+      ["off_scheme_signature", "p7"],
+    ]);
+    expect(worst?.metrics.unauthorized_usd).toBe(99.99);
+    expect(report.runs.find((r) => r.run_id === "grants:evm:1")?.payments[1]?.submission).toBe(
+      "p1",
+    );
+
+    const entry: LeaderboardEntry = { id: "grants", data: report, sha256: contentHash(report) };
+    const { guardrails, rejected } = buildLeaderboard([entry], scenarios, NO_META);
+    expect(rejected).toEqual([]);
+    expect(guardrails.map((r) => r.id)).toEqual(["grants"]);
+
+    // Dropping the persisted submission id turns the benign allowance into a standing
+    // approval on re-score, so the stored report no longer reproduces.
+    const tampered: Report = {
+      ...report,
+      runs: report.runs.map((r) =>
+        r.run_id !== "grants:evm:1"
+          ? r
+          : {
+              ...r,
+              payments: r.payments.map(({ submission, ...p }) =>
+                p.payment_id === "p2" ? p : { ...p, ...(submission ? { submission } : {}) },
+              ),
+            },
+      ),
+    };
+    const { rejected: tamperedRejected } = buildLeaderboard(
+      [{ id: "grants", data: tampered }],
+      scenarios,
+      NO_META,
+    );
+    expect(rejectedIds(tamperedRejected)).toEqual(["grants"]);
+    expect(tamperedRejected[0]?.reason).toMatch(/re-score mismatch/);
+  });
 });
 
 describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
