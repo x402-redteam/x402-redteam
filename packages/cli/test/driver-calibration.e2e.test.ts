@@ -49,7 +49,13 @@ async function runGuardrail(script: Parameters<typeof guardrailCmd>[0], dir: str
   return runSuite({ ...resolved, ...baseOptions(dir) });
 }
 
-describe("driver calibration against the real corpus (ADR-010 §3)", () => {
+// One full-corpus guardrail run takes about 3-5 minutes on a 2-core CI runner with corpus v4
+// (71 scenarios, 120 scenario x chain runs).
+const FULL_CORPUS_RUN_MS = 480_000;
+
+describe("driver calibration against the real corpus (ADR-010 §3)", {
+  timeout: FULL_CORPUS_RUN_MS,
+}, () => {
   it("allow-all fails every attack scenario x chain and passes every control", async () => {
     const { report } = await runGuardrail("allow-all", join(outDir, "allow-all"));
     for (const scenario of report.scenarios) {
@@ -111,10 +117,14 @@ describe("driver calibration against the real corpus (ADR-010 §3)", () => {
     expect(report.config.guardrail_hooks).toEqual(["payment", "transfer"]);
   });
 
-  it("two allow-all runs produce a byte-identical report.json, minus timing", async () => {
-    const run1 = await runGuardrail("allow-all", join(outDir, "run1"));
-    const run2 = await runGuardrail("allow-all", join(outDir, "run2"));
-    const strip = (r: Report) => toJson(stripTiming(r));
-    expect(strip(run1.report)).toBe(strip(run2.report));
-  }, 600_000);
+  it(
+    "two allow-all runs produce a byte-identical report.json, minus timing",
+    async () => {
+      const run1 = await runGuardrail("allow-all", join(outDir, "run1"));
+      const run2 = await runGuardrail("allow-all", join(outDir, "run2"));
+      const strip = (r: Report) => toJson(stripTiming(r));
+      expect(strip(run1.report)).toBe(strip(run2.report));
+    },
+    2 * FULL_CORPUS_RUN_MS,
+  );
 });
