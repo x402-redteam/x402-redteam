@@ -139,3 +139,36 @@ I re-checked the design against revision 2 (`functional-design.md`, 103 lines) a
 7. Header 2612 `Permit` verification takes its domain from `accepted.extra.name`/`version`, as the SDK does (`@x402/evm` client `index.js:480-485`). Add tests that a header 2612 `Permit` merges with its shim twin, and that a shim message signature merges with its `submitted` twin.
 
 **Final verdict (revision 2): sign off with conditions 1–7.**
+
+## U26-1a contract sign-off (2026-10-12)
+
+Scope: the "Contracts (v4, Bolt 9) — Capture (v4; U26-1a)" section that worktree commit `d392749` adds to `aidlc-docs/inception/application-design.md`. I checked it against design revision 2 §1 and the delta-check conditions. I read the code only where it shows what the contract means (`packages/capture/src/evm-signatures.ts`, `evm.ts`, `attribute.ts`). This is not a code review.
+
+**Matches revision 2 §1.** The section covers:
+- the three new `ShimEvent` kinds, with all five viem signing methods wrapped;
+- decoding by `primaryType`, with signer recovery;
+- Permit2 header verification against the proxy spender (B1);
+- `extensions` legs keyed on the signed artifact, not on the extension key, with the 2612 domain taken from `accepted.extra` (B2, condition 7);
+- `delegate` legs for both shim and transaction-level 7702, valued at the wallet balance (condition 4, capture half);
+- message and raw-digest legs;
+- the dedupe table (M3).
+
+### Developer deviations
+
+1. **Per-detail allowance nonce in the PermitSingle/PermitBatch key: accepted.** Permit2 AllowanceTransfer nonces are scoped per (owner, token, spender), so a bare nonce would collide. See required change 2 for the batch leg shape.
+2. **EIP-3009 keeps `evm:${nonce}`; typed data without a nonce uses `evmsig:`: accepted.** The EIP-3009 key is unchanged, so existing header+shim merges and reference results don't move. EIP-3009 nonces are `0x` bytes32 and Permit2 nonces are decimal, so the shared `evm:` namespace cannot collide.
+3. **`asset_mismatch` and `untrusted_permit2_spender`: accepted, with a change.**
+   - `asset_mismatch` is right as specified. The leg records the *signed* token as its asset (`evm.ts:263-266`), so valuation follows what was signed.
+   - Applying `untrusted_permit2_spender` to shim witness transfers is also right.
+   - However, the leg's `to` stays `witness.to` even when the spender is untrusted (`evm-signatures.ts:164`). Only the x402 proxy enforces the witness. Any other spender can send the funds anywhere. So a signature that names the legitimate payTo in the witness but an attacker as spender would record the legitimate recipient, and `wrong_recipient` would not fire. See required change 1.
+4. **Permit2 legs carry `authorization_seconds`: accepted.** The SDK sets the Permit2 `deadline` to now + `maxTimeoutSeconds`, as it does for the EIP-3009 `validBefore`. The value stays out of report.json via the existing strip (`score-suite.ts:316`). `excessive_authorization_window` then covers Permit2 payments too, which is correct. The contract still calls the field "EIP-3009 only" (§4 v2); see required change 3.
+5. **Empty-`to` legs no longer match page prose: accepted.** Without this, `"".includes` would mark every message and unknown typed-data leg as `prose`.
+6. **One `delegate` leg per transaction-level 7702 entry: accepted.** This improves on main, which recorded only the first entry. The key `evm7702:${chainId}:${authority}:${nonce}` merges with the shim capture. An entry that doesn't recover keeps a per-index tx key, which is correct.
+
+### Required changes (small; contract text plus code, before U26-1a merges)
+
+1. **Untrusted spender.** When a `PermitWitnessTransferFrom` names a spender other than the x402 Permit2 proxy, the leg's `to` is the **spender**, not `witness.to`. Keep `invalid_reason: "untrusted_permit2_spender"`. State in the contract that the witness binds only through the proxy.
+2. **PermitBatch.** Emit **one `approve` leg per detail**, each with its own asset, amount and per-detail key `evm712:…:PermitBatch:${owner}:${token}:${spender}:${nonce}`. Do not emit a single leg with "the largest detail". Comparing atomic amounts across tokens with different decimals and prices is meaningless, and one leg can carry only one asset. That would mis-value `authority_grant` in U26-1b. `PermitSingle` is unchanged (one detail).
+3. **Document `authorization_seconds`.** Amend `Payment.authorization_seconds` in the v4 section to "EIP-3009 and Permit2 SignatureTransfer (deadline − max(validAfter, receipt time)); stripped from report.json". Note that `excessive_authorization_window` applies to both.
+
+**Verdict: sign off with changes 1–3.** No re-review is needed. The code review can confirm the three changes, plus tests for: a witness with an untrusted spender records the spender; a two-token batch produces two legs; and a Permit2 payment over `max_authorization_seconds` raises the window violation.
