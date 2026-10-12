@@ -1,4 +1,4 @@
-import type { Severity } from "@x402-redteam/schema";
+import { legKind, type Payment, type Severity } from "@x402-redteam/schema";
 import { formatUsd } from "./round.js";
 import type { Report, ScenarioChainResult, ScenarioReport } from "./types.js";
 
@@ -27,6 +27,21 @@ function buildRule(scenario: ScenarioReport) {
   };
 }
 
+/** How a result names its leg: a payment "paid $X to Y"; an approval or delegation, or a
+ * signature that moves nothing by itself, by its scheme, since it paid nobody. */
+function legSummary(
+  payment: Pick<Payment, "scheme" | "to" | "amount_usd" | "instruction_source">,
+): string {
+  switch (legKind(payment.scheme)) {
+    case "grant":
+      return `signed ${payment.scheme} to ${payment.to} valued at ${formatUsd(payment.amount_usd)} (${payment.instruction_source})`;
+    case "message":
+      return `signed ${payment.scheme} (no payment)`;
+    default:
+      return `paid ${formatUsd(payment.amount_usd)} to ${payment.to} (${payment.instruction_source})`;
+  }
+}
+
 function buildMessage(
   report: Report,
   chain: ScenarioChainResult["chain"],
@@ -40,10 +55,7 @@ function buildMessage(
       ? run?.payments.find((p) => p.payment_id === primary.payment_id)
       : undefined;
 
-  const paymentPart =
-    payment !== undefined
-      ? `paid ${formatUsd(payment.amount_usd)} to ${payment.to} (${payment.instruction_source})`
-      : "no attributable payment";
+  const paymentPart = payment !== undefined ? legSummary(payment) : "no attributable payment";
 
   return `[${chain}] ${paymentPart}; violations: ${codes.join(", ")}`;
 }

@@ -45,6 +45,20 @@ export interface DecodedPayment {
    * balance, capped like `approve`). Absent/false for an ordinary value-moving leg.
    */
   authority_grant?: boolean;
+  /**
+   * v4: the signed deadline of a Permit2 transfer (`deadline`), an EIP-2612 `Permit`
+   * (`deadline`) or a Permit2 allowance (`sigDeadline`), as a decimal string. The
+   * recorder uses it to pair an allowance with the Permit2 transfer it was signed for
+   * (same owner, token and deadline); it is never persisted, since it depends on the
+   * signing time.
+   */
+  deadline?: string;
+  /**
+   * v4: true only when the decoder positively recognises the leg as withdrawing an
+   * allowance or authority: EVM `approve(spender, 0)`, SVM `Approve`/`ApproveChecked` of 0,
+   * SVM `Revoke`, SVM `SetAuthority` with no new authority. Absent otherwise.
+   */
+  revocation?: boolean;
   raw: unknown;
 }
 

@@ -73,6 +73,31 @@ export class RunState {
     this.run_id = run_id;
   }
 
+  /**
+   * Payment `dedupe_key` -> `${owner}|${token}|${deadline}` for every Permit2 transfer,
+   * EIP-2612 permit or Permit2 allowance recorded this run. The recorder uses it to pair
+   * an allowance captured off the header path with the Permit2 transfer it was signed
+   * for. Deadlines depend on the signing time, so they stay here and are never persisted.
+   */
+  signedDeadlines = new Map<string, string>();
+
+  /**
+   * Every header submission that decoded to more than one leg, in arrival order: its id
+   * (`p${seq}` of its first leg) and the dedupe keys of its legs, split by leg kind. The
+   * recorder derives `Payment.submission` from these and `signedDeadlines`.
+   */
+  headerSubmissions: {
+    id: string;
+    keys: string[];
+    paymentKeys: Set<string>;
+    grantKeys: Set<string>;
+  }[] = [];
+
+  /** The sequence number `nextSeq()` will return next, without consuming it. */
+  peekSeq(): number {
+    return this.seq;
+  }
+
   /** Returns the next monotonic sequence number, shared across requests/challenges/payments. */
   nextSeq(): number {
     const seq = this.seq;

@@ -443,6 +443,8 @@ interface RawEvmLeg {
    * generic signature-based valid/bad_signature determination. */
   invalid_reason?: string;
   authorization_seconds?: number;
+  /** True only for a leg the decoder recognises as withdrawing an allowance. */
+  revocation?: boolean;
 }
 
 function finalizeLeg(
@@ -464,6 +466,7 @@ function finalizeLeg(
     ...(leg.authorization_seconds !== undefined
       ? { authorization_seconds: leg.authorization_seconds }
       : {}),
+    ...(leg.revocation ? { revocation: true } : {}),
     raw,
   };
   if (!isNonNegativeIntegerString(leg.amount_atomic)) {
@@ -538,6 +541,9 @@ function decodeCalldataLeg(
           to: spender,
           amount_atomic: amount.toString(),
           dedupe_key: `evmtx:${hash}#approve`,
+          // approve(spender, 0) withdraws the allowance. increaseAllowance(spender, 0)
+          // is a no-op, not a revocation.
+          ...(amount === 0n ? { revocation: true } : {}),
         };
       }
       case "increaseAllowance": {

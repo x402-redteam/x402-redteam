@@ -477,6 +477,60 @@ describe("decodeEvmTx (shim, direct transfer)", () => {
     expect(decoded.to.toLowerCase()).toBe(spender.toLowerCase());
     expect(decoded.amount_atomic).toBe("123456");
     expect(decoded.valid).toBe(true);
+    expect(decoded.revocation).toBeUndefined();
+  });
+
+  it("approve(spender, 0) is a revocation; increaseAllowance(spender, 0) is not", async () => {
+    const account = privateKeyToAccount(agentWallet(SEED, "evm").secret as `0x${string}`);
+    const spender = canaries(SEED, "evm-test", "evm").get("attacker").address as `0x${string}`;
+    const { encodeFunctionData, erc20Abi } = await import("viem");
+    const sign = (data: `0x${string}`, nonce: number) =>
+      account.signTransaction({
+        chainId,
+        nonce,
+        to: CHAIN_DEFAULTS.evm.asset as `0x${string}`,
+        data,
+        value: 0n,
+        gas: 100_000n,
+        maxFeePerGas: 1_000_000_000n,
+        maxPriorityFeePerGas: 1_000_000n,
+        type: "eip1559",
+      });
+    const approveZero = await decodeEvmTx({
+      serialized: await sign(
+        encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [spender, 0n] }),
+        0,
+      ),
+    });
+    expect(approveZero.scheme).toBe("approve");
+    expect(approveZero.valid).toBe(true);
+    expect(approveZero.revocation).toBe(true);
+
+    const increaseAbi = [
+      {
+        type: "function",
+        name: "increaseAllowance",
+        stateMutability: "nonpayable",
+        inputs: [
+          { name: "spender", type: "address" },
+          { name: "addedValue", type: "uint256" },
+        ],
+        outputs: [{ type: "bool" }],
+      },
+    ] as const;
+    const increaseZero = await decodeEvmTx({
+      serialized: await sign(
+        encodeFunctionData({
+          abi: increaseAbi,
+          functionName: "increaseAllowance",
+          args: [spender, 0n],
+        }),
+        1,
+      ),
+    });
+    expect(increaseZero.scheme).toBe("approve");
+    expect(increaseZero.amount_atomic).toBe("0");
+    expect(increaseZero.revocation).toBeUndefined();
   });
 
   it("H1 (code review): a tx with both calldata and non-zero native value records two legs", async () => {

@@ -83,6 +83,33 @@ function ctx(overrides: Partial<AttributionContext> = {}): AttributionContext {
   return { challenges: [], pageBodies: [], prior: [], ...overrides };
 }
 
+describe("attribute: grant and message legs never claim a challenge", () => {
+  it("an approve leg matching a challenge's payTo and amount takes no challenge_id", () => {
+    const c = challenge();
+    for (const scheme of ["approve", "delegate", "message", "unknown_typed_data"]) {
+      const result = attribute(payment({ scheme }), ctx({ challenges: [c] }));
+      expect(result.challenge_id).toBeUndefined();
+      expect(result.instruction_source).not.toBe("header");
+      expect(result.replay).toBe(false);
+    }
+  });
+
+  it("an approve(payTo, exact amount) recorded before the real payment does not make it a replay", () => {
+    const c = challenge();
+    const grant = priorPayment({
+      scheme: "approve",
+      dedupe_key: "evmtx:approve",
+      challenge_id: c.challenge_id,
+    });
+    const result = attribute(payment(), ctx({ challenges: [c], prior: [grant] }));
+    expect(result).toEqual({
+      instruction_source: "header",
+      challenge_id: c.challenge_id,
+      replay: false,
+    });
+  });
+});
+
 describe("attribute", () => {
   it("attributes a header match to the matching challenge", () => {
     const c = challenge();

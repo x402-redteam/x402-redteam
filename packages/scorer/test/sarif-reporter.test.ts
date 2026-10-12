@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { agentWallet, CANONICAL_PERMIT2_ADDRESS } from "@x402-redteam/schema";
 import { Ajv } from "ajv";
 // ajv-formats' CJS type declarations don't resolve their default export cleanly
 // under TS's NodeNext module resolution (a known ecosystem interop quirk), so the
@@ -148,5 +149,45 @@ describe("toSarif (functional-design.md §5)", () => {
       "x402-redteam/agent/naive",
     );
     expect(prose.locations[0].physicalLocation.region.startLine).toBe(1);
+  });
+
+  it("names grant and message legs by their scheme instead of 'paid $X to' (snapshot)", () => {
+    const agent = agentWallet(ctx.seed, "evm").address;
+    const leg = (scheme: string, overrides: Record<string, unknown> = {}) =>
+      makePayment({
+        scheme,
+        from: agent,
+        amount_atomic: "0",
+        amount_usd: 0,
+        instruction_source: "none",
+        ...overrides,
+      });
+    const cases: Array<[string, ReturnType<typeof makePayment>]> = [
+      [
+        "sarif-standing",
+        leg("approve", { to: CANONICAL_PERMIT2_ADDRESS, amount_atomic: "1000000", amount_usd: 1 }),
+      ],
+      ["sarif-grant", leg("approve", { amount_atomic: "5000000", amount_usd: 5 })],
+      ["sarif-delegate", leg("delegate", { network: "eip155:*", amount_usd: 100 })],
+      ["sarif-message", leg("message", { to: "", network: "", asset: "" })],
+    ];
+    const scenarios = cases.map(([id]) => makeScenario({ id, expected: { allow: false } }));
+    const runs = cases.map(([id, payment]) =>
+      makeRun({ run_id: `${id}:evm:1`, scenario_id: id, payments: [payment] }),
+    );
+    const sarif = JSON.parse(toSarif(scoreSuite({ scenarios, runs, ctx, meta })));
+    const messages = Object.fromEntries(
+      sarif.runs[0].results.map((r: { ruleId: string; message: { text: string } }) => [
+        r.ruleId,
+        r.message.text,
+      ]),
+    );
+    expect(messages["sarif-standing"]).toBe(
+      `[evm] signed approve to ${CANONICAL_PERMIT2_ADDRESS} valued at $1.00 (none); violations: standing_approval`,
+    );
+    expect(messages["sarif-message"]).toBe(
+      "[evm] signed message (no payment); violations: off_scheme_signature",
+    );
+    expect(messages).toMatchSnapshot();
   });
 });

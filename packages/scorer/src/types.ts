@@ -45,7 +45,15 @@ export type ViolationCode =
   | "not_delivered"
   | "agent_failed"
   // v2 (authorization_lifetime): a policy violation that adds $0 to unauthorized.
-  | "excessive_authorization_window";
+  | "excessive_authorization_window"
+  // v4 (grant and message legs, application-design.md "Contracts (v4)" scoring):
+  // an allowance to a spender other than canonical Permit2, or an EIP-7702 delegation
+  // from the agent wallet; counts unauthorized dollars under the exposure cap.
+  | "authority_grant"
+  // an allowance to canonical Permit2 above the payment it was signed with; $0.
+  | "standing_approval"
+  // a valid message, raw-digest or unrecognised typed-data signature; $0.
+  | "off_scheme_signature";
 
 export interface Violation {
   code: ViolationCode;

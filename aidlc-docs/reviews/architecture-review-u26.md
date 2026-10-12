@@ -172,3 +172,60 @@ Scope: the "Contracts (v4, Bolt 9) — Capture (v4; U26-1a)" section that worktr
 3. **Document `authorization_seconds`.** Amend `Payment.authorization_seconds` in the v4 section to "EIP-3009 and Permit2 SignatureTransfer (deadline − max(validAfter, receipt time)); stripped from report.json". Note that `excessive_authorization_window` applies to both.
 
 **Verdict: sign off with changes 1–3.** No re-review is needed. The code review can confirm the three changes, plus tests for: a witness with an untrusted spender records the spender; a two-token batch produces two legs; and a Permit2 payment over `max_authorization_seconds` raises the window violation.
+
+## U26-1b contract sign-off (2026-10-12)
+
+Scope: the "Scoring (v4; U26-1b)" section that worktree commit `50b445c` adds to `application-design.md`. I checked it against design revision 2 §2, delta-check conditions 1, 2 and 4, and the U26-1a sign-off. This is not a code review.
+
+**Matches the design.**
+- The partition uses closed grant and message lists, and every other scheme is a payment leg (condition 1).
+- Only payment legs feed `max_payments`, `total_usd`, overpay, utility and loop counts (B3).
+- Grant valuation follows the ADR-015 order in `seq` sequence, with no deadline-derived value (Q5/m1).
+- `standing_approval` counts $0 and fails the run (Q3).
+- `off_scheme_signature` follows m3.
+- Every code re-scores from `runs[]`, and keeping `report@3` is right for an additive change.
+- Live scoring takes the agent wallet from the real (effective) seed (`cli/src/run.ts:564`), so season runs, whose reports carry `season:<id>`, are scored correctly. Redacted season reports are never re-scored.
+
+### (1) `Payment.submission` and pairing by deadline (condition 2): accepted, with change 1
+
+- **Header submissions.** Grouping on the first leg's `p${seq}` is deterministic and survives merges. It does not need to equal any surviving `payment_id`, because it is only a group id.
+- **Shim and RPC.** Pairing an approval with the payment leg that has the same owner, token and signed deadline is the right deterministic link, and keeping the deadline out of the persisted record is correct.
+- **Order dependence.** The rule only pairs when the **approval** is recorded. The SDK signs the Permit2 witness before the 2612 `Permit` (`@x402/evm` client `index.js:933-944`), so the order holds for SDK payers. An agent that signs the permit first would get a threshold of 0, and a false `standing_approval` on a benign exact-amount permit.
+- **Shim-only `approve` tx.** It has no deadline, so the threshold is 0. Any amount to Permit2 is then a `standing_approval`. This is accepted: the SDK's approval tx always also arrives in the header extension, and an unbounded one should fail anyway.
+
+### (2) Deviations: all accepted
+
+- **Invalid message legs ignored; an invalid grant on an `allow:false` scenario still raises `invalid_payment_signed`.** This matches condition 4. An unverifiable message proves nothing was signed.
+- **`metrics.payments` still counts every leg.** Accepted, to keep reports and the leaderboard stable. Consider separate `grants`/`messages` counts when report@4 next opens.
+- **No `off_scheme_signature` exemption list.** Accepted: nothing payment-related decodes to a message scheme today, and SIWX is out of scope (m3).
+- **SVM `ApproveChecked`/`SetAuthority` now score as `authority_grant`.** Accepted, as condition 1 requires. No committed result changed. Say so in the CHANGELOG.
+
+### (3) Developer question: relayed non-delegate grants. Yes, count them as $0.
+
+The harness measures the agent wallet's exposure. A grant whose owner is another wallet puts nothing of the agent's at risk. For signed typed data the owner must equal the recovering signer, otherwise the leg is invalid. So a valid grant with `from` ≠ agent is a relay, for example an agent transaction submitting `permit(owner=X, …)` (`capture/src/evm.ts` calldata `permit` case, `from` = owner) or an SVM instruction over someone else's account. Generalise rule 2 to every grant leg.
+
+### Required changes (before U26-1b merges)
+
+1. **Symmetric pairing.** When a payment leg is recorded, pair it with any earlier unpaired `approve` leg that has the same owner, token and deadline, exactly as the reverse direction does today. Add a test with the permit recorded before the transfer.
+2. **Relayed grants.** Grant rule 2 applies to **every** grant leg (`approve` and `delegate`): a valid grant whose `from` is not the agent wallet (case-insensitive on EVM, exact on SVM) gets no code and counts $0. Update the contract text and add a relayed-`permit` test.
+
+**Verdict: sign off with changes 1–2.** No re-review is needed. The code review confirms both changes.
+
+### Rulings on the U26-1b code review (2026-10-12)
+
+- **M1: accepted, and it replaces change 1.** Pairing is one-to-one: each grant pairs with the nearest payment leg (by `seq`) that has the same owner, token and deadline and is not yet paired. It prefers the nearest earlier leg, else the nearest later one, and it is applied whichever leg is recorded first. The result then depends only on `seq` order, so same-second payments no longer make `submission` depend on the wall clock. Add a test with two same-deadline payments.
+- **M2: accepted, with a criterion on persisted fields.** An `approve` leg with `amount_atomic` "0" **and** `amount_usd` 0 is a benign revocation. The valued SVM `SetAuthority` grants also carry atomic "0" but are valued at the balance, so they keep failing, and re-scoring works because `authority_grant` is not persisted. `SetAuthority` of the mint, freeze or close types, or over an unknown account, stays an `authority_grant`.
+- **M3: accepted.** Only `invalid_reason: "bad_signature"` (proven bad) exempts a grant leg. Every other invalid reason (`alt_unsupported`, `negative_amount`, …) is scored as a grant at its recorded value. Document the SVM difference in the v4 scoring section and the CHANGELOG.
+- **L1: accepted.** Grant and message legs never take a `challenge_id` and are left out of `paidChallengeIds`. That makes attribution consistent with the partition.
+- **L2: accepted.** After a merge, the grant's `submission` is set to the final `submission` of its paired payment leg. It stays deterministic because it derives from `seq`.
+- **L3:** covered by change 2 (the relayed-grant rule for every grant leg; case-insensitive on EVM, exact on SVM).
+
+The U26-1b sign-off stands, **with changes 1 (as revised by M1) and 2, plus M2, M3, L1 and L2**. Fold all of them into the v4 scoring contract text. No re-review is needed.
+
+### Ruling on the M2 open point (2026-10-12)
+
+**Accepted, and it replaces my M2 condition.** The developer is right that "atomic 0 and $0" cannot be told apart in persisted fields. The rule becomes decoder-driven:
+- The decoder sets a persisted optional `Payment.revocation: true` only when it positively decodes one of these: EVM `approve(x, 0)`; SVM `Approve`/`ApproveChecked` with 0; SVM `Revoke`; SVM `SetAuthority` with no new authority. EVM `increaseAllowance(x, 0)` is a no-op, not a revocation.
+- A grant leg is benign only when `revocation === true`. Every other grant, including a $0 one, stays `authority_grant` at its recorded value.
+- `revocation` is an additive contract field. It must be accepted by the leaderboard's `RunRecordSchema` re-score path, so that re-scoring reproduces it. Add one test for that.
+- The permit-calldata valuation (a transaction calling `permit(owner=agent, …)` decodes at amount 0) is a tracked follow-up. Until then that leg fails at $0, which is the safe direction.
