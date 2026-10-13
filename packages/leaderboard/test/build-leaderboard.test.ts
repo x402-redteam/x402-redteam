@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import {
   agentWallet,
   type Chain,
   type Payment,
   PaymentSchema,
+  RESULT_ID_PATTERN,
   type RunRecord,
   RunRecordSchema,
   type Scenario,
@@ -1430,7 +1431,7 @@ describe("buildLeaderboard: rendering", () => {
     // newline reached the rendered table, so the row count is exactly what's expected.
     const rejectedTableLines = markdown
       .split("\n")
-      .filter((line) => line.startsWith("| evil-config-value"));
+      .filter((line) => line.startsWith("| `evil-config-value`"));
     expect(rejectedTableLines).toHaveLength(1);
     expect(rejectedTableLines[0]).toContain("\\|injected\\|");
     expect(rejectedTableLines[0]).not.toMatch(/\n/);
@@ -1871,5 +1872,114 @@ describe("buildLeaderboard: provenance tiers (ADR-011, U19, security review)", (
     for (const row of result.rejected) {
       expect(row.reason).toMatch(/duplicate guardrail_id/);
     }
+  });
+});
+
+describe("buildLeaderboard: result ids and cell escaping (U27)", () => {
+  it("escapes a backslash before a pipe, so '\\|' in a value can't close the cell", () => {
+    const entry = acceptedEntry("evil-backslash", {
+      config: { ...CANONICAL_CONFIG, host_mode: "a\\|b" },
+    });
+    const { rejected, markdown } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(rejectedIds(rejected)).toEqual(["evil-backslash"]);
+    const line = markdown.split("\n").find((l) => l.startsWith("| `evil-backslash`"));
+    // backslash -> "\\", then pipe -> "\|": the cell reads a\\\|b.
+    expect(line).toContain("a\\\\\\|b");
+  });
+
+  it("accepts ids of 1 to 64 characters from [a-z0-9._-], starting with a letter or digit", () => {
+    for (const id of ["a", "0", "naive-baseline", "v1.2_x", "a".repeat(64)]) {
+      const { guardrails, rejected } = buildLeaderboard(
+        [acceptedEntry(id)],
+        CURRENT_SCENARIOS,
+        NO_META,
+      );
+      expect(rejected, id).toEqual([]);
+      expect(guardrails.map((g) => g.id)).toEqual([id]);
+    }
+  });
+
+  it("rejects a guardrail_id outside the id pattern", () => {
+    for (const id of ["Upper", "-lead", ".lead", "a|b", "a\\b", "a b", "a".repeat(65), ""]) {
+      const { rejected } = buildLeaderboard([acceptedEntry(id)], CURRENT_SCENARIOS, NO_META);
+      expect(rejected, JSON.stringify(id)).toHaveLength(1);
+      expect(rejected[0]?.reason).toMatch(/guardrail_id .* is not a valid id/);
+    }
+  });
+
+  it("rejects an agent_id outside the id pattern", () => {
+    const entry = acceptedEntry("good-id", { agent_id: "Agent|x" });
+    const { rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(rejectedIds(rejected)).toEqual(["good-id"]);
+    expect(rejected[0]?.reason).toMatch(/agent_id .* is not a valid id/);
+  });
+
+  it("applies the id pattern to redacted (Tier 1) reports too", () => {
+    const entry = seasonRedactedEntry("ranked-x", { agent_id: "Bad Agent" });
+    const { rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(rejectedIds(rejected)).toEqual(["ranked-x"]);
+    expect(rejected[0]?.reason).toMatch(/agent_id .* is not a valid id/);
+  });
+
+  it("every id in the committed results/ files matches the id pattern", () => {
+    const resultsDir = new URL("../../../results/", import.meta.url);
+    const files = [
+      ...readdirSync(resultsDir).filter((f) => f.endsWith(".json") && !f.startsWith("_")),
+      ...readdirSync(new URL("internal/", resultsDir))
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => `internal/${f}`),
+    ];
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const report = JSON.parse(readFileSync(new URL(file, resultsDir), "utf8")) as {
+        agent_id: string;
+        guardrail_id: string;
+        runs?: Array<{ agent_id: string; guardrail_id: string }>;
+      };
+      const ids = [
+        report.agent_id,
+        report.guardrail_id,
+        ...(report.runs ?? []).flatMap((r) => [r.agent_id, r.guardrail_id]),
+      ];
+      for (const id of ids) expect(id, `${file}: ${id}`).toMatch(RESULT_ID_PATTERN);
+    }
+  });
+});
+
+describe("buildLeaderboard: rejected table renders echoed values inertly (U27 review)", () => {
+  function rejectedRow(markdown: string, prefix: string): string | undefined {
+    return markdown.split("\n").find((l) => l.startsWith(`| ${prefix}`));
+  }
+
+  it("shows a hostile id and its reason as code spans, so links, images and HTML don't render", () => {
+    const id = "[x](https://evil) <img src=x>";
+    const { rejected, markdown } = buildLeaderboard(
+      [acceptedEntry(id)],
+      CURRENT_SCENARIOS,
+      NO_META,
+    );
+    expect(rejectedIds(rejected)).toEqual([id]);
+    const row = rejectedRow(markdown, "`");
+    expect(row?.startsWith(`| \`${id}\` | \``)).toBe(true);
+    expect(row?.endsWith("` |")).toBe(true);
+    expect(markdown).not.toMatch(/\| \[x\]\(https:\/\/evil\)/);
+  });
+
+  it("truncates echoed values to 80 characters", () => {
+    const id = "a".repeat(70);
+    const entry = acceptedEntry(id, { agent_id: `Bad${"x".repeat(200)}` });
+    const { markdown } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    const row = rejectedRow(markdown, "`a");
+    const cells = row?.split(" | ") ?? [];
+    const reason = cells[1]?.replace(/ \|$/, "") ?? "";
+    expect(reason.startsWith("`") && reason.endsWith("`")).toBe(true);
+    const content = reason.slice(1, -1);
+    expect(content.length).toBeLessThanOrEqual(80);
+    expect(content.endsWith("…")).toBe(true);
+  });
+
+  it("fences a value containing backticks with a longer backtick run", () => {
+    const { markdown } = buildLeaderboard([acceptedEntry("a`b")], CURRENT_SCENARIOS, NO_META);
+    expect(rejectedRow(markdown, "``a`b``")).toBeDefined();
   });
 });

@@ -9,6 +9,11 @@ name: ranked-run
 # output is the redacted report plus its attestation — agent/guardrail logs are never
 # uploaded (ADR-011 "Do not": "Put agent or guardrail logs into uploaded artifacts").
 #
+# U27: as in rank.yml, the job that runs the guardrail (`ranked-run`) holds only
+# `contents: read`. Attestation happens in a separate `attest` job, the only one with
+# `id-token: write`/`attestations: write`; it never runs the guardrail, only consumes the
+# uploaded redacted report.
+#
 # ADR-023: the container is the release image built by release-image.yml. Its digest is
 # resolved from results/_harness.json on the commit this workflow runs from, its
 # attestation is verified, and it is pulled and run by digest. A second attestation over
@@ -43,13 +48,20 @@ on:
         type: string
 
 permissions:
-  contents: read
-  id-token: write
-  attestations: write
+  contents: read # checkouts; every job sets its own permissions as well
+
+# One ranked run per guardrail id at a time; a running one is never cancelled. At most
+# one run waits per group; a newer dispatch replaces a waiting one.
+concurrency:
+  group: ranked-run-${{ inputs.guardrail-id }}
+  cancel-in-progress: false
 
 jobs:
   ranked-run:
+    name: ranked-run
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkouts of the harness, the allowlist and the guardrail
     # ADR-011: maintainer-only reviewers are configured on this environment in the
     # repo's own settings, restricted to the `main` branch (docs/seasons.md) — never
     # remove this line.
@@ -57,14 +69,19 @@ jobs:
     env:
       HARNESS_REPO: x402-redteam/x402-redteam
       RANKED_IMAGE: ghcr.io/x402-redteam/x402-redteam-ranked
+    outputs:
+      guardrail-id: ${{ inputs.guardrail-id }}
+      ranked-image: ${{ steps.resolve.outputs.ranked-image }}
+      harness-commit: ${{ steps.harness-commit.outputs.harness-commit }}
     steps:
       # Security review HIGH-8: harness-ref/guardrail-ref must be a 40-hex-char commit
       # SHA, or a release tag (`vMAJOR.MINOR.PATCH`) - never a branch, and never a
       # string shaped to look like a shell option when later used as a `ref:` value.
-      - name: Validate harness-ref and guardrail-ref are a commit SHA or a release tag
+      - name: Validate harness-ref and guardrail-ref are a commit SHA or a release tag, and guardrail-id is a valid id
         env:
           HARNESS_REF: ${{ inputs.harness-ref }}
           GUARDRAIL_REF: ${{ inputs.guardrail-ref }}
+          GUARDRAIL_ID: ${{ inputs.guardrail-id }}
         run: |
           pattern='^([0-9a-f]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$'
           for name in HARNESS_REF GUARDRAIL_REF; do
@@ -74,6 +91,15 @@ jobs:
               exit 2
             fi
           done
+          # U27: the id the report records (as --guardrail-id) must be one the
+          # leaderboard accepts (RESULT_ID_PATTERN in @x402-redteam/schema). bash's =~
+          # matches the whole value, so an id with a line break never passes.
+          export LC_ALL=C
+          id_pattern='^[a-z0-9][a-z0-9._-]{0,63}$'
+          if ! [[ "$GUARDRAIL_ID" =~ $id_pattern ]]; then
+            echo "::error::guardrail-id is not a valid id (must match $id_pattern)"
+            exit 2
+          fi
 
       - name: Checkout the harness at a pinned ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,7 +113,11 @@ jobs:
       # whether `harness-ref` above resolved a tag or a raw commit SHA; the resolver
       # below requires the allowlisted release to name this same commit.
       - name: Resolve the checked-out harness's own commit
-        run: echo "HARNESS_COMMIT=$(git -C harness rev-parse HEAD)" >> "$GITHUB_ENV"
+        id: harness-commit
+        run: |
+          commit="$(git -C harness rev-parse HEAD)"
+          echo "HARNESS_COMMIT=$commit" >> "$GITHUB_ENV"
+          echo "harness-commit=$commit" >> "$GITHUB_OUTPUT"
 
       # The release allowlist as of the commit this workflow runs from (the `ranked`
       # environment only admits `main`).
@@ -102,12 +132,14 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Resolve the ranked image digest for harness-ref
+        id: resolve
         env:
           HARNESS_REF: ${{ inputs.harness-ref }}
           HARNESS_JSON: allowlist/results/_harness.json
         run: |
           digest="$(node allowlist/scripts/ranked/resolve-image.mjs)"
           echo "RANKED_IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          echo "ranked-image=$RANKED_IMAGE@$digest" >> "$GITHUB_OUTPUT"
 
       # The image must carry an attestation signed by this harness's release-image.yml at
       # the commit checked out above, from a run on main, on a GitHub-hosted runner. The
@@ -195,28 +227,57 @@ jobs:
             2> "$RUNNER_TEMP/harness.stderr"
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"
 
-      # ADR-011 Tier 1: ONLY the redacted report is attested/published. The full
-      # report (with runs[]) is kept as an encrypted artifact for disputes, never
-      # uploaded here in the clear.
-      - name: Attest report.redacted.json provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: ${{ runner.temp }}/out/report.redacted.json
-
-      - name: Write the ranked image predicate
-        run: |
-          jq -n --arg image "$RANKED_IMAGE@$RANKED_IMAGE_DIGEST" --arg commit "$HARNESS_COMMIT" \
-            '{image: $image, harness_commit: $commit}' > "$RUNNER_TEMP/ranked-image.json"
-
-      - name: Attest which image produced report.redacted.json
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: ${{ runner.temp }}/out/report.redacted.json
-          predicate-type: https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
-          predicate-path: ${{ runner.temp }}/ranked-image.json
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # ADR-011 Tier 1: ONLY the redacted report is uploaded, and only it is attested
+      # (by the attest job below). The full report (with runs[]) is kept as an encrypted
+      # artifact for disputes, never uploaded here in the clear.
+      - name: Upload report.redacted.json
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: report-redacted-${{ inputs.guardrail-id }}
           path: ${{ runner.temp }}/out/report.redacted.json
           retention-days: 365
+
+  # U27 (mirrors rank.yml): the ONLY job with id-token/attestations permissions - it
+  # never runs the guardrail itself, only consumes `ranked-run`'s uploaded artifact.
+  attest:
+    name: attest
+    needs: ranked-run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # kept explicit, as in rank.yml; the job reads nothing from the repo
+      id-token: write # OIDC token that Sigstore signs the attestations with
+      attestations: write # store the attestations on this repository
+    steps:
+      - name: Download report.redacted.json
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: report-redacted-${{ needs.ranked-run.outputs.guardrail-id }}
+          path: out
+
+      - name: Attest report.redacted.json provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: out/report.redacted.json
+
+      - name: Write the ranked image predicate
+        env:
+          RANKED_IMAGE_REF: ${{ needs.ranked-run.outputs.ranked-image }}
+          HARNESS_COMMIT: ${{ needs.ranked-run.outputs.harness-commit }}
+        run: |
+          if ! printf '%s' "$RANKED_IMAGE_REF" | grep -qE '^ghcr\.io/[^@]+@sha256:[0-9a-f]{64}$'; then
+            echo "::error::ranked image reference '$RANKED_IMAGE_REF' is not pinned by digest"
+            exit 2
+          fi
+          if ! printf '%s' "$HARNESS_COMMIT" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::harness commit '$HARNESS_COMMIT' is not a 40-hex-char commit SHA"
+            exit 2
+          fi
+          jq -n --arg image "$RANKED_IMAGE_REF" --arg commit "$HARNESS_COMMIT" \
+            '{image: $image, harness_commit: $commit}' > ranked-image.json
+
+      - name: Attest which image produced report.redacted.json
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: out/report.redacted.json
+          predicate-type: https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result
+          predicate-path: ranked-image.json

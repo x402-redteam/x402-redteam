@@ -61,11 +61,11 @@ inputs:
     required: false
     default: "low"
   agent-id:
-    description: "Agent id recorded in the report."
+    description: "Agent id recorded in the report. Must match ^[a-z0-9][a-z0-9._-]{0,63}$. When empty (the default), it is derived from the repository name (owner/repo): lower-cased, with '/' and every other character outside a-z, 0-9, '.', '_' and '-' turned into '-', cut to 64 characters."
     required: false
-    default: "${{ github.repository }}"
+    default: ""
   guardrail-id:
-    description: "Guardrail id recorded in the report."
+    description: "Guardrail id recorded in the report. Must match ^[a-z0-9][a-z0-9._-]{0,63}$."
     required: false
     default: "unknown"
   redact:
@@ -199,6 +199,14 @@ runs:
         set +e
         export PATH="$PATH:$ACTION_PATH/node_modules/.bin:$ACTION_PATH/packages/cli/node_modules/.bin"
         CORPUS="${CORPUS:-$ACTION_PATH/corpus}"
+        # agent-id default: begin
+        # U27: an empty agent-id becomes a valid id derived from the repository name:
+        # lower case, '/' and any character outside [a-z0-9._-] turned into '-', at
+        # most 64 characters. GitHub owner names start with a letter or digit.
+        if [ -z "$AGENT_ID" ]; then
+          AGENT_ID="$(printf '%s' "$GITHUB_REPOSITORY" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C sed 's/[^a-z0-9._-]/-/g' | cut -c1-64)"
+        fi
+        # agent-id default: end
         pass_env_args=()
         if [ -n "$PASS_ENV" ]; then
           pass_env_args=(--pass-env "$PASS_ENV")
@@ -277,7 +285,11 @@ runs:
     # inputs.out on disk. `if: always()`: runs even if an earlier step in this composite
     # somehow failed outright, so the artifact upload below reflects whatever did get
     # written, not nothing.
+    # The staging path reaches the upload step as this step's output (`dir`), not
+    # through the job's environment file, so it never becomes an environment variable
+    # in the caller's later steps (U27).
     - name: Prepare artifact contents (exclude agent logs unless opted in)
+      id: artifact
       if: always()
       shell: bash
       working-directory: ${{ github.workspace }}
@@ -294,7 +306,7 @@ runs:
             rm -rf "$staging/out/logs"
           fi
         fi
-        echo "X402_REDTEAM_ARTIFACT_DIR=$staging/out" >> "$GITHUB_ENV"
+        echo "dir=$staging/out" >> "$GITHUB_OUTPUT"
 
     # Needs `permissions: security-events: write` on the *caller's* job or workflow -
     # a composite action (this file) cannot grant its own permissions, only use what the
@@ -320,7 +332,7 @@ runs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ env.X402_REDTEAM_ARTIFACT_DIR }}
+        path: ${{ steps.artifact.outputs.dir }}
 
     - name: Append report to step summary
       if: always()

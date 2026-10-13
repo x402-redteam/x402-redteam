@@ -1,2 +1,5 @@
 # zizmor configuration. Every ignore carries a one-line justification comment.
-rules: {}
+rules:
+  # Local `./` references to this repository's own workflows and Action are intended: they resolve to the caller's own commit (U27).
+  self-repository:
+    disable: true

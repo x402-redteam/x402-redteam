@@ -45,9 +45,13 @@ const USDC_AMOUNT_RE = /\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*USDC\b/i;
  * by a letter) are never mistaken for a sentence boundary, without needing any
  * corpus-specific or amount-specific special-casing. A bare newline is not a boundary
  * either (manually line-wrapped markdown prose stays one sentence).
+ *
+ * U27: the lookbehind means a match can only start at the first mark of a run, so a
+ * long run of marks not followed by whitespace is scanned once (linear), not once per
+ * starting position. The splits are the same as the earlier `/[.!?]+(?=\s|$)/`.
  */
-function sentences(text: string): string[] {
-  return text.split(/[.!?]+(?=\s|$)/);
+export function sentences(text: string): string[] {
+  return text.split(/(?<![.!?])[.!?]+(?=\s|$)/);
 }
 
 function parseAmount(sentence: string): number | undefined {

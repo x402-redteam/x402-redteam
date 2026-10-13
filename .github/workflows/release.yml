@@ -15,12 +15,21 @@ on:
 
 permissions: {}
 
+# Runs for the same commit queue rather than overlap or cancel each other. Grouped per
+# commit, not per branch: every push to main runs this workflow, and a per-branch group
+# would hold later pushes behind a release waiting for approval and drop queued runs
+# beyond the first. The release job's own `release` group serialises publishing.
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: false
+
 jobs:
   detect:
+    name: detect
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
+      contents: read # checkout to read the head commit's subject
     outputs:
       release: ${{ steps.detect.outputs.release }}
       version: ${{ steps.detect.outputs.version }}
@@ -37,13 +46,15 @@ jobs:
 
   # The full CI gate (ci.yml) on the exact release commit.
   verify:
+    name: verify
     needs: detect
     if: needs.detect.outputs.release == 'true'
     permissions:
-      contents: read
+      contents: read # passed to ci.yml, which only checks out and tests
     uses: ./.github/workflows/ci.yml
 
   release:
+    name: release
     needs: [detect, verify]
     if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
@@ -53,10 +64,10 @@ jobs:
       group: release
       cancel-in-progress: false
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
-      pull-requests: read
+      contents: write # create the release and upload its assets
+      id-token: write # OIDC token that Sigstore signs the attestations with
+      attestations: write # store the attestations on this repository
+      pull-requests: read # confirm the commit was merged from a release/v* pull request
     env:
       VERSION: ${{ needs.detect.outputs.version }}
       GH_TOKEN: ${{ github.token }}
@@ -168,12 +179,13 @@ jobs:
   # a release, so it stays movable. A job of its own so a failed move re-runs alone; updated
   # through the REST API so no git credentials are written to disk.
   major-tag:
+    name: major-tag
     needs: [detect, release]
     if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write
+      contents: write # move the major tag through the REST API
     env:
       VERSION: ${{ needs.detect.outputs.version }}
       GH_TOKEN: ${{ github.token }}
@@ -194,13 +206,14 @@ jobs:
   # release-image.yml. Its digest is in that job's summary and goes into
   # results/_harness.json in the follow-up PR.
   image:
+    name: image
     needs: [detect, release]
     if: needs.detect.outputs.release == 'true'
     permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
+      contents: read # passed to release-image.yml: checkout of the release commit
+      packages: write # passed to release-image.yml: push the ranked image to GHCR
+      id-token: write # passed to release-image.yml: OIDC token for Sigstore
+      attestations: write # passed to release-image.yml: store the attestations
     uses: ./.github/workflows/release-image.yml
     with:
       version: ${{ needs.detect.outputs.version }}

@@ -26,10 +26,11 @@ jobs:
   # the base commit and classify the paths with scripts/ci-changes.mjs; pushes and manual
   # runs always run everything. If the diff can't be computed, everything runs.
   changes:
+    name: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
+      contents: read # checkout to classify the changed paths
     outputs:
       runtime: ${{ steps.classify.outputs.runtime }}
     steps:
@@ -58,10 +59,11 @@ jobs:
           printf '%s\n' "$files" | node scripts/ci-changes.mjs >> "$GITHUB_OUTPUT"
 
   fast:
+    name: fast
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: read # checkout to lint, typecheck and test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,10 +115,11 @@ jobs:
   # (ADR-012's proxy-mode fallback, or an `/etc/hosts` step added to this action, per
   # real-runner-checklist.md item 2).
   host-resolution:
+    name: host-resolution
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: read # checkout to build and test host resolution
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -187,12 +190,13 @@ jobs:
   # to its own matrix entry instead of the whole suite. Record each shard's own duration
   # (real-runner-checklist.md item 3) from the job's own timing in the Actions UI.
   e2e:
+    name: e2e
     needs: changes
     if: needs.changes.outputs.runtime == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      contents: read
+      contents: read # checkout to run the E2E suite
     strategy:
       fail-fast: false
       matrix:
@@ -226,16 +230,18 @@ jobs:
   # The composite action's exact-exit-code matrix (self-test.yml), called here so it
   # reports under `ci-ok` and runs once per commit.
   self-test:
+    name: self-test
     needs: changes
     if: needs.changes.outputs.runtime == 'true'
     permissions:
-      contents: read
+      contents: read # passed to self-test.yml, which checks out the Action under test
     uses: ./.github/workflows/self-test.yml
 
   # The single required check. changes, fast and host-resolution must succeed. e2e and
   # self-test must succeed when the changes job reported a runtime change and must be
   # skipped otherwise. Any other result fails it.
   ci-ok:
+    name: ci-ok
     needs: [changes, fast, host-resolution, e2e, self-test]
     if: always()
     runs-on: ubuntu-latest

@@ -127,6 +127,15 @@ export const RequestLogSchema = z.object({
 });
 export type RequestLog = z.infer<typeof RequestLogSchema>;
 
+/**
+ * U27: the ids a published result may carry as `agent_id` and `guardrail_id`. The
+ * leaderboard rejects any `results/` entry whose ids don't match, so an id can never
+ * carry markdown (`|`, `\`, spaces, newlines) into LEADERBOARD.md. The CLI still
+ * records whatever `--agent-id`/`--guardrail-id` a local run is given.
+ */
+export const RESULT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export const ResultIdSchema = z.string().regex(RESULT_ID_PATTERN);
+
 export const RunRecordSchema = z.object({
   run_id: z.string(),
   scenario_id: z.string(),

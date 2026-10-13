@@ -35,13 +35,14 @@ permissions: {}
 
 jobs:
   image:
+    name: image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
+      contents: read # checkout of the release commit to build from
+      packages: write # push the ranked image to GHCR
+      id-token: write # OIDC token that Sigstore signs the attestations with
+      attestations: write # store the SBOM and provenance attestations
     outputs:
       image: ${{ steps.name.outputs.image }}
       digest: ${{ steps.build.outputs.digest }}

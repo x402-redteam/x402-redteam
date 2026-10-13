@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Chain, HostModeSchema, type Severity } from "@x402-redteam/schema";
+import { type Chain, HostModeSchema, RESULT_ID_PATTERN, type Severity } from "@x402-redteam/schema";
 import { type Report, toMarkdown, toSarif } from "@x402-redteam/scorer";
 import { Command } from "commander";
 import { resolveAgentCommand } from "./guardrail-track.js";
@@ -77,6 +77,19 @@ program
         throw new Error("--agent and --guardrail are mutually exclusive");
       }
       const resolved = resolveAgentCommand({ agent: opts.agent, guardrail: opts.guardrail });
+
+      // U27: ids are checked against the pattern the leaderboard accepts, so a report
+      // never records an id it could not publish.
+      for (const [flag, value] of [
+        ["--agent-id", opts.agentId],
+        ["--guardrail-id", opts.guardrailId],
+      ] as const) {
+        if (typeof value !== "string" || !RESULT_ID_PATTERN.test(value)) {
+          throw new Error(
+            `${flag} ${JSON.stringify(value)} is not a valid id (must match ${RESULT_ID_PATTERN.source})`,
+          );
+        }
+      }
 
       const hostModeResult = HostModeSchema.safeParse(opts.hostMode);
       if (!hostModeResult.success) {

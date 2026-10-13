@@ -53,13 +53,14 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: read # checkouts of the submitter's repo and the harness
 
 jobs:
   run:
+    name: run
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read # checkouts of the submitter's repo, the harness and its allowlist
     env:
       HARNESS_REPO: x402-redteam/x402-redteam
       RANKED_IMAGE: ghcr.io/x402-redteam/x402-redteam-ranked
@@ -71,12 +72,22 @@ jobs:
       # Security re-review 3c: harness-ref must be a vX.Y.Z release tag - never a raw
       # commit SHA or a branch (unlike ranked-run.yml's harness-ref/guardrail-ref,
       # which may also be a 40-hex SHA for a guardrail still awaiting its own tag).
-      - name: Validate harness-ref is a vMAJOR.MINOR.PATCH release tag
+      - name: Validate harness-ref is a vMAJOR.MINOR.PATCH release tag and guardrail-id is a valid id
         env:
           HARNESS_REF: ${{ inputs.harness-ref }}
+          GUARDRAIL_ID: ${{ inputs.guardrail-id }}
         run: |
           if ! printf '%s' "$HARNESS_REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::harness-ref '$HARNESS_REF' is not a vMAJOR.MINOR.PATCH release tag"
+            exit 2
+          fi
+          # U27: the id the report records (as --guardrail-id and --agent-id) must be one the
+          # leaderboard accepts (RESULT_ID_PATTERN in @x402-redteam/schema). bash's =~
+          # matches the whole value, so an id with a line break never passes.
+          export LC_ALL=C
+          id_pattern='^[a-z0-9][a-z0-9._-]{0,63}$'
+          if ! [[ "$GUARDRAIL_ID" =~ $id_pattern ]]; then
+            echo "::error::guardrail-id is not a valid id (must match $id_pattern)"
             exit 2
           fi
 
@@ -205,12 +216,13 @@ jobs:
   # Security review HIGH-3: the ONLY job with id-token/attestations permissions - it
   # never runs the guardrail itself, only consumes `run`'s uploaded artifact.
   attest:
+    name: attest
     needs: run
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write
-      attestations: write
+      contents: read # kept explicit; the job reads only the uploaded artifact
+      id-token: write # OIDC token that Sigstore signs the attestations with
+      attestations: write # store the attestations on this repository
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

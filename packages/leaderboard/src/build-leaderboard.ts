@@ -1,6 +1,7 @@
 import {
   canonicalize,
   compareCodeUnits,
+  RESULT_ID_PATTERN,
   type ReachClass,
   ReachClassSchema,
   type RunRecord,
@@ -151,9 +152,35 @@ function shortHash(hash: string): string {
  * boundary, possibly forging extra columns or rows) or a newline (breaks the row
  * entirely). Applied at render time, not at `RejectedError` construction, so internal
  * error messages stay fully readable in logs/tests.
+ *
+ * U27: backslashes are escaped first, so a value's own `\|` can't turn the added
+ * backslash into an escaped backslash and leave the pipe live.
  */
 function escapeCell(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/\r\n|\r|\n/g, " ");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r\n|\r|\n/g, " ");
+}
+
+/** Longest echoed value shown in the rejected table (U27 review). */
+const MAX_ECHOED_CHARS = 80;
+
+/**
+ * U27 review: a submitted value echoed into the rejected table (an entry id, or a reason
+ * that quotes one) is cut to `MAX_ECHOED_CHARS` and shown as a code span, so markdown
+ * links, images and HTML in it render as plain text. The fence is one backtick longer
+ * than the longest backtick run inside, which is how a code span holds backticks.
+ */
+function inertCell(value: string): string {
+  const flat = value.replace(/\r\n|\r|\n/g, " ");
+  const chars = Array.from(flat);
+  const text =
+    chars.length > MAX_ECHOED_CHARS ? `${chars.slice(0, MAX_ECHOED_CHARS - 1).join("")}…` : flat;
+  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(longestRun + 1);
+  const pad = text === "" || text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return escapeCell(`${fence}${pad}${text}${pad}${fence}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -623,6 +650,18 @@ function checkRescore(report: Report, scenarios: Scenario[]): void {
   }
 }
 
+/** U27: `guardrail_id` and `agent_id` must match `RESULT_ID_PATTERN`. */
+function checkResultIds(report: { agent_id: unknown; guardrail_id: unknown }): void {
+  for (const field of ["guardrail_id", "agent_id"] as const) {
+    const value = report[field];
+    if (typeof value !== "string" || !RESULT_ID_PATTERN.test(value)) {
+      throw new RejectedError(
+        `${field} ${JSON.stringify(value)} is not a valid id (${RESULT_ID_PATTERN.source})`,
+      );
+    }
+  }
+}
+
 /** Check 6 (functional-design.md §3.6), the id half; uniqueness is checked once across
  * every tentatively-accepted entry (both tracks), in `buildLeaderboard`. */
 function checkFilenameMatchesId(entryId: string, report: GuardrailLikeReport): void {
@@ -813,7 +852,7 @@ function renderRejectedSection(rejected: RejectedRow[]): string[] {
     "",
     "| entry | reason |",
     "|---|---|",
-    ...rejected.map((r) => `| ${escapeCell(r.id)} | ${escapeCell(r.reason)} |`),
+    ...rejected.map((r) => `| ${inertCell(r.id)} | ${inertCell(r.reason)} |`),
   ];
 }
 
@@ -980,6 +1019,7 @@ export function buildLeaderboard(
       if (isRecord(entry.data) && entry.data.schema === "x402-redteam/report@3-redacted") {
         requireReportAtV3Redacted(entry.data);
         const report = entry.data;
+        checkResultIds(report);
 
         checkSeasonActive(report);
         checkCanonicalConfigShared(report.config as unknown as Record<string, unknown>);
@@ -1001,6 +1041,7 @@ export function buildLeaderboard(
 
       requireReportAtV3(entry.data);
       const report = entry.data;
+      checkResultIds(report);
 
       // Check 2 (functional-design.md §3.2): stale is kept distinct from rejected, and
       // skips the (irrelevant, possibly expensive) remaining checks.

@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       security-events: write # upload analysis results to code scanning
-      contents: read
+      contents: read # checkout of the code to analyse
       actions: read # read workflow run metadata for the actions language
     strategy:
       fail-fast: false
