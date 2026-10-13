@@ -61,8 +61,14 @@ describe("release.yml", () => {
     expect(doc.permissions).toEqual({});
   });
 
-  it("serialises only the release job, never cancelling it", () => {
-    expect((doc as unknown as Record<string, unknown>).concurrency).toBeUndefined();
+  it("serialises only the release job across commits, never cancelling it", () => {
+    // U27: the workflow-level group is per commit, so pushes to main never queue
+    // behind a release waiting for approval.
+    expect((doc as unknown as Record<string, unknown>).concurrency).toEqual({
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal Actions expression
+      group: "release-${{ github.sha }}",
+      "cancel-in-progress": false,
+    });
     expect(job("release").concurrency).toEqual({ group: "release", "cancel-in-progress": false });
   });
 

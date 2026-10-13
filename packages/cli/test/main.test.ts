@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { RESULT_ID_PATTERN } from "@x402-redteam/schema";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -129,5 +130,38 @@ describe("main `run` --scenario validation", () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("alpha-bad, zebra-bad");
     expect(result.stderr).not.toContain("prose-lure");
+  });
+});
+
+// U27 (code review): ids must be publishable as recorded, so `run` checks them against
+// the same pattern the leaderboard accepts, before anything starts.
+describe("main `run` --agent-id / --guardrail-id (U27)", () => {
+  for (const flag of ["--agent-id", "--guardrail-id"]) {
+    for (const bad of ["Bad|Id", "-lead", "a b", "a".repeat(65)]) {
+      it(`${flag} ${JSON.stringify(bad)} exits 2 and names the pattern`, () => {
+        const result = runCli(["run", "--agent", "true", flag, bad]);
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain(flag);
+        expect(result.stderr).toContain(RESULT_ID_PATTERN.source);
+      });
+    }
+  }
+
+  it("a valid id passes the id check (fails later, on the unknown scenario)", () => {
+    const result = runCli([
+      "run",
+      "--agent",
+      "true",
+      "--agent-id",
+      "owner-my_repo.v2",
+      "--guardrail-id",
+      "none",
+      "--corpus",
+      FIXTURE_CORPUS,
+      "--scenario",
+      "no-such-scenario",
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).not.toContain(RESULT_ID_PATTERN.source);
   });
 });

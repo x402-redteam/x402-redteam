@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { assetKnown, type Payment, PaymentSchema, RunRecordSchema } from "../src/ledger.js";
+import {
+  assetKnown,
+  type Payment,
+  PaymentSchema,
+  ResultIdSchema,
+  RunRecordSchema,
+} from "../src/ledger.js";
 
 describe("RunRecordSchema", () => {
   it("accepts a hand-written RunRecord fixture", () => {
@@ -277,5 +283,19 @@ describe("Payment.authorization_seconds / assetKnown (v2)", () => {
   it("assetKnown() returns the declared value when set", () => {
     const payment: Payment = { ...basePayment, asset_known: false };
     expect(assetKnown(payment)).toBe(false);
+  });
+});
+
+describe("ResultIdSchema (U27)", () => {
+  it("accepts lower-case ids of 1 to 64 characters from [a-z0-9._-]", () => {
+    for (const id of ["a", "9", "none", "agent", "naive-baseline", "v1.2_x", "a".repeat(64)]) {
+      expect(ResultIdSchema.safeParse(id).success, id).toBe(true);
+    }
+  });
+
+  it("rejects upper case, a leading separator, markdown characters and over-long ids", () => {
+    for (const id of ["", "A", "-a", ".a", "_a", "a|b", "a\\b", "a b", "a\nb", "a".repeat(65)]) {
+      expect(ResultIdSchema.safeParse(id).success, JSON.stringify(id)).toBe(false);
+    }
   });
 });

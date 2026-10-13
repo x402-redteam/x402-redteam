@@ -28,10 +28,17 @@ on:
       - "results/**"
 
 permissions:
-  contents: read
+  contents: read # checkout of the pull request's results to verify
+
+# One verification per pull request at a time; a running one is never cancelled. At
+# most one run waits per group; a newer push replaces a waiting one.
+concurrency:
+  group: verify-results-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
   verify:
+    name: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

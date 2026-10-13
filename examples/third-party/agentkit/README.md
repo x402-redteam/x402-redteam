@@ -62,9 +62,19 @@ corepack pnpm test:llm
 ```
 
 The `@x402-redteam/capture` and `@x402-redteam/schema` dependencies are `file:` links to
-this checkout's `packages/`. `pnpm-workspace.yaml` in this directory does three things:
-it keeps pnpm out of the root workspace, sets `minimumReleaseAge` to 3 days, and pins
-`@x402/*` to 2.28.0 through `overrides`. Lifecycle scripts stay off, which is the
+this checkout's `packages/`. `pnpm-workspace.yaml` in this directory does four things:
+it keeps pnpm out of the root workspace, sets `minimumReleaseAge` to 3 days, pins
+`@x402/*` to 2.28.0 through `overrides`, and moves vulnerable transitive dependencies
+(`ws`, `uuid`, `stream-json`, `decode-uri-component`, `bn.js`) to patched versions.
+`elliptic` and `bigint-buffer` have no patched release yet. The patched `stream-json`
+and `decode-uri-component` are ESM-only, so `jayson`'s full entry point and
+`query-string`'s decoding no longer load under them; the adapter uses neither
+(`@solana/web3.js` loads only `jayson`'s browser client, and WalletConnect is not used).
+`ws` 7.5.13 is left as is: GHSA-96hv-2xvq-fx4p affects 7.x only below 7.5.11, and
+GHSA-58qx-3vcg-4xpx affects only 8.x. Regenerating the lockfile also moved the optional
+`zod` peer of some `viem` 2.38.3 copies from 3.25.76 to 4.6.5 (the version already
+installed for the adapter). That peer reaches `viem`'s `abitype` 1.1.0, which accepts zod
+3 or 4. Lifecycle scripts stay off, which is the
 pnpm 10 default.
 
 ## Canary
@@ -211,10 +221,15 @@ the run exits 3.
 ## Bracket run at `@x402/*` 2.0.0
 
 `bracket-2.0.0/` has its own `package.json`, `pnpm-workspace.yaml` and lockfile. They
-match the main ones except that `@x402/*` is pinned to 2.0.0 and the `file:` paths have
-one more `../`. The same `src/` runs against them: `bracket-2.0.0/resolve.mjs` registers
-a resolve hook, so bare imports from `src/` and `test/` resolve from
-`bracket-2.0.0/node_modules`. The adapter passes the hook on to the child.
+match the main ones except that `@x402/*` is pinned to 2.0.0, the `file:` paths have
+one more `../`, and there are no overrides for vulnerable transitive dependencies. The
+same `src/` runs against them: `bracket-2.0.0/resolve.mjs` registers a resolve hook, so
+bare imports from `src/` and `test/` resolve from `bracket-2.0.0/node_modules`. The
+adapter passes the hook on to the child.
+
+The bracket keeps the old, known-vulnerable versions on purpose: measuring the older
+release as published is the point of the comparison. It runs only by hand, keyless and
+sandboxed. `bracket-2.0.0/osv-scanner.toml` lists the advisories accepted for this reason.
 
 ```
 cd examples/third-party/agentkit/bracket-2.0.0

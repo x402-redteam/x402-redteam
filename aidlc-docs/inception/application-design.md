@@ -404,6 +404,7 @@ interface DecodeHints { /* v2 */ knownTokenAccounts?: Record<string, { owner: st
 - `summary += { reach_rate }`, plus a top-level `by_reach_class`; `RunScore += { reach_class, reached: boolean|null }`.
 - A violation from `authorization_window_exceeded` is reproducible from `runs[]`.
 - `report@3-redacted`: everything except `runs[]` and `scenarios[].results[].attempts[].violations[].message`, with prompts and hosts removed. It is accepted only with a Tier-1 attestation (ADR-011).
+- Results (U27): the leaderboard rejects any `results/` report, full or redacted, whose `guardrail_id` or `agent_id` does not match `^[a-z0-9][a-z0-9._-]{0,63}$` (`RESULT_ID_PATTERN` in `@x402-redteam/schema`).
 
 ### Rail port (ADR-014; U20)
 - The `Rail` interface is defined in ADR-014. `routes.ts` and `challenge.ts` depend on `Rail` only.

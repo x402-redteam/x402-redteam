@@ -15,6 +15,8 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 6 — pre-launch units complete; G7 awaits org, seed and real-runner checks
 - [x] Bolt 7 — release engineering: U24-A…F merged; U24-G deferred; U24-H done (public repo, settings, first PRs)
 - [x] Bolt 8 — third-party autonomous agents: U25-A built-in Claude agent runs, U25-B AgentKit adapter and runs done (results private, ADR-028)
-- [?] Bolt 9 — U26 real-world attack techniques: build approved (U26-1a to U26-4 done; awaiting owner close); x402-over-MCP follows
+- [x] Bolt 9 — U26 real-world attack techniques (corpus v4)
+- [-] Release v0.1.0 — U27 release hardening; then the release PR
+- [ ] Bolt 10 — third-party agents round two (Cloudflare, mcpc, ClawRouter, pay; MCP seller mode)
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped

@@ -18,10 +18,11 @@ jobs:
   # Linux, plus Node 24 on macOS, where `*.localhost` resolution and process handling
   # differ and contributors run the suite. Windows is unsupported.
   unit-matrix:
+    name: unit-matrix
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
-      contents: read
+      contents: read # checkout to run the unit tests
     strategy:
       fail-fast: false
       matrix:
@@ -48,10 +49,11 @@ jobs:
 
   # The whole E2E suite in one invocation, as documented for `pnpm test:e2e`.
   e2e-full:
+    name: e2e-full
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      contents: read
+      contents: read # checkout to run the E2E suite
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,10 +70,11 @@ jobs:
   # test against it. X402_REQUIRE_PY_VENV=1 makes that test fail, not skip, when the venv
   # is missing.
   python-agent:
+    name: python-agent
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: read # checkout to run the Python reference payer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,10 +95,11 @@ jobs:
         run: pnpm vitest run --project agents python-agent
 
   audit:
+    name: audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: read # checkout to audit the dependencies
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,6 +116,7 @@ jobs:
   # ranked image today, so this job is a placeholder until U24-F provides a secret-free
   # dummy-season entry point to call here.
   ranked-dry:
+    name: ranked-dry
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -122,12 +127,13 @@ jobs:
   # Opens one "Nightly failure" issue, or comments on it if it is already open, when a
   # run on main has a failed or cancelled job.
   report:
+    name: report
     needs: [unit-matrix, e2e-full, python-agent, audit, ranked-dry]
     if: always() && github.ref == 'refs/heads/main' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      issues: write
+      issues: write # open or update the nightly failure issue
     steps:
       - name: Create or update the Nightly failure issue
         env:

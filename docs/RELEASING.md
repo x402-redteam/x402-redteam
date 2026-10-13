@@ -21,10 +21,19 @@ or published from a laptop.
   Release tags (`vX.Y.Z`) need no ruleset entry because immutable releases already lock them.
   If the ruleset is widened to `v*`, both publishing the release (which creates `vX.Y.Z`) and
   the major-tag move need the bypass identity.
+- **Release identity (decision D6, option A).** The workflow releases with `GITHUB_TOKEN`
+  only: no GitHub App and no personal token is stored for it. If the `major-tag` job is
+  refused (by the tag ruleset or by the workflow-file limitation below), the owner moves
+  the major tag by hand (see "When something fails") and re-runs nothing else.
+- **When to switch to a GitHub App.** Create a GitHub App for the release workflow, and give
+  it the tag ruleset's bypass, when any one of these happens:
+  - more than one release a month, two months in a row;
+  - the manual major-tag move was needed on three releases;
+  - a second maintainer should be able to release without the owner's token.
 - **Confirm in the first dry run:** `GITHUB_TOKEN` may be refused when it creates or moves a
   ref to a commit that changes files under `.github/workflows/` (that needs the `workflows`
-  permission, which `GITHUB_TOKEN` can't have). If the `major-tag` job fails that way, use a
-  GitHub App token for it, or move the tag by hand (see below).
+  permission, which `GITHUB_TOKEN` can't have). If the `major-tag` job fails that way, move
+  the tag by hand (see below).
 - **Squash merge** enabled for pull requests: the release commit's subject must be
   `chore(release): vX.Y.Z` (GitHub's ` (#123)` suffix is fine), merged from a branch whose
   name starts with `release/v`. The `release` job refuses any other commit.

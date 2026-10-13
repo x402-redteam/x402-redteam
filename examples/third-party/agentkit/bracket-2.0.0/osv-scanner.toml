@@ -1,0 +1,49 @@
+# Advisories accepted for the @x402/* 2.0.0 bracket install (U27). The bracket keeps the
+# old, known-vulnerable dependency versions on purpose: measuring the older release as
+# published is the point of the comparison. It is outside the pnpm workspace and CI,
+# runs only by hand, keyless, under the adapter's sandbox and egress guard, and is never
+# shipped. The main adapter install (../) uses patched versions where they exist.
+
+[[IgnoredVulns]]
+id = "GHSA-qr2g-p6q7-w82m"
+reason = "@x402/svm < 2.6.0: the bracket pins @x402/* 2.0.0 on purpose to compare the older release; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-96hv-2xvq-fx4p"
+reason = "ws < 8.21.0 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-58qx-3vcg-4xpx"
+reason = "ws < 8.20.1 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-w5hq-g745-h8pq"
+reason = "uuid < 11.1.1 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-hqr4-qq8f-hg3x"
+reason = "stream-json <= 3.5.0 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-mjw6-4jj6-33hc"
+reason = "stream-json < 3.6.0 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-528h-pc64-c93x"
+reason = "stream-json <= 3.4.0 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-vcc3-ghjq-m6fr"
+reason = "decode-uri-component <= 0.4.2 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-378v-28hj-76wf"
+reason = "bn.js < 4.12.3 (transitive): kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-848j-6mx2-7j84"
+reason = "elliptic <= 6.6.1 (transitive): no patched release exists; kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."
+
+[[IgnoredVulns]]
+id = "GHSA-3gc7-fjrx-p6mg"
+reason = "bigint-buffer <= 1.1.5 (transitive): no patched release exists; kept as published in the @x402/* 2.0.0 bracket; hand-run, keyless, sandboxed, never shipped."

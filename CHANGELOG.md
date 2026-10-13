@@ -83,6 +83,20 @@ All notable changes to x402-redteam are recorded here. The format follows
   transaction cannot be fully verified for a reason other than a bad signature (for
   example an address lookup table) is still counted at its recorded value. No committed
   reference result contains such a leg, so no published score changed.
+- **Leaderboard:** a result's `guardrail_id` and `agent_id` must match
+  `^[a-z0-9][a-z0-9._-]{0,63}$`, or the result is rejected; every committed result
+  already does. Table cells now escape backslashes before pipes, so a `\|` in a value can
+  no longer end a cell early. The rejected table shows each entry id and reason as a
+  code span, cut to 80 characters, so links, images or HTML in a submitted value don't
+  render.
+- **CLI:** `x402-redteam run` exits 2 when `--agent-id` or `--guardrail-id` doesn't match
+  that same pattern, before anything starts. The ranked workflows (`rank.yml`,
+  `ranked-run.yml`) check `guardrail-id` the same way.
+- **Action:** the `agent-id` input now defaults to empty, which means an id derived from
+  the repository name: lower case, with `/` and any other character outside
+  `a-z0-9._-` turned into `-`, cut to 64 characters (`Owner/My_Repo.v2` becomes
+  `owner-my_repo.v2`). Before, the default was `github.repository` as is, which the CLI
+  now rejects.
 
 ## [0.1.0] - Unreleased
 

@@ -62,9 +62,9 @@ const MAX_DEPTH = 4;
  * directory layout) or otherwise probe its surroundings; this scrub removes the
  * convenient, accidental leak, not every possible one.
  */
-const GUARDRAIL_ENV_STRIP_RE = /^X402_|_RPC_URL$/i;
+export const GUARDRAIL_ENV_STRIP_RE = /^(?:X402_.*|.*_RPC_URL)$/is;
 
-function scrubGuardrailEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function scrubGuardrailEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const scrubbed: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
     if (GUARDRAIL_ENV_STRIP_RE.test(key)) continue;
