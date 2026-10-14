@@ -91,6 +91,13 @@ or published from a laptop.
    the README tells users to take the digest from. It can't be part of the release commit,
    because that commit's SHA isn't known before merge.
 
+   Once the file names a release, `pnpm leaderboard` rejects any result whose
+   `config.harness_commit` isn't listed, and that includes the reference results, which
+   were regenerated before the release commit existed. So in the same PR, while `main`
+   still equals the release commit, regenerate the reference results from it with
+   `X402_HARNESS_COMMIT=<release commit>`, check that nothing but `harness_commit` and
+   timing changed, and run `pnpm leaderboard`.
+
 8. **Verify** with the commands in the README's "Verify a release" section, then announce.
 
 ## When something fails
