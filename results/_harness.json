@@ -1,0 +1,9 @@
+{
+  "allow": [
+    {
+      "commit": "39568a31870a486bcc59afd9036631ed883bd617",
+      "version": "v0.1.0",
+      "image": "sha256:61b5bdd36608a90853222d13b7b38bcc28cea06a1913f08d8221ba363812244c"
+    }
+  ]
+}
