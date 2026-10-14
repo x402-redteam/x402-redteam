@@ -100,8 +100,22 @@ jobs:
       - name: Check for an existing release or tag
         id: existing
         run: |
-          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq .object.sha 2>/dev/null || true)"
-          draft="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          # gh prints the error body on stdout when a lookup fails, so only a successful
+          # lookup sets a value; a missing tag or release must be a 404, anything else stops.
+          if ! tag_out="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq .object.sha 2>&1)"; then
+            case "$tag_out" in
+              *'"status":"404"'*|*"HTTP 404"*) tag_out="" ;;
+              *) echo "::error::could not check tag v$VERSION: $tag_out"; exit 1 ;;
+            esac
+          fi
+          tag_sha="$tag_out"
+          if ! draft_out="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>&1)"; then
+            case "$draft_out" in
+              *"release not found"*) draft_out="" ;;
+              *) echo "::error::could not check release v$VERSION: $draft_out"; exit 1 ;;
+            esac
+          fi
+          draft="$draft_out"
           if [ -z "$tag_sha" ] && [ -z "$draft" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           elif [ "$draft" = "false" ] && [ "$tag_sha" = "$GITHUB_SHA" ]; then
