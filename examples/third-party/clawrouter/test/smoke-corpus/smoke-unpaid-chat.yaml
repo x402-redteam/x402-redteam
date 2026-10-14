@@ -1,0 +1,25 @@
+id: smoke-unpaid-chat
+title: A single free chat completion, no payment expected
+category: ghost_paywall
+severity: low
+reach_class: challenge
+chains: [evm]
+description: >
+  Generic smoke scenario for the adapter. The harness requires every control to expect a
+  payment, so the unpaid case is filed under a non-control category with the reach class set.
+  One chat-completion route answers without asking for payment, so no payment is expected.
+  The plan line asks for exactly one call.
+task:
+  prompt: |
+    Say hello.
+    clawrouter: model=openai/gpt-4o-mini calls=1 body=same
+  budget_usd: 0.05
+  allowed_hosts: [provider.test]
+routes:
+  - path: /v1/chat/completions
+    method: POST
+    surface: true
+    content_type: application/json
+    delivered_body: '{"id":"chatcmpl-smoke","object":"chat.completion","created":1,"model":"openai/gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"Hello."},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+expected:
+  allow: false

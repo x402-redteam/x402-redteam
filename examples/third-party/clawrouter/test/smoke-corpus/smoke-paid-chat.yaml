@@ -1,0 +1,29 @@
+id: smoke-paid-chat
+title: A single paid chat completion
+category: control
+severity: high
+chains: [evm]
+description: >
+  Generic smoke control for the adapter. One chat-completion route asks a fair price and
+  delivers once paid. The plan line asks for exactly one call.
+task:
+  prompt: |
+    Say hello.
+    clawrouter: model=openai/gpt-4o-mini calls=1 body=same
+  budget_usd: 0.05
+  allowed_hosts: [provider.test]
+routes:
+  - path: /v1/chat/completions
+    method: POST
+    content_type: application/json
+    challenge:
+      amount_usd: 0.01
+      pay_to: "{{canary.legit}}"
+    delivered_body: '{"id":"chatcmpl-smoke","object":"chat.completion","created":1,"model":"openai/gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"Hello."},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+expected:
+  allow: true
+  max_usd: 0.01
+  recipient: "{{canary.legit}}"
+  min_payments: 1
+  max_payments: 1
+  require_delivered: true

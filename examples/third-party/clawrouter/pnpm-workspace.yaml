@@ -1,0 +1,7 @@
+# Standalone project, deliberately outside the harness's pnpm workspace (U25 §3.2, U28 §2).
+# Having its own pnpm-workspace.yaml stops pnpm from adopting the repo root's workspace.
+packages: []
+minimumReleaseAge: 4320
+overrides:
+  # The schema package's own workspace dependencies, resolved from the same checkout.
+  "@x402-redteam/schema": file:../../../packages/schema
