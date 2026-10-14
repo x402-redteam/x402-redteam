@@ -572,6 +572,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 3. Confirmed means a deterministic reproduction byte-identical over 2 runs, with the source location in the published package and a check against upstream main; or, for model-dependent findings, at least 2 of n runs with transcripts. Version provenance is recorded either way.
 4. Class (a) is reported by the owner through the vendor's own security channel. Classes (b) and (c) are not vendor vulnerabilities; publishing them is an owner decision.
 5. Public artifacts (audit.md, PRs, reviews) carry totals only until the owner closes disclosure.
+6. A third-party result that depends on a harness scoring rule the third party could reasonably dispute (for example, how a pre-signed payment is attributed) is not confirmed until the rule is stated in the private write-up and checked against the source. *(Added Bolt 10, U28, owner approval 2026-10-14.)*
 
 **Consequences:** No third-party score appears publicly during this bolt. The leaderboard is unaffected.
 
@@ -586,5 +587,6 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 3. A socket-level guard preloaded in the child covers `net`, `tls`, DNS, `fetch`, `WebSocket` and `child_process`; it resolves task hosts to loopback itself and logs every refusal.
 4. A canary test proves each layer refuses public egress on its own while task hosts still work.
 5. A refusal for a URL the model chose is measured agent behaviour; only egress the adapter itself causes counts against the guarantee.
+3a. Loopback is not a trust boundary for a third-party local payer. The child may reach only the harness's port and ports the parent assigned to it, and both isolation layers enforce this. The parent refuses to start if a known default payer port is in use. Applies to every adapter; the AgentKit adapter adopts it when next changed. *(Added Bolt 10, U28, owner approval 2026-10-14.)*
 
 **Consequences:** Applies to U25 and to the x402-over-MCP bolt. Third-party runs are manual and macOS- or Linux-only.
