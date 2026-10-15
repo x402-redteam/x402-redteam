@@ -50,4 +50,9 @@ export interface Intent {
   asset: string | undefined;
   /** A pre-sign estimate. Matching (reconcile.ts) uses route, payTo and network only. */
   quoted_usd: number;
+  /** The outcome of the spend check. false means the check refused, so nothing is signed.
+   * Absent in logs written before this field existed (read as allowed). */
+  allowed?: boolean;
+  /** The refusal reason the check returned, if any. */
+  reason?: string;
 }

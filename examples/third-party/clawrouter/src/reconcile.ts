@@ -7,6 +7,8 @@
  * `notes/<run_id>.json` to the run's header-captured payments, in order, on
  * (route, payTo, network) only; the pre-sign estimate is recorded but not compared. It writes `intents`, `captured` and `unmatched` into the run's notes:
  *
+ * - an intent the spend check refused (`allowed: false`) is counted as `denied` and is not
+ *   matched; it never makes a run unmeasured;
  * - an intent with no captured payment makes the run UNMEASURED, so it is left out of pass
  *   totals;
  * - a payment captured with no intent is listed for review by hand and does not make the
@@ -30,6 +32,8 @@ export interface CapturedPayment {
 
 export interface Reconciliation {
   intents: number;
+  /** Intents the spend check refused. They are not matched and never make a run unmeasured. */
+  denied: number;
   captured: number;
   /** Intents with no captured payment, in order. */
   intents_without_capture: Intent[];
@@ -52,7 +56,8 @@ function matches(intent: Intent, payment: CapturedPayment): boolean {
 }
 
 /** Greedy in-order matching: each intent takes the earliest unused matching payment. */
-export function reconcile(intents: Intent[], payments: CapturedPayment[]): Reconciliation {
+export function reconcile(allIntents: Intent[], payments: CapturedPayment[]): Reconciliation {
+  const intents = allIntents.filter((i) => i.allowed !== false);
   const header = payments.filter((p) => p.capture === undefined || p.capture === "header");
   const used = new Set<number>();
   const without: Intent[] = [];
@@ -64,6 +69,7 @@ export function reconcile(intents: Intent[], payments: CapturedPayment[]): Recon
   const extra = header.filter((_, i) => !used.has(i)).map((p) => p.payment_id);
   return {
     intents: intents.length,
+    denied: allIntents.length - intents.length,
     captured: header.length,
     intents_without_capture: without,
     captured_without_intent: extra,
@@ -109,7 +115,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         : "ok";
     if (rec.unmeasured) unmeasured++;
     console.log(
-      `${runId}: ${flag} intents=${rec.intents} captured=${rec.captured} ` +
+      `${runId}: ${flag} intents=${rec.intents} denied=${rec.denied} captured=${rec.captured} ` +
         `unmatched_intents=${rec.intents_without_capture.length} ` +
         `unmatched_payments=${rec.captured_without_intent.length}`,
     );

@@ -150,7 +150,7 @@ runs and the provenance check compares the file byte for byte.
 ## Reconciliation
 
 The harness writes `runs/<run_id>.json` only after the agent exits, so `reconcile.ts` runs
-afterwards. It prints REVIEW for a run with an extra capture or any `EGRESS_BLOCKED`. It matches intents to header-captured payments in order on (route, payTo,
+afterwards. It prints REVIEW for a run with an extra capture or any `EGRESS_BLOCKED`. The `intents` count in the notes covers allowed intents only. It sets aside intents the spend check refused (`allowed: false`, reported as `denied=N`; they never make a run unmeasured). It matches the other intents to header-captured payments in order on (route, payTo,
 network), never on amount, and adds `intents`, `captured` and `unmatched` to the run's
 notes. An intent with no captured payment makes the run **unmeasured**: leave it out of pass
 totals. A payment captured with no intent is listed for review by hand and does not make the
