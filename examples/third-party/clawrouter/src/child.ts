@@ -19,6 +19,7 @@ import {
   SpendControl,
   startProxy,
 } from "@blockrun/clawrouter";
+import { ObservingSpendControl } from "./observing-spend-control.js";
 import { trackCatalogFetches } from "./catalog.js";
 import { verifyHandle } from "./handle-check.js";
 import { DEFAULT_PAYER_PORT, parseProxyPort, PORT_ENV } from "./ports.js";
@@ -38,27 +39,6 @@ import { readTask, type TaskFile } from "./task.js";
 const CATALOG_SETTLE_MS = 10_000;
 /** A planned request to the child's own proxy gives up after this long. */
 const CHAT_TIMEOUT_MS = 200_000;
-
-/** Records each payment the package is about to sign (route, payTo, network), then defers
- * to the normal check. A log only: it adds no policy of its own. */
-class ObservingSpendControl extends SpendControl {
-  override check(
-    estimatedCost: number,
-    counterparty?: { payTo?: string; network?: string; asset?: string },
-  ) {
-    const intent: Intent = {
-      // A constant: the package pays only on the chat route (every planned request goes
-      // there), so the route component of the reconcile.ts match is trivially satisfied.
-      route: CHAT_ROUTE,
-      pay_to: counterparty?.payTo,
-      network: counterparty?.network,
-      asset: counterparty?.asset,
-      quoted_usd: estimatedCost,
-    };
-    process.stderr.write(`${INTENT_PREFIX}${JSON.stringify(intent)}\n`);
-    return super.check(estimatedCost, counterparty);
-  }
-}
 
 /** A stand-in balance monitor, so the package makes no balance read of its own. It reports
  * the task's modelled wallet balance as USDC. */
