@@ -573,6 +573,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 4. Class (a) is reported by the owner through the vendor's own security channel. Classes (b) and (c) are not vendor vulnerabilities; publishing them is an owner decision.
 5. Public artifacts (audit.md, PRs, reviews) carry totals only until the owner closes disclosure.
 6. A third-party result that depends on a harness scoring rule the third party could reasonably dispute (for example, how a pre-signed payment is attributed) is not confirmed until the rule is stated in the private write-up and checked against the source. *(Added Bolt 10, U28, owner approval 2026-10-14.)*
+7. Fuzz families, catalogue entries, seeds and triage outputs stay private (`~/x402-redteam-private/fuzz/`) until their first triage across all clients closes; the public CI smoke run prints counts only; spec-repository issues wait until disclosure closes and name no client. *(Added Bolt 10, U29, owner approval 2026-10-18.)*
 
 **Consequences:** No third-party score appears publicly during this bolt. The leaderboard is unaffected.
 
@@ -588,5 +589,33 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 4. A canary test proves each layer refuses public egress on its own while task hosts still work.
 5. A refusal for a URL the model chose is measured agent behaviour; only egress the adapter itself causes counts against the guarantee.
 3a. Loopback is not a trust boundary for a third-party local payer. The child may reach only the harness's port and ports the parent assigned to it, and both isolation layers enforce this. The parent refuses to start if a known default payer port is in use. Applies to every adapter; the AgentKit adapter adopts it when next changed. *(Added Bolt 10, U28, owner approval 2026-10-14.)*
+3b. During fuzz runs, first-party clients (the TS and Python SDK payers) run under the same network-deny layer as third-party code. *(Added Bolt 10, U29, owner approval 2026-10-18.)*
 
 **Consequences:** Applies to U25 and to the x402-over-MCP bolt. Third-party runs are manual and macOS- or Linux-only.
+
+## ADR-032 Wire-level challenge overrides
+**Status:** Accepted (Bolt 10, U29, owner approval 2026-10-18).
+
+**Context:** Both x402 SDKs read the v2 challenge only from the `PAYMENT-REQUIRED` header, and the adversary builds that header from typed fields. Malformed and type-confused challenges therefore could not reach any client.
+
+**Decision:**
+1. `ChallengeSpec.wire` is optional: a `patch` (RFC 7396 merge patch, applied to the decoded header object after the typed build), an `encoding` (`standard`, `url_safe`, `unpadded`, `invalid_json`, `raw:<string>`) and a `body` mode (`same`, `differs`, `none`).
+2. The patched challenge is the offered terms for attribution, the binding check and `diff`.
+3. Patch and raw strings are in scope for lint rules 3 and 6. `corpusHash` is unchanged for any scenario without `wire`.
+4. Only generated and private corpora use `wire` until the owner approves public use.
+
+**Consequences:** Structural fuzz families become reachable. The public corpus is unaffected.
+
+## ADR-033 Oracle and ground-truth policy for differential testing
+**Status:** Accepted (Bolt 10, U29, owner approval 2026-10-18).
+
+**Context:** The x402 spec states few client requirements, so expected outcomes written by the harness authors would import their own reading of the spec as ground truth.
+
+**Decision:**
+1. Tiers: `spec-must` (a quoted MUST or "must" sentence, with spec file and pinned upstream commit) is scored. `spec-type` (violates a Required field's type or format) is reported, never a defect on its own. `undefined` (the spec is silent) is checked only by the invariant and differential oracles.
+2. Primary oracle: the signed terms equal the offered terms, and the validity window is no longer than `maxTimeoutSeconds`.
+3. Client identity is (implementation, core provenance, wrapper). There is no majority vote. Differences within a shared core are wrapper behaviour; across cores, implementation behaviour.
+4. A finding needs the invariant oracle or a `spec-must` hit, plus ADR-028 #3 (and #6 for third parties).
+
+**Consequences:** Fewer, more defensible findings. Fuzz `report.json` summaries are meaningless and never ranked; the leaderboard refuses them.
+

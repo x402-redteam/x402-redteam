@@ -17,6 +17,6 @@ Chains: evm (Base Sepolia) + svm (Solana devnet) · Gates: per phase
 - [x] Bolt 8 — third-party autonomous agents: U25-A built-in Claude agent runs, U25-B AgentKit adapter and runs done (results private, ADR-028)
 - [x] Bolt 9 — U26 real-world attack techniques (corpus v4)
 - [-] Release v0.1.0 — U27 release hardening; then the release PR
-- [-] Bolt 10 — third-party agents round two (Cloudflare, mcpc, ClawRouter, pay; MCP seller mode); U28 ClawRouter adapter design approved, build after v0.1.0
+- [-] Bolt 10 — discovery (U29 differential testing and challenge fuzzing of x402 clients; MCP seller mode; Cloudflare, mcpc, pay adapters). U28 ClawRouter adapter done (results private)
 
 Legend: [ ] pending · [-] in progress · [?] awaiting approval · [R] changes requested · [x] done · [S] skipped
