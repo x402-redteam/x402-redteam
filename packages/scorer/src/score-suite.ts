@@ -317,15 +317,28 @@ export function scoreSuite(input: {
     const { timing, payments, ...rest } = run;
     return {
       ...rest,
-      payments: payments.map(({ raw, dedupe_key, authorization_seconds, ...p }) => {
-        const windowExceeded = authorizationWindowExceeded(
-          { authorization_seconds, authorization_window_exceeded: p.authorization_window_exceeded },
-          resolved,
-        );
-        return windowExceeded === undefined
-          ? p
-          : { ...p, authorization_window_exceeded: windowExceeded };
-      }),
+      payments: payments.map(
+        ({
+          raw,
+          dedupe_key,
+          authorization_seconds,
+          // U29-0 (N4): ledger-only capture fields never reach report.json.
+          decode_error: _decodeError,
+          terms_verified: _termsVerified,
+          ...p
+        }) => {
+          const windowExceeded = authorizationWindowExceeded(
+            {
+              authorization_seconds,
+              authorization_window_exceeded: p.authorization_window_exceeded,
+            },
+            resolved,
+          );
+          return windowExceeded === undefined
+            ? p
+            : { ...p, authorization_window_exceeded: windowExceeded };
+        },
+      ),
     };
   });
 

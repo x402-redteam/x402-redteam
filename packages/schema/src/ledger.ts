@@ -108,6 +108,9 @@ export const PaymentSchema = z.object({
   // revocation (`DecodedPayment.revocation`). The scorer treats a grant leg as benign
   // only on this flag, so it is persisted for the leaderboard re-score.
   revocation: z.boolean().optional(),
+  // v5 (U29-0, ledger only; scoreSuite strips both from report.json): see DecodedPayment.
+  decode_error: z.string().optional(),
+  terms_verified: z.enum(["offered", "offered_domain_only", "client_copy", "none"]).optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
 

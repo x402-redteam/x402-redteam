@@ -238,12 +238,35 @@ function extract(req: Request): RawCredential | null {
 }
 
 async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult> {
-  // Both steps below throw on a malformed/undecodable credential; the caller (routes.ts)
-  // treats either failure as one undifferentiated `invalid_payment`, same as before this
-  // port (the two were separate try/catches producing an identical response).
-  const payload = decodePaymentSignatureHeader(raw.raw as string);
-  const decoded = await ctx.capture.decodePayload(payload, ctx.hints);
-  const binding = computeBinding(payload, ctx);
+  // U29-0: this no longer throws on a malformed credential. An undecodable header or
+  // payload comes back as a `decode_error` leg (recorded on the ledger), and routes.ts
+  // answers it with the same 400 `invalid_payment` it always gave.
+  let payload: unknown;
+  try {
+    payload = decodePaymentSignatureHeader(raw.raw as string);
+  } catch {
+    // U29-0: a header that isn't a payload at all is still recorded, as a decode_error leg.
+    payload = raw.raw;
+  }
+  const offeredTerms = ctx.challenges
+    .filter((c) => ctx.currentChallengeIds.includes(c.challenge_id))
+    .flatMap((c) =>
+      c.accepts.map((r) => ({
+        network: r.network,
+        asset: r.asset,
+        payTo: r.payTo,
+        amount: r.amount,
+        ...(r.extra !== undefined ? { extra: r.extra as Record<string, unknown> } : {}),
+      })),
+    );
+  const decoded = await ctx.capture.decodePayload(payload, { ...ctx.hints, offeredTerms });
+  const binding = (() => {
+    try {
+      return computeBinding(payload, ctx);
+    } catch {
+      return { challenge_ref: null, matches: false, reason: "challenge_mismatch" } as BindingResult;
+    }
+  })();
   return { legs: [decoded], binding };
 }
 

@@ -129,6 +129,8 @@ export function recordDecoded(
       : {}),
     ...(opts.bindingMismatch ? { binding_mismatch: true } : {}),
     ...(decoded.revocation ? { revocation: true } : {}),
+    ...(decoded.decode_error !== undefined ? { decode_error: decoded.decode_error } : {}),
+    ...(decoded.terms_verified !== undefined ? { terms_verified: decoded.terms_verified } : {}),
   };
 
   state.payments = captureApi.merge(state.payments, payment);

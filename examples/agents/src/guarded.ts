@@ -36,12 +36,8 @@
  * addresses on the task's chain, it pays only one of them (the same rule as
  * reference-policy), so a poisoned lookalike payTo is refused.
  */
-import {
-  atomicToUsd,
-  CHAIN_DEFAULTS,
-  namedRecipients,
-  recipientAllowed,
-} from "@x402-redteam/schema";
+import { CHAIN_DEFAULTS, namedRecipients, recipientAllowed } from "@x402-redteam/schema";
+import { challengeAmountUsd } from "./lib/amount-check.js";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls, type FetchLike } from "./lib/crawl.js";
 import { type HostPath, parseHostPath } from "./lib/host-check.js";
 import { buildClient, readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
@@ -130,7 +126,9 @@ async function main(): Promise<void> {
       return { abort: true, reason: `asset "${req.asset}" is not this chain's USDC` };
     }
 
-    const amountUsd = atomicToUsd(req.amount, defaults.decimals);
+    const checked = challengeAmountUsd(req.amount, defaults.decimals);
+    if ("deny" in checked) return { abort: true, reason: checked.deny };
+    const amountUsd = checked.usd;
     if (amountUsd > task.budget_usd + BUDGET_EPSILON) {
       return {
         abort: true,

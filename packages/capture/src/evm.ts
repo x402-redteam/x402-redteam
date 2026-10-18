@@ -1,4 +1,10 @@
-import type { DecodedPayment, PaymentPayload } from "@x402-redteam/schema";
+import type {
+  DecodedPayment,
+  DecodeHints,
+  OfferedTerms,
+  PaymentPayload,
+  TermsVerified,
+} from "@x402-redteam/schema";
 import { CHAIN_DEFAULTS, NATIVE_ASSET } from "@x402-redteam/schema";
 import {
   decodeFunctionData,
@@ -164,12 +170,112 @@ function evmChainId(network: string): number {
   return Number(match[1]);
 }
 
+type Eip3009Authorization = Eip3009Inner["authorization"];
+
+/** Verifies an EIP-3009 `TransferWithAuthorization` under one resolved token domain.
+ * Never throws: any parse failure (bad network, bad hex, non-numeric value) is "not verified". */
+async function verifyEip3009Domain(
+  domain: { name: string; version: string; chainId: number; verifyingContract: string },
+  authorization: Eip3009Authorization,
+  signature: string,
+): Promise<boolean> {
+  try {
+    return await verifyTypedData({
+      address: getAddress(authorization.from),
+      domain: { ...domain, verifyingContract: getAddress(domain.verifyingContract) },
+      types: AUTHORIZATION_TYPES,
+      primaryType: "TransferWithAuthorization",
+      message: {
+        from: getAddress(authorization.from),
+        to: getAddress(authorization.to),
+        value: BigInt(authorization.value),
+        validAfter: BigInt(authorization.validAfter),
+        validBefore: BigInt(authorization.validBefore),
+        nonce: authorization.nonce as Hex,
+      },
+      signature: signature as Hex,
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** The client's own copy of the terms, with the USDC/2 fallback the harness always had. */
+async function verifyClientCopy(
+  terms: { network: string; asset: string; extra?: Record<string, unknown> },
+  authorization: Eip3009Authorization,
+  signature: string,
+): Promise<boolean> {
+  try {
+    return await verifyEip3009Domain(
+      {
+        name: (terms.extra?.name as string | undefined) ?? "USDC",
+        version: (terms.extra?.version as string | undefined) ?? "2",
+        chainId: evmChainId(terms.network),
+        verifyingContract: terms.asset,
+      },
+      authorization,
+      signature,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The adversary's offered terms: no fallback (an entry without `extra.name`/`version`
+ * can't verify), and `offered` needs the domain, the recipient and the amount to match.
+ * `offered_domain_only` is a real signature over different `to` or `value`.
+ */
+async function verifyOffered(
+  terms: OfferedTerms,
+  authorization: Eip3009Authorization,
+  signature: string,
+): Promise<"offered" | "offered_domain_only" | undefined> {
+  const name = terms.extra?.name;
+  const version = terms.extra?.version;
+  if (typeof name !== "string" || typeof version !== "string") return undefined;
+  let chainId: number;
+  try {
+    chainId = evmChainId(terms.network);
+  } catch {
+    return undefined;
+  }
+  if (
+    !(await verifyEip3009Domain(
+      { name, version, chainId, verifyingContract: terms.asset },
+      authorization,
+      signature,
+    ))
+  ) {
+    return undefined;
+  }
+  const toMatches =
+    typeof terms.payTo === "string" && authorization.to.toLowerCase() === terms.payTo.toLowerCase();
+  let valueMatches = false;
+  try {
+    valueMatches =
+      typeof terms.amount === "string" &&
+      /^\d+$/.test(terms.amount) &&
+      BigInt(authorization.value) === BigInt(terms.amount);
+  } catch {
+    valueMatches = false;
+  }
+  return toMatches && valueMatches ? "offered" : "offered_domain_only";
+}
+
 async function decodeEip3009(
   accepted: EvmAccepted,
   inner: Eip3009Inner,
   raw: unknown,
+  hints?: DecodeHints,
 ): Promise<DecodedPayment> {
   const { authorization } = inner;
+  // U29-0: a payload whose identity fields aren't strings is a decode error, not a leg to
+  // record with whatever was there (the caller turns the throw into a decode_error leg).
+  for (const field of [accepted.asset, accepted.scheme, authorization.from, authorization.to]) {
+    if (typeof field !== "string") throw new TypeError("decodeEip3009: malformed payload field");
+  }
   const base: DecodedPayment = {
     chain: "evm",
     network: accepted.network,
@@ -186,39 +292,40 @@ async function decodeEip3009(
     ),
     raw,
   };
-  if (!isNonNegativeIntegerString(base.amount_atomic)) {
-    return { ...base, invalid_reason: "negative_amount" };
-  }
+  const amountOk = isNonNegativeIntegerString(base.amount_atomic);
+  // A malformed amount is still checked against the signature (when BigInt can read it), so
+  // the ledger records what was signed; the verdict stays `negative_amount` (U29-0).
   if (!inner.signature) {
-    return { ...base, invalid_reason: "bad_signature" };
+    return amountOk
+      ? { ...base, invalid_reason: "bad_signature" }
+      : { ...base, invalid_reason: "negative_amount", decode_error: "non_digit_amount" };
   }
-  try {
-    const chainId = evmChainId(accepted.network);
-    const domain = {
-      name: (accepted.extra?.name as string | undefined) ?? "USDC",
-      version: (accepted.extra?.version as string | undefined) ?? "2",
-      chainId,
-      verifyingContract: getAddress(accepted.asset),
+  const clientCopy = await verifyClientCopy(accepted, authorization, inner.signature);
+  // Known gap (U29-0): Permit2 and SVM payments don't get an offered-terms reading yet,
+  // so `terms_verified` is unset for them.
+  let offeredReading: "offered" | "offered_domain_only" | undefined;
+  for (const terms of hints?.offeredTerms ?? []) {
+    const reading = await verifyOffered(terms, authorization, inner.signature);
+    if (reading === "offered") {
+      offeredReading = "offered";
+      break;
+    }
+    offeredReading ??= reading;
+  }
+  const terms_verified: TermsVerified = offeredReading ?? (clientCopy ? "client_copy" : "none");
+  if (!amountOk) {
+    return {
+      ...base,
+      invalid_reason: "negative_amount",
+      decode_error: "non_digit_amount",
+      terms_verified,
     };
-    const valid = await verifyTypedData({
-      address: getAddress(authorization.from),
-      domain,
-      types: AUTHORIZATION_TYPES,
-      primaryType: "TransferWithAuthorization",
-      message: {
-        from: getAddress(authorization.from),
-        to: getAddress(authorization.to),
-        value: BigInt(authorization.value),
-        validAfter: BigInt(authorization.validAfter),
-        validBefore: BigInt(authorization.validBefore),
-        nonce: authorization.nonce as Hex,
-      },
-      signature: inner.signature as Hex,
-    });
-    return valid ? { ...base, valid: true } : { ...base, invalid_reason: "bad_signature" };
-  } catch {
-    return { ...base, invalid_reason: "bad_signature" };
   }
+  // `valid` is decided by the client-copy reading alone (as before U29-0), so existing
+  // reports don't move; `terms_verified` carries the offered-terms reading on the ledger.
+  return clientCopy
+    ? { ...base, valid: true, terms_verified }
+    : { ...base, invalid_reason: "bad_signature", terms_verified };
 }
 
 /**
@@ -342,6 +449,7 @@ async function decodeExtensionLegs(
  */
 export async function decodeEvmPayload(
   payload: PaymentPayload | Record<string, unknown>,
+  hints?: DecodeHints,
 ): Promise<DecodedPayment> {
   const anyPayload = payload as Record<string, unknown>;
   let accepted: EvmAccepted;
@@ -370,7 +478,7 @@ export async function decodeEvmPayload(
   if (isPermit2Shaped(inner)) {
     primary = await decodePermit2(accepted, inner as unknown as Permit2Inner, payload);
   } else if (isEip3009Shaped(inner)) {
-    primary = await decodeEip3009(accepted, inner as unknown as Eip3009Inner, payload);
+    primary = await decodeEip3009(accepted, inner as unknown as Eip3009Inner, payload, hints);
   }
   if (primary) {
     const extensionLegs = await decodeExtensionLegs(accepted, anyPayload.extensions);

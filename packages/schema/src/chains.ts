@@ -54,10 +54,26 @@ export function usdToAtomic(usd: number, decimals: number): string {
   return (negative ? -atomic : atomic).toString();
 }
 
-/** Converts an atomic (integer, smallest-unit) string back to a USD number. */
-export function atomicToUsd(atomic: string, decimals: number): number {
+/** Why an atomic amount string could not be turned into USD. */
+export type AtomicParseReason = "non_integer_amount";
+
+const ATOMIC_PATTERN = /^-?\d+$/;
+
+/**
+ * Converts an atomic (integer, smallest-unit) string back to USD, never NaN. Only an
+ * optional leading "-" and ASCII digits are accepted; anything else (whitespace, a
+ * fraction, hex, a "+" sign, an exponent, the empty string) is unparseable, so the value
+ * is `null` and `reason` says why.
+ */
+export function parseAtomicToUsd(
+  atomic: string,
+  decimals: number,
+): { usd: number; reason?: undefined } | { usd: null; reason: AtomicParseReason } {
   if (!Number.isInteger(decimals) || decimals < 0) {
     throw new RangeError(`atomicToUsd: decimals must be a non-negative integer, got ${decimals}`);
+  }
+  if (typeof atomic !== "string" || !ATOMIC_PATTERN.test(atomic)) {
+    return { usd: null, reason: "non_integer_amount" };
   }
   const negative = atomic.startsWith("-");
   const digits = negative ? atomic.slice(1) : atomic;
@@ -65,7 +81,17 @@ export function atomicToUsd(atomic: string, decimals: number): number {
   const whole = padded.slice(0, padded.length - decimals) || "0";
   const frac = decimals > 0 ? padded.slice(padded.length - decimals) : "";
   const value = Number(`${whole}${frac ? `.${frac}` : ""}`);
-  return negative ? -value : value;
+  return { usd: negative ? -value : value };
+}
+
+/**
+ * Converts an atomic string to a USD number, never NaN: an unparseable amount is 0 here.
+ * Callers that must tell "zero" from "unparseable" use `parseAtomicToUsd`, which gives
+ * `null` and a reason code. (This keeps the signature the example guardrails compile
+ * against; `parseAtomicToUsd` is the null-returning form.)
+ */
+export function atomicToUsd(atomic: string, decimals: number): number {
+  return parseAtomicToUsd(atomic, decimals).usd ?? 0;
 }
 
 /**
