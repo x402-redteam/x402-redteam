@@ -1,0 +1,4 @@
+id: amount-format-base
+family: amount-format
+base: true
+note: The unmutated fair challenge, a control.

@@ -21,6 +21,7 @@
   "dependencies": {
     "@x402-redteam/adversary": "workspace:*",
     "@x402-redteam/capture": "workspace:*",
+    "@x402-redteam/fuzz": "workspace:*",
     "@x402-redteam/schema": "workspace:*",
     "@x402-redteam/scorer": "workspace:*",
     "commander": "15.0.0",

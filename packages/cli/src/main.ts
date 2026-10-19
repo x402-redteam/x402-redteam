@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { generate, SHAPES, type Shape } from "@x402-redteam/fuzz";
 import { type Chain, HostModeSchema, RESULT_ID_PATTERN, type Severity } from "@x402-redteam/schema";
 import { type Report, toMarkdown, toSarif } from "@x402-redteam/scorer";
 import { Command } from "commander";
@@ -163,6 +164,40 @@ program
       process.exit(validate(resolve(opts.corpus)));
     } catch (err) {
       console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+      process.exit(2);
+    }
+  });
+
+program
+  .command("fuzz")
+  .description("generate a v4 fuzz corpus and cases.json from a mutation catalogue (U29-2)")
+  .requiredOption("--catalogue <dir>", "catalogue directory (YAML or JSON entries)")
+  .requiredOption("--shape <shape>", "page|chat")
+  .requiredOption("--out <dir>", "output directory (outside the repository, or *.fuzz / fuzz-out)")
+  .option("--pairwise-seed <seed>", "also add a seeded sample of pairs of mutations per family")
+  .option(
+    "--render-seed <seed>",
+    "seed canary addresses derive from; must equal `run --seed`",
+    "x402-redteam-v1",
+  )
+  .action((opts) => {
+    try {
+      if (!(SHAPES as readonly string[]).includes(opts.shape)) {
+        throw new Error(`--shape "${opts.shape}" is invalid (expected page|chat)`);
+      }
+      const { manifest, corpusDir } = generate({
+        catalogueDir: resolve(opts.catalogue),
+        shape: opts.shape as Shape,
+        outDir: resolve(opts.out),
+        pairwiseSeed: opts.pairwiseSeed,
+        renderSeed: opts.renderSeed,
+      });
+      // Counts only: fuzz content stays private (ADR-028 #7).
+      console.log(
+        `fuzz: ${manifest.counts.cases} case(s) (${manifest.counts.bases} base), shape ${opts.shape}, corpus ${corpusDir}`,
+      );
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
       process.exit(2);
     }
   });
