@@ -1,3 +1,5 @@
 #!/bin/sh
-# Held-out leak guard on commits about to be pushed (ADR-027). No-op without a local denylist.
-exec node scripts/heldout-guard.mjs --pre-push
+# Held-out leak guard (ADR-027; no-op without a local denylist) and the fuzz-privacy guard
+# (ADR-028 #7; always on) on commits about to be pushed. Both read the refs from stdin.
+refs=$(cat)
+printf '%s\n' "$refs" | node scripts/heldout-guard.mjs --pre-push && printf '%s\n' "$refs" | node scripts/fuzz-guard.mjs --pre-push

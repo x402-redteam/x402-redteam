@@ -1,3 +1,4 @@
 #!/bin/sh
-# Held-out leak guard on staged content (ADR-027). No-op without a local denylist.
-exec node scripts/heldout-guard.mjs
+# Held-out leak guard (ADR-027; no-op without a local denylist), then the fuzz-privacy guard
+# (ADR-028 #7; always on) on staged content.
+node scripts/heldout-guard.mjs && node scripts/fuzz-guard.mjs

@@ -3,6 +3,8 @@ export * from "./canary.js";
 export * from "./canonical.js";
 export * from "./capture-api.js";
 export * from "./chains.js";
+export * from "./fuzz-private.js";
+export * from "./generator-lint.js";
 export * from "./hosts.js";
 export * from "./ledger.js";
 export * from "./legs.js";
