@@ -195,6 +195,9 @@ importers:
       '@x402-redteam/capture':
         specifier: workspace:*
         version: link:../capture
+      '@x402-redteam/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@x402-redteam/schema':
         specifier: workspace:*
         version: link:../schema
@@ -254,6 +257,37 @@ importers:
       '@types/node':
         specifier: 24.19.1
         version: 24.19.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.2
+        version: 5.0.2(@types/node@24.19.1)(@vitest/coverage-v8@5.0.2)(vite@8.3.1(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/fuzz:
+    dependencies:
+      '@x402-redteam/adversary':
+        specifier: workspace:*
+        version: link:../adversary
+      '@x402-redteam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@x402-redteam/scorer':
+        specifier: workspace:*
+        version: link:../scorer
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.1
+        version: 24.19.1
+      '@x402-redteam/capture':
+        specifier: workspace:*
+        version: link:../capture
       typescript:
         specifier: 6.0.3
         version: 6.0.3

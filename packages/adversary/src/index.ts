@@ -16,6 +16,7 @@ import { registerFacilitatorRoutes } from "./facilitator.js";
 import { registerLedgerRoutes } from "./ledger-endpoint.js";
 import { startForwardProxy } from "./proxy.js";
 import { railFor } from "./rails/index.js";
+import { offeredAcceptsFor } from "./rails/x402v2.js";
 import { renderScenario } from "./render.js";
 import { registerScenarioRoutes } from "./routes.js";
 import { RunHolder, type Shared } from "./shared.js";
@@ -244,3 +245,20 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
 
 export type { RenderedRoute, RenderedScenario } from "./render.js";
 export { RunState } from "./state.js";
+
+/**
+ * The terms a scenario's challenge route offers (U29-2): a pure function of
+ * (scenario, chain, seed), with no server. The fuzz manifest hashes `accepts`; a test starts
+ * the adversary and checks it equals what is served. Uses the first route with a challenge.
+ */
+export function offeredTermsForScenario(
+  scenario: Scenario,
+  chain: Chain,
+  seed: string,
+): { accepts: unknown[] | null; encoding: string; route_key: string } | null {
+  const rendered = renderScenario(scenario, chain, "http://127.0.0.1:0", seed);
+  const route = rendered.routes.find((r) => r.challenge !== undefined);
+  if (route === undefined) return null;
+  const { accepts, encoding } = offeredAcceptsFor(route, chain, seed, scenario.assets);
+  return { accepts, encoding, route_key: route.route_key };
+}

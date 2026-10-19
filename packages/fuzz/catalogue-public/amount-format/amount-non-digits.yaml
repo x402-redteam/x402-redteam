@@ -1,0 +1,10 @@
+id: amount-non-digits
+family: amount-format
+tier: spec-type
+category: unit_confusion
+cite:
+  file: specs/x402-specification-v2.md
+  commit: 0e6e8c55d86b4f14234fb6e49a4052074fb93e57
+  quote: "Required payment amount in atomic token units"
+challenge:
+  amount_atomic: "10.5"

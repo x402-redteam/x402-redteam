@@ -246,18 +246,18 @@ function encodeWireHeader(
 }
 
 /**
- * Wire-level override (U29-1, ADR-032): applies the merge patch to the decoded typed
- * header object, encodes it, and records the PATCHED object's readable entries as the
- * offered terms (N2), so attribution, the binding check and capture's `offeredTerms` all
- * see what the client saw. A header that carries no readable terms (`invalid_json`, `raw:`
- * or an unreadable `accepts`) is recorded as offered but unparseable: `accepts` is empty.
+ * The wire header for a typed challenge under a `wire` override, plus the object a client
+ * can read from it (`offered`; undefined when nothing parses). Pure: shared by `issueWire`
+ * and `offeredAcceptsFor`, so the manifest hash cannot drift from what is served.
  */
-function issueWire(
-  ctx: IssueCtx,
-  wire: NonNullable<NonNullable<RenderedRoute["challenge"]>["wire"]>,
-  requirementsList: PaymentRequirements[],
+function wireHeader(
   paymentRequired: PaymentRequired,
-): IssueResult {
+  wire: NonNullable<NonNullable<RenderedRoute["challenge"]>["wire"]>,
+): {
+  header: string;
+  patched: Record<string, unknown>;
+  offered: Record<string, unknown> | undefined;
+} {
   const encoding = wire.encoding ?? "standard";
   const kind = wireEncodingKind(encoding);
   const patched = applyMergePatch(
@@ -279,6 +279,48 @@ function issueWire(
   } else if (kind !== "invalid_json") {
     offered = patched;
   }
+  return { header, patched, offered };
+}
+
+/**
+ * The `accepts` list a client can read from a route's challenge: the typed list for a plain
+ * challenge, the offered object's `accepts` under a `wire` override, or null when the header
+ * carries none (`invalid_json`, an undecodable `raw:`, or no `accepts` array). A pure
+ * function of (route, chain, seed, scenarioAssets); the fuzz manifest hashes it (U29-2).
+ */
+export function offeredAcceptsFor(
+  route: RenderedRoute,
+  chain: Chain,
+  seed: string,
+  scenarioAssets?: AssetSpec[],
+): { accepts: unknown[] | null; encoding: WireEncodingKind } {
+  const list = buildRequirementsList(route, chain, seed, scenarioAssets);
+  const wire = route.challenge?.wire;
+  if (wire === undefined) return { accepts: list, encoding: "standard" };
+  const paymentRequired = buildPaymentRequired("http://offered.invalid/", route, list);
+  const { offered } = wireHeader(paymentRequired, wire);
+  return {
+    accepts: Array.isArray(offered?.accepts) ? (offered.accepts as unknown[]) : null,
+    encoding: wireEncodingKind(wire.encoding ?? "standard"),
+  };
+}
+
+/**
+ * Wire-level override (U29-1, ADR-032): applies the merge patch to the decoded typed
+ * header object, encodes it, and records the PATCHED object's readable entries as the
+ * offered terms (N2), so attribution, the binding check and capture's `offeredTerms` all
+ * see what the client saw. A header that carries no readable terms (`invalid_json`, `raw:`
+ * or an unreadable `accepts`) is recorded as offered but unparseable: `accepts` is empty.
+ */
+function issueWire(
+  ctx: IssueCtx,
+  wire: NonNullable<NonNullable<RenderedRoute["challenge"]>["wire"]>,
+  requirementsList: PaymentRequirements[],
+  paymentRequired: PaymentRequired,
+): IssueResult {
+  const encoding = wire.encoding ?? "standard";
+  const kind = wireEncodingKind(encoding);
+  const { header, patched, offered } = wireHeader(paymentRequired, wire);
 
   const entries: unknown[] = Array.isArray(offered?.accepts) ? (offered?.accepts as unknown[]) : [];
   const accepts = entries.filter(readableRequirement);

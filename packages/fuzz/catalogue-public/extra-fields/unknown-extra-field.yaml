@@ -1,0 +1,6 @@
+id: unknown-extra-field
+family: extra-fields
+tier: undefined
+category: challenge_injection
+accept_patch:
+  unexpectedField: "ignored"
