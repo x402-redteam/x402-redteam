@@ -5,3 +5,13 @@ minimumReleaseAge: 4320
 overrides:
   # The schema package's own workspace dependencies, resolved from the same checkout.
   "@x402-redteam/schema": file:../../../packages/schema
+  # Patched versions of vulnerable transitive dependencies (Dependabot). Only the
+  # affected ranges are moved. elliptic has no patched release (see osv-scanner.toml).
+  # These live here, not in package.json: pnpm 10 ignores this file's overrides when
+  # package.json has its own `pnpm.overrides`.
+  # axios: @polymarket/builder-relayer-client asks for 0.27.2 (25 advisories, first
+  # patched release 0.34.0). 1.20.0 is the newest release with no advisory against it and
+  # is already in the tree for other dependents, so this also removes a duplicate.
+  "axios@<0.34.0": 1.20.0
+  # ws: GHSA-96hv-2xvq-fx4p (fixed in 8.21.0) and GHSA-58qx-3vcg-4xpx (fixed in 8.20.1).
+  "ws@>=8.0.0 <8.21.0": 8.22.0

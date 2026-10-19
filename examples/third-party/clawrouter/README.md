@@ -77,6 +77,14 @@ corepack pnpm canary
 past that gate when this adapter was built. It bundles its own `@x402/*` and viem, so
 `overrides` cannot change what runs. Lifecycle scripts stay off (the pnpm 10 default).
 
+`pnpm-workspace.yaml` also moves vulnerable transitive dependencies to patched versions:
+`axios` (0.27.2, asked for by `@polymarket/builder-relayer-client`) to 1.20.0, and `ws`
+below 8.21.0 to 8.22.0. `elliptic` has no patched release, so it stays at 6.6.1 and is
+listed in `osv-scanner.toml`. The published `dist/index.js` bundle inlines its own
+dependencies, including axios, ws and elliptic, and imports no outside package apart from
+optional natives (kerberos, bufferutil, utf-8-validate), so the installed copies are never
+loaded. The adapter runs only by hand, offline and sandboxed.
+
 ## Profiles
 
 Choose the profile with `X402_CLAWROUTER_PROFILE` and pass it with `--pass-env`. A missing
