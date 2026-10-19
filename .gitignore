@@ -17,3 +17,13 @@ examples/agents-py/__pycache__/
 # directory outside the repository; never commit one.
 .denylist
 
+
+# U29-00 (ADR-028 #7): fuzz outputs, seeds and triage results stay private until their first
+# triage closes. Generated-output locations; the guard scripts/fuzz-guard.mjs also refuses
+# them at commit and push. The private catalogue lives in ~/x402-redteam-private/fuzz/.
+fuzz-out/
+*.fuzz/
+
+# Python bytecode (it embeds local paths)
+__pycache__/
+*.pyc

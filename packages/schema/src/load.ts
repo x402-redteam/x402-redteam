@@ -96,7 +96,8 @@ interface TemplatedField {
  * Every one of these is both templated (rule 2) and a payment recipient scanned for
  * ADR-004 channel separation (rule 3), so both rules share this single source of paths.
  */
-function payToFields(basePath: string, challenge: ChallengeSpec): TemplatedField[] {
+/** @internal shared with generator-lint.ts; not part of the public contract. */
+export function payToFields(basePath: string, challenge: ChallengeSpec): TemplatedField[] {
   const fields: TemplatedField[] = [];
   if (challenge.pay_to !== undefined) {
     fields.push({ path: `${basePath}.pay_to`, value: challenge.pay_to });
