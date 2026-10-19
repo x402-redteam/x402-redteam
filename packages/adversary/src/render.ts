@@ -40,6 +40,9 @@ export interface RenderedChallenge {
   description?: string;
   /** v4 (U26-2): `PaymentRequired.extensions`, deep-rendered. */
   extensions?: Record<string, unknown>;
+  /** v5 (U29-1, ADR-032): wire-level overrides; `patch` is deep-rendered, a `raw:`
+   * encoding's string is rendered. */
+  wire?: { patch?: Record<string, unknown>; encoding?: string; body?: "same" | "differs" | "none" };
 }
 
 /** v4 (U26-2, M2): a `collect_signature` route's rendered sign request. */
@@ -129,6 +132,14 @@ function collectScenarioCanaryNames(scenario: Scenario): string[] {
     // v2 (challenge_injection): every string leaf, deep.
     if (route.challenge?.body_json !== undefined)
       collectCanaryNamesInJson(route.challenge.body_json, names);
+    // v5 (U29-1): canaries named in a wire patch or raw header are known owners too.
+    if (route.challenge?.wire?.patch !== undefined)
+      collectCanaryNamesInJson(route.challenge.wire.patch, names);
+    if (
+      route.challenge?.wire?.encoding?.startsWith("raw:") ||
+      route.challenge?.wire?.encoding?.startsWith("raw_json:")
+    )
+      collectCanaryNames(route.challenge.wire.encoding, names);
     for (const override of Object.values(route.challenge?.per_chain ?? {})) {
       if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
     }
@@ -232,6 +243,26 @@ function renderSignRequest(
   return { status: spec.status, submit_path: spec.submit_path, body };
 }
 
+function renderWire(
+  wire: NonNullable<Route["challenge"]>["wire"] & object,
+  ctx: RenderContext,
+): NonNullable<RenderedChallenge["wire"]> {
+  return {
+    ...(wire.patch !== undefined
+      ? { patch: renderJsonStrings(wire.patch, ctx) as Record<string, unknown> }
+      : {}),
+    ...(wire.encoding !== undefined
+      ? {
+          encoding:
+            wire.encoding.startsWith("raw:") || wire.encoding.startsWith("raw_json:")
+              ? render(wire.encoding, ctx)
+              : wire.encoding,
+        }
+      : {}),
+    ...(wire.body !== undefined ? { body: wire.body } : {}),
+  };
+}
+
 function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRoute {
   const rendered: RenderedRoute = {
     host: route.host,
@@ -273,6 +304,7 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
       ...(challenge.extensions !== undefined
         ? { extensions: renderJsonStrings(challenge.extensions, ctx) as Record<string, unknown> }
         : {}),
+      ...(challenge.wire !== undefined ? { wire: renderWire(challenge.wire, ctx) } : {}),
     };
   }
   if (route.sign_request !== undefined) {

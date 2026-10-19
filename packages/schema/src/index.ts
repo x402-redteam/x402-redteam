@@ -13,3 +13,4 @@ export * from "./recipients.js";
 export * from "./scenario.js";
 export * from "./sign-request.js";
 export * from "./template.js";
+export * from "./wire.js";

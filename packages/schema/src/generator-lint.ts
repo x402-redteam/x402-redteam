@@ -1,5 +1,6 @@
-import { payToFields } from "./load.js";
+import { payToFields, wireDecodedFields } from "./load.js";
 import type { Scenario } from "./scenario.js";
+import { WIRE_RAW_JSON_PREFIX } from "./wire.js";
 
 /**
  * Generator lint (U29-00, functional-design §8 condition 3; rules only, no I/O). The fuzz
@@ -30,6 +31,20 @@ const PAY_TO_TEMPLATE_RE =
   /^\{\{(?:canary\.[a-zA-Z0-9_-]+|lower:[a-zA-Z0-9_-]+|poison:[a-zA-Z0-9_.-]+)\}\}$/;
 const HOST_VAR_RE = /\{\{\s*host:([a-zA-Z0-9_.-]+)\s*\}\}/g;
 const LITERAL_URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/([^/\s"'<>)\]\\?#:]+)/gi;
+
+const LITERAL_EVM_ADDRESS_RE = /0x[0-9a-fA-F]{40}/;
+
+/** Every `payTo` string reachable in a wire patch (any depth), with its path. */
+function* patchPayTos(value: unknown, path: string): Generator<{ path: string; value: string }> {
+  if (Array.isArray(value)) {
+    for (const [i, v] of value.entries()) yield* patchPayTos(v, `${path}[${i}]`);
+  } else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "payTo" && typeof v === "string") yield { path: `${path}.${k}`, value: v };
+      else yield* patchPayTos(v, `${path}.${k}`);
+    }
+  }
+}
 
 /** Every string leaf of `value` with its path. */
 function* strings(value: unknown, path: string): Generator<{ path: string; value: string }> {
@@ -64,6 +79,52 @@ export function lintGeneratedScenario(
         }
       }
     }
+    // U29-1: a wire patch's `payTo` strings follow the same rule as `pay_to`, and a
+    // `raw:` header never embeds a literal EVM address.
+    const wire = route.challenge?.wire;
+    if (wire?.patch !== undefined) {
+      for (const { path, value } of patchPayTos(wire.patch, `routes[${i}].challenge.wire.patch`)) {
+        if (!PAY_TO_TEMPLATE_RE.test(value.trim())) {
+          out.push({
+            rule: "pay-to",
+            path,
+            message:
+              "a wire patch payTo must be exactly a {{canary.NAME}}, {{lower:NAME}} or {{poison:NAME}} template",
+          });
+        }
+      }
+    }
+    // A raw_json: or base64 raw: header is parsed, and its payTo values follow the same rule.
+    const embedded: unknown[] = [];
+    if (wire?.encoding?.startsWith(WIRE_RAW_JSON_PREFIX)) {
+      try {
+        embedded.push(JSON.parse(wire.encoding.slice(WIRE_RAW_JSON_PREFIX.length)));
+      } catch {
+        // not JSON: load lint reports it
+      }
+    }
+    for (const { value } of wireDecodedFields(`routes[${i}].challenge`, route.challenge)) {
+      embedded.push(JSON.parse(value));
+    }
+    for (const obj of embedded) {
+      for (const { path, value } of patchPayTos(obj, `routes[${i}].challenge.wire.encoding`)) {
+        if (!PAY_TO_TEMPLATE_RE.test(value.trim())) {
+          out.push({
+            rule: "pay-to",
+            path,
+            message:
+              "a wire header payTo must be exactly a {{canary.NAME}}, {{lower:NAME}} or {{poison:NAME}} template",
+          });
+        }
+      }
+    }
+    if (wire?.encoding?.startsWith("raw:") && LITERAL_EVM_ADDRESS_RE.test(wire.encoding)) {
+      out.push({
+        rule: "pay-to",
+        path: `routes[${i}].challenge.wire.encoding`,
+        message: "a raw: header must not embed a literal address; use a canary template",
+      });
+    }
     if (!allowed.has(route.host.toLowerCase())) {
       badHost(`routes[${i}].host`, `host "${route.host}" is not one of the task's hosts`);
     }
@@ -74,8 +135,12 @@ export function lintGeneratedScenario(
     }
   }
 
+  const decoded = scenario.routes.flatMap((route, i) =>
+    wireDecodedFields(`routes[${i}].challenge`, route.challenge),
+  );
   const walked = [
     ...strings(scenario, ""),
+    ...decoded,
     ...Object.entries(extra).flatMap(([key, v]) => [...strings(v, key)]),
   ];
   for (const { path, value } of walked) {

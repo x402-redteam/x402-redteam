@@ -11,6 +11,12 @@ import {
   ScenarioSchema,
 } from "./scenario.js";
 import { collectVars, type RenderContext, render, renderJsonStrings } from "./template.js";
+import {
+  decodeBase64Json,
+  headerValueProblem,
+  WIRE_RAW_JSON_PREFIX,
+  WIRE_RAW_PREFIX,
+} from "./wire.js";
 
 const CHAINS: readonly Chain[] = ["evm", "svm"];
 
@@ -121,6 +127,49 @@ export function payToFields(basePath: string, challenge: ChallengeSpec): Templat
   return fields;
 }
 
+/** U29-1 (ADR-032): the `wire` strings that reach the agent in the challenge header. */
+/** @internal shared with generator-lint.ts; not part of the public contract. */
+export function wireFields(
+  basePath: string,
+  challenge: ChallengeSpec | undefined,
+): TemplatedField[] {
+  const wire = challenge?.wire;
+  if (wire === undefined) return [];
+  const fields: TemplatedField[] = [];
+  if (wire.patch !== undefined) {
+    fields.push({ path: `${basePath}.wire.patch`, value: JSON.stringify(wire.patch) });
+  }
+  if (wire.encoding?.startsWith(WIRE_RAW_PREFIX)) {
+    fields.push({
+      path: `${basePath}.wire.encoding`,
+      value: wire.encoding.slice(WIRE_RAW_PREFIX.length),
+    });
+  }
+  if (wire.encoding?.startsWith(WIRE_RAW_JSON_PREFIX)) {
+    fields.push({
+      path: `${basePath}.wire.encoding`,
+      value: wire.encoding.slice(WIRE_RAW_JSON_PREFIX.length),
+    });
+  }
+  return fields;
+}
+
+/**
+ * The text a `raw:` base64 header decodes to, when it decodes to JSON. The harness cannot
+ * render templates inside base64, so this text is scanned for lint rules 3 and 6 but not
+ * rendered.
+ */
+/** @internal shared with generator-lint.ts; not part of the public contract. */
+export function wireDecodedFields(
+  basePath: string,
+  challenge: ChallengeSpec | undefined,
+): TemplatedField[] {
+  const enc = challenge?.wire?.encoding;
+  if (enc === undefined || !enc.startsWith(WIRE_RAW_PREFIX)) return [];
+  const text = decodeBase64Json(enc.slice(WIRE_RAW_PREFIX.length));
+  return text === null ? [] : [{ path: `${basePath}.wire.encoding (decoded)`, value: text }];
+}
+
 /**
  * Every plain-string field documented as templated in application-design.md §3, each
  * rendered with DUMMY_CTX. `body_json` (v2 challenge_injection) is deep-templated, not a
@@ -142,6 +191,9 @@ function templatedFields(scenario: Scenario): TemplatedField[] {
     if (route.challenge !== undefined) {
       fields.push(...payToFields(`routes[${i}].challenge`, route.challenge));
     }
+    // v5 (U29-1): wire patch and raw header are templated; the patch as its JSON text,
+    // which is enough for rule 2 (render) and rule 6 (`{{host:}}` references).
+    fields.push(...wireFields(`routes[${i}].challenge`, route.challenge));
     if (route.challenge?.description !== undefined) {
       fields.push({
         path: `routes[${i}].challenge.description`,
@@ -217,6 +269,10 @@ function collectHostReferences(scenario: Scenario): { path: string; host: string
   }
   scenario.routes.forEach((route, i) => {
     refs.push({ path: `routes[${i}].host`, host: route.host });
+    for (const { path, value } of wireDecodedFields(`routes[${i}].challenge`, route.challenge)) {
+      for (const host of hostNamesIn(value))
+        refs.push({ path: `${path} ({{host:${host}}})`, host });
+    }
   });
   (scenario.task.allowed_hosts ?? []).forEach((host, i) => {
     refs.push({ path: `task.allowed_hosts[${i}]`, host });
@@ -322,6 +378,28 @@ function lintScenario(
     }
   });
 
+  // U29-1: a `raw:` header value has to be sendable as an HTTP header value, and a
+  // `raw_json:` value has to render to a JSON object.
+  scenario.routes.forEach((route, i) => {
+    const enc = route.challenge?.wire?.encoding;
+    const path = `routes[${i}].challenge.wire.encoding`;
+    if (enc?.startsWith(WIRE_RAW_PREFIX)) {
+      const problem = headerValueProblem(render(enc.slice(WIRE_RAW_PREFIX.length), DUMMY_CTX));
+      if (problem !== null) throw new CorpusError(file, path, `raw header value ${problem}`);
+    } else if (enc?.startsWith(WIRE_RAW_JSON_PREFIX)) {
+      const text = render(enc.slice(WIRE_RAW_JSON_PREFIX.length), DUMMY_CTX);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new CorpusError(file, path, "raw_json must render to JSON text");
+      }
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new CorpusError(file, path, "raw_json must render to a JSON object");
+      }
+    }
+  });
+
   lintCollectSignature(file, scenario);
   lintLowerCase(file, scenario);
 
@@ -332,7 +410,14 @@ function lintScenario(
   const payToCanaries = new Map<string, string>();
   scenario.routes.forEach((route, i) => {
     if (route.challenge === undefined) return;
-    for (const { path, value } of payToFields(`routes[${i}].challenge`, route.challenge)) {
+    // v5 (U29-1): the wire patch and raw header are challenge-side text, so a canary in
+    // one is a recipient canary for rule 3.
+    const challengeSide = [
+      ...payToFields(`routes[${i}].challenge`, route.challenge),
+      ...wireFields(`routes[${i}].challenge`, route.challenge),
+      ...wireDecodedFields(`routes[${i}].challenge`, route.challenge),
+    ];
+    for (const { path, value } of challengeSide) {
       for (const name of extractCanaryNames(value)) {
         if (!payToCanaries.has(name)) payToCanaries.set(name, path);
       }

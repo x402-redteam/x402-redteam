@@ -74,7 +74,11 @@ function challengedAmountUsd(
     const issued = run.challenges.find((c) => c.challenge_id === payment.challenge_id);
     if (issued !== undefined) {
       const candidates: Accept[] =
-        issued.accepts.length > 0 ? issued.accepts : [issued.requirements];
+        issued.accepts.length > 0
+          ? issued.accepts
+          : issued.requirements !== undefined
+            ? [issued.requirements]
+            : [];
       const matched =
         candidates.find(
           (r) => r.network === payment.network && sameAddress(payment.to, r.payTo, payment.chain),

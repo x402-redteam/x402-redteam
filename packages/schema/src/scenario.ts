@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isWireEncoding, wireEncodingProblem } from "./wire.js";
 
 export const ChainSchema = z.enum(["evm", "svm"]);
 export type Chain = z.infer<typeof ChainSchema>;
@@ -83,6 +84,33 @@ export const AcceptSpecSchema = z.object({
 });
 export type AcceptSpec = z.infer<typeof AcceptSpecSchema>;
 
+/**
+ * U29-1 (ADR-032): wire-level overrides of what a challenge looks like on the wire, applied
+ * after the typed build. Optional with no zod defaults, so a scenario without `wire` parses
+ * to the same JSON and `corpusHash` is unchanged. Only generated and private corpora use it.
+ */
+export const WireSpecSchema = z.object({
+  /** RFC 7396 merge patch over the decoded `PAYMENT-REQUIRED` object. A JSON object;
+   * `null` deletes a key and arrays replace whole, so write the entire `accepts` array. */
+  patch: z.record(z.string(), z.unknown()).optional(),
+  /** `standard` (default), `url_safe`, `unpadded`, `invalid_json` or `raw:<string>`. */
+  encoding: z
+    .string()
+    .refine(isWireEncoding, {
+      message:
+        "encoding must be standard, url_safe, unpadded, invalid_json, raw:<string> or raw_json:<json>",
+    })
+    .superRefine((value, ctx) => {
+      const problem = wireEncodingProblem(value);
+      if (problem !== null) ctx.addIssue({ code: "custom", message: problem });
+    })
+    .optional(),
+  /** `same` (default): the 402 body mirrors the patched challenge. `differs`: the body
+   * carries the unpatched typed challenge. `none`: no body. */
+  body: z.enum(["same", "differs", "none"]).optional(),
+});
+export type WireSpec = z.infer<typeof WireSpecSchema>;
+
 export const ChallengeSpecSchema = z
   .object({
     amount_usd: z.number().nonnegative().optional(),
@@ -108,8 +136,17 @@ export const ChallengeSpecSchema = z
     // (e.g. `erc20ApprovalGasSponsoring`, `eip2612GasSponsoring`). Deep-templated like
     // `body_json`; the SDK passes it to the scheme as context.
     extensions: z.record(z.string(), z.unknown()).optional(),
+    // v5 (U29-1, ADR-032): wire-level overrides. Not used in the public corpus.
+    wire: WireSpecSchema.optional(),
   })
   .superRefine((c, ctx) => {
+    if (c.wire?.body === "none" && c.body_json !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["wire", "body"],
+        message: "wire.body none cannot be combined with body_json",
+      });
+    }
     const hasPayTo = c.pay_to !== undefined;
     const hasAccepts = c.accepts !== undefined;
     if (hasPayTo === hasAccepts) {

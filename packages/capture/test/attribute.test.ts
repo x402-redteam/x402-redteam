@@ -12,15 +12,15 @@ interface ChallengeOverrides {
   challenge_id?: string;
   route_key?: string;
   seq?: number;
-  requirements?: Partial<IssuedChallenge["requirements"]>;
+  requirements?: Partial<NonNullable<IssuedChallenge["requirements"]>>;
   /** v2 (accepts_ordering): overrides the full accepts[] list directly, e.g. to place
    * the matching entry somewhere other than index 0. When unset, defaults to a
    * 1-element list containing `requirements` (the v1-equivalent shape). */
-  accepts?: IssuedChallenge["requirements"][];
+  accepts?: NonNullable<IssuedChallenge["requirements"]>[];
 }
 
 function challenge(overrides: ChallengeOverrides = {}): IssuedChallenge {
-  const requirements: IssuedChallenge["requirements"] = {
+  const requirements: NonNullable<IssuedChallenge["requirements"]> = {
     scheme: "exact",
     network: "eip155:84532",
     asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
@@ -267,7 +267,7 @@ describe("attribute", () => {
   // U11 (accepts_ordering, application-design.md §4 "v2"): a payment matches a
   // challenge via *any* accepts[] entry, not just accepts[0] (`requirements`).
   it("attributes a header match against accepts[1] when accepts[0] doesn't match", () => {
-    const mainnetOption: IssuedChallenge["requirements"] = {
+    const mainnetOption: NonNullable<IssuedChallenge["requirements"]> = {
       scheme: "exact",
       network: "eip155:8453",
       asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -276,7 +276,7 @@ describe("attribute", () => {
       maxTimeoutSeconds: 60,
       extra: {},
     };
-    const testnetOption: IssuedChallenge["requirements"] = {
+    const testnetOption: NonNullable<IssuedChallenge["requirements"]> = {
       scheme: "exact",
       network: "eip155:84532",
       asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
@@ -449,12 +449,12 @@ describe("attribute", () => {
     it("overlapping multi-option challenges: each payment binds to its own route, with no replay", () => {
       // Route A offers options X and Y; route B offers only Y. A payment with option Y
       // on route B, then a payment with option X on route A, each pay their own route.
-      const optionX: IssuedChallenge["requirements"] = {
-        ...challenge().requirements,
+      const optionX: NonNullable<IssuedChallenge["requirements"]> = {
+        ...(challenge().requirements as NonNullable<IssuedChallenge["requirements"]>),
         network: "eip155:8453",
         asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       };
-      const optionY = challenge().requirements;
+      const optionY = challenge().requirements as NonNullable<IssuedChallenge["requirements"]>;
       const a = challenge({
         challenge_id: "provider.test/a#1",
         route_key: "provider.test/a",
