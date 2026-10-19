@@ -1,8 +1,34 @@
+import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { type AssetSpec, agentWallet, CHAIN_DEFAULTS, type Chain } from "@x402-redteam/schema";
 import { buildKnownTokenAccounts } from "./record.js";
 import type { RenderedScenario } from "./render.js";
 
 export type KnownTokenAccounts = Record<string, { owner: string; mint: string }>;
+
+/** Asset strings a wire override offers: in the patch's `accepts`, or in a decodable
+ * `raw:` / `raw_json:` header (U29-1). */
+function wireAssets(wire: NonNullable<RenderedScenario["routes"][number]["challenge"]>["wire"]) {
+  const out: string[] = [];
+  const fromObject = (obj: unknown): void => {
+    const accepts = (obj as { accepts?: unknown } | null)?.accepts;
+    if (!Array.isArray(accepts)) return;
+    for (const a of accepts) {
+      const asset = (a as { asset?: unknown } | null)?.asset;
+      if (typeof asset === "string" && asset !== "") out.push(asset);
+    }
+  };
+  fromObject(wire?.patch);
+  const enc = wire?.encoding;
+  try {
+    if (enc?.startsWith("raw_json:")) fromObject(JSON.parse(enc.slice("raw_json:".length)));
+    else if (enc?.startsWith("raw:")) {
+      fromObject(decodePaymentRequiredHeader(enc.slice("raw:".length)));
+    }
+  } catch {
+    // not decodable: nothing to add
+  }
+  return out;
+}
 
 /** Chain USDC plus every asset actually named by this scenario's (rendered) challenges
  * and its own `assets:` overrides (asset_swap/rail_switch) - every svm mint
@@ -19,6 +45,7 @@ export function knownSvmMints(
     for (const accept of route.challenge?.accepts ?? []) {
       if (accept.asset) mints.add(accept.asset);
     }
+    for (const asset of wireAssets(route.challenge?.wire)) mints.add(asset);
   }
   for (const asset of scenarioAssets ?? []) {
     if (asset.chain === "svm") mints.add(asset.address);

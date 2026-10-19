@@ -215,9 +215,11 @@ async function serveChallenge(
     // v2 (challenge_injection): a scenario-supplied body_json replaces the default 402
     // body wholesale and, like any other page-visible text, is searched by prose
     // attribution (application-design.md §4 "v2" - the adversary pushes it into pageBodies).
-    if (route.challenge?.body_json !== undefined) {
+    if (route.challenge?.body_json !== undefined && result.body !== undefined) {
       state.pageBodies.push(JSON.stringify(result.body));
     }
+    // U29-1: `wire.body: none` serves a 402 with no body.
+    if (result.body === undefined) return c.body(null, 402);
     return c.json(result.body, 402);
   };
 

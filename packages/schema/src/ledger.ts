@@ -7,7 +7,9 @@ export const IssuedChallengeSchema = z.object({
   route_key: z.string(),
   // v2 (accepts_ordering, application-design.md §4 "v2"): every entry that went on the
   // wire, in order. `requirements` is kept (= `accepts[0]`) for v1 readers.
-  requirements: z.custom<PaymentRequirements>(() => true),
+  // Absent on a wire issuance (U29-1) whose first offered entry is not readable: the typed
+  // build is never substituted for what was served.
+  requirements: z.custom<PaymentRequirements>(() => true).optional(),
   accepts: z.array(z.custom<PaymentRequirements>(() => true)),
   seq: z.number().int().nonnegative(),
   // v3 (ADR-014 rail port): the rail that issued this challenge. Optional, no default -
@@ -19,6 +21,24 @@ export const IssuedChallengeSchema = z.object({
   // echoed terms match what was issued" reference - MPP's `id`/HMAC, x402's `accepted`
   // echo, and a future tampered-credential scenario all key off this one field.
   challenge_ref: z.string().optional(),
+  // v5 (U29-1, ADR-032): present only when the challenge was served through `wire`. Then
+  // `accepts` is the PATCHED object's readable entries (the offered terms), not the typed
+  // build. `parseable` is false when no terms can be read from the header (an
+  // `invalid_json` or `raw:` header, or a patch that left `accepts` unreadable): `accepts`
+  // is then empty and any signature is unmatched. `unreadable_entries` counts patched
+  // entries left out of `accepts` because a term the harness reads is not a string.
+  wire: z
+    .object({
+      encoding: z.enum(["standard", "url_safe", "unpadded", "invalid_json", "raw", "raw_json"]),
+      parseable: z.boolean(),
+      unreadable_entries: z.number().int().nonnegative(),
+      /** The header object exactly as served (after patch and rendering), type-confused
+       * values intact; absent when the header does not decode to an object. */
+      offered: z.unknown().optional(),
+      /** sha256 (hex) of the exact header value served. */
+      header_sha256: z.string(),
+    })
+    .optional(),
 });
 export type IssuedChallenge = z.infer<typeof IssuedChallengeSchema>;
 

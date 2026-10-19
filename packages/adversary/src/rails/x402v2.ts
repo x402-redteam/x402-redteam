@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import {
+  decodePaymentRequiredHeader,
   decodePaymentSignatureHeader,
   encodePaymentRequiredHeader,
   encodePaymentResponseHeader,
@@ -11,12 +13,17 @@ import type {
 } from "@x402/core/types";
 import {
   type AssetSpec,
+  applyMergePatch,
   assetInfo,
   CHAIN_DEFAULTS,
   type Chain,
   canaries,
   type IssuedChallenge,
   usdToAtomic,
+  WIRE_RAW_JSON_PREFIX,
+  WIRE_RAW_PREFIX,
+  type WireEncodingKind,
+  wireEncodingKind,
 } from "@x402-redteam/schema";
 import type { RenderedAccept, RenderedRoute } from "../render.js";
 import type {
@@ -196,6 +203,122 @@ function computeBinding(payload: unknown, ctx: DecodeCtx): BindingResult {
   return { challenge_ref: matched.challenge_ref ?? matched.challenge_id, matches: true };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** An entry the harness can read as offered terms: every term that attribution, the binding
+ * check and capture compare is a string (`extra`, when present, an object). */
+function readableRequirement(value: unknown): value is PaymentRequirements {
+  if (!isRecord(value)) return false;
+  return (
+    ["scheme", "network", "asset", "amount", "payTo"].every((k) => typeof value[k] === "string") &&
+    (value.extra === undefined || isRecord(value.extra))
+  );
+}
+
+function toBase64(text: string): string {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
+/** The `PAYMENT-REQUIRED` header value for `patched` under `kind` (U29-1, ADR-032). */
+function encodeWireHeader(
+  patched: Record<string, unknown>,
+  kind: WireEncodingKind,
+  encoding: string,
+): string {
+  const json = JSON.stringify(patched);
+  switch (kind) {
+    case "url_safe":
+      return toBase64(json).replace(/\+/g, "-").replace(/\//g, "_");
+    case "unpadded":
+      return toBase64(json).replace(/=+$/, "");
+    case "invalid_json":
+      // Valid base64 whose text is not JSON: the object, cut one character short.
+      return toBase64(json.slice(0, -1));
+    case "raw":
+      return encoding.slice(WIRE_RAW_PREFIX.length);
+    case "raw_json":
+      return toBase64(encoding.slice(WIRE_RAW_JSON_PREFIX.length));
+    default:
+      return encodePaymentRequiredHeader(patched as unknown as PaymentRequired);
+  }
+}
+
+/**
+ * Wire-level override (U29-1, ADR-032): applies the merge patch to the decoded typed
+ * header object, encodes it, and records the PATCHED object's readable entries as the
+ * offered terms (N2), so attribution, the binding check and capture's `offeredTerms` all
+ * see what the client saw. A header that carries no readable terms (`invalid_json`, `raw:`
+ * or an unreadable `accepts`) is recorded as offered but unparseable: `accepts` is empty.
+ */
+function issueWire(
+  ctx: IssueCtx,
+  wire: NonNullable<NonNullable<RenderedRoute["challenge"]>["wire"]>,
+  requirementsList: PaymentRequirements[],
+  paymentRequired: PaymentRequired,
+): IssueResult {
+  const encoding = wire.encoding ?? "standard";
+  const kind = wireEncodingKind(encoding);
+  const patched = applyMergePatch(
+    JSON.parse(JSON.stringify(paymentRequired)),
+    wire.patch ?? {},
+  ) as Record<string, unknown>;
+  const header = encodeWireHeader(patched, kind, encoding);
+
+  // What the client can read from the header: the patched object for the encoded forms, the
+  // decoded object for a decodable `raw:` / `raw_json:` header, nothing for invalid_json.
+  let offered: Record<string, unknown> | undefined;
+  if (kind === "raw" || kind === "raw_json") {
+    try {
+      const decoded: unknown = decodePaymentRequiredHeader(header);
+      if (isRecord(decoded)) offered = decoded;
+    } catch {
+      offered = undefined;
+    }
+  } else if (kind !== "invalid_json") {
+    offered = patched;
+  }
+
+  const entries: unknown[] = Array.isArray(offered?.accepts) ? (offered?.accepts as unknown[]) : [];
+  const accepts = entries.filter(readableRequirement);
+  const issued: IssuedChallenge = {
+    challenge_id: ctx.challenge_id,
+    route_key: ctx.route.route_key,
+    // Never the typed build: the first readable offered entry, or none.
+    ...(accepts[0] !== undefined ? { requirements: accepts[0] } : {}),
+    accepts,
+    seq: ctx.seq,
+    rail: "x402v2",
+    challenge_ref: ctx.challenge_id,
+    wire: {
+      encoding: kind,
+      parseable: Array.isArray(offered?.accepts),
+      unreadable_entries: entries.length - accepts.length,
+      ...(offered !== undefined ? { offered } : {}),
+      header_sha256: createHash("sha256").update(header).digest("hex"),
+    },
+  };
+
+  const mode = wire.body ?? "same";
+  const source = offered ?? patched;
+  let body: unknown;
+  if (mode === "none") {
+    body = undefined;
+  } else if (ctx.route.challenge?.body_json !== undefined) {
+    body = ctx.route.challenge.body_json;
+  } else if (mode === "differs") {
+    body = { x402Version: 2, error: "payment_required", accepts: requirementsList };
+  } else {
+    body = {
+      ...(source.x402Version !== undefined ? { x402Version: source.x402Version } : {}),
+      error: "payment_required",
+      ...(source.accepts !== undefined ? { accepts: source.accepts } : {}),
+    };
+  }
+  return { status: 402, headers: { "PAYMENT-REQUIRED": header }, body, issued: [issued] };
+}
+
 function issue(ctx: IssueCtx): IssueResult {
   const requirementsList = buildRequirementsList(
     ctx.route,
@@ -204,6 +327,8 @@ function issue(ctx: IssueCtx): IssueResult {
     ctx.scenarioAssets,
   );
   const paymentRequired = buildPaymentRequired(ctx.url, ctx.route, requirementsList);
+  const wire = ctx.route.challenge?.wire;
+  if (wire !== undefined) return issueWire(ctx, wire, requirementsList, paymentRequired);
   const issued: IssuedChallenge = {
     challenge_id: ctx.challenge_id,
     route_key: ctx.route.route_key,

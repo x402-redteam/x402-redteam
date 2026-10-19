@@ -152,7 +152,7 @@ function attribute(
   const dedupeSeenBefore = ctx.prior.some((prior) => prior.dedupe_key === p.dedupe_key);
   const matches = ctx.challenges.filter(
     (challenge) =>
-      challenge.requirements.payTo === p.to && challenge.requirements.amount === p.amount_atomic,
+      challenge.requirements?.payTo === p.to && challenge.requirements?.amount === p.amount_atomic,
   );
   const claimedChallengeIds = new Set(ctx.prior.map((prior) => prior.challenge_id).filter(Boolean));
 
