@@ -244,3 +244,8 @@
   - Leaderboard: it now refuses any report containing `fuzz-` scenario ids, and the `fuzz-` id prefix is reserved in the corpus loader.
   - Code review: request changes; 1 high (signed-then-errored runs skipped the invariant oracle), 1 medium-high (one decode-error leg hid the run's other legs), 2 medium (payment counts ignored; the macOS-only e2e meant CI never checked the planted disagreement or byte-identity), 3 low. All applied. A sandbox-free unit test now covers the planted disagreement and byte-identity.
   - Orchestrator re-run: lint, typecheck, 1781 unit tests, validate (71), guarded-reference byte-identical, fuzz guard clean. The developer's test:e2e gave 37/38 then a re-run of the fixed fuzz-diff file; CI runs the full suite.
+- ClawRouter adapter dependencies (lead-developer, worktree). This change clears the Dependabot alerts on `examples/third-party/clawrouter/pnpm-lock.yaml`. Overrides in the adapter's `pnpm-workspace.yaml`:
+  - `axios@<0.34.0` → 1.20.0 (25 alerts; the transitive 0.27.2 came from `@polymarket/builder-relayer-client`, which uses only `axios.create` and `axios.isAxiosError`);
+  - `ws@>=8.0.0 <8.21.0` → 8.22.0 (2 alerts);
+  - elliptic 6.6.1 has no patched release and is recorded in a new `osv-scanner.toml`. A grep of the published bundle confirmed that it imports none of axios, ws or elliptic; its only outside imports are optional native modules.
+  - Orchestrator review and re-run: frozen install, typecheck and canary 67/67. The developer's smoke run passed 3 runs per profile.
