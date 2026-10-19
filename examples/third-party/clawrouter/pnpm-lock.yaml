@@ -6,6 +6,8 @@ settings:
 
 overrides:
   '@x402-redteam/schema': file:../../../packages/schema
+  axios@<0.34.0: 1.20.0
+  ws@>=8.0.0 <8.21.0: 8.22.0
 
 importers:
 
@@ -1097,9 +1099,6 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
-  axios@0.27.2:
-    resolution: {integrity: sha512-t+yRIyySRTp/wua5xEr+z1q60QmLq8ABsS5O9Me1AsE5dfKqgnCFzwiCZZ/cGNd1lq4/7akDWMxdhVlucjmnOQ==}
-
   axios@1.20.0:
     resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
 
@@ -1265,7 +1264,7 @@ packages:
   isows@1.0.7:
     resolution: {integrity: sha512-I1fSfDCZL5P0v33sVqeTDSpcstAg/N+wF5HS033mogOVIp4B+oHC7oOCsA3axAbBSGTJ8QubbNmnIRN/h8U7hg==}
     peerDependencies:
-      ws: '*'
+      ws: 8.22.0
 
   js-sha3@0.8.0:
     resolution: {integrity: sha512-gF1cRrHhIzNfToc802P800N8PpXS+evLLXfsVpowqmAFR9uwbi89WvXg2QspOmXL8QL86J4T1EpFu+yUkwJY3Q==}
@@ -1395,18 +1394,6 @@ packages:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
       typescript:
-        optional: true
-
-  ws@8.18.0:
-    resolution: {integrity: sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
         optional: true
 
   ws@8.21.0:
@@ -1744,7 +1731,7 @@ snapshots:
       '@ethersproject/transactions': 5.8.0
       '@ethersproject/web': 5.8.0
       bech32: 1.1.4
-      ws: 8.18.0
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -1872,7 +1859,7 @@ snapshots:
       '@ethersproject/wallet': 5.8.0
       '@polymarket/builder-abstract-signer': 0.0.1(zod@4.6.5)
       '@polymarket/builder-signing-sdk': 0.0.8
-      axios: 0.27.2
+      axios: 1.20.0
       browser-or-node: 3.0.0
       ethers: 5.8.0
       tsx: 4.23.15
@@ -2811,13 +2798,6 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  axios@0.27.2:
-    dependencies:
-      follow-redirects: 1.16.1
-      form-data: 4.0.6
-    transitivePeerDependencies:
-      - debug
-
   axios@1.20.0:
     dependencies:
       follow-redirects: 1.16.1
@@ -3247,8 +3227,6 @@ snapshots:
       - bufferutil
       - utf-8-validate
       - zod
-
-  ws@8.18.0: {}
 
   ws@8.21.0: {}
 

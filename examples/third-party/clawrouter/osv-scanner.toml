@@ -1,0 +1,9 @@
+# Advisories accepted for the ClawRouter adapter install (Dependabot).
+# elliptic has no patched release. The published @blockrun/clawrouter dist/index.js
+# bundle inlines its own dependencies, and the code review found it imports no outside
+# packages apart from an optional kerberos, so the installed transitive elliptic is never
+# loaded. The adapter runs only by hand, offline and sandboxed, and is never shipped.
+
+[[IgnoredVulns]]
+id = "GHSA-848j-6mx2-7j84"
+reason = "elliptic <= 6.6.1 (transitive): no patched release exists; the clawrouter dist/index.js bundle inlines its own dependencies and never loads the installed package; hand-run, offline, sandboxed, never shipped."
