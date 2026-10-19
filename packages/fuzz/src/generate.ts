@@ -58,7 +58,8 @@ export interface ManifestCase {
   technique: string;
   cite: { file: string; commit: string; quote: string } | null;
   expected_kind: string | null;
-  /** sha256 of the canonical JSON of the offered `accepts` array (`null` when the header
+  /** sha256 of the canonical JSON of the offered `accepts` value as served, whatever its
+   * JSON type (an array, object or string stays itself; `null` when the header
    * carries none). Identical in both shapes. */
   offered_terms_sha256: string;
   /** The `wire.encoding` kind that served the header (`standard` without `wire`). */
@@ -71,7 +72,7 @@ export interface ManifestCase {
 
 /**
  * `cases.json`. Contract for U29-3 (`diff`): re-hash `wire.offered.accepts` (unfiltered, the
- * whole array as issued) from the run record, or the ledger's `accepts` when there is no
+ * value as issued, whatever its JSON type) from the run record, or the ledger's `accepts` when there is no
  * `wire`, and compare with `offered_terms_sha256`; and require the run's `seed` to equal
  * `render_seed` (canary addresses derive from it), refusing otherwise.
  */
@@ -104,6 +105,7 @@ interface Built {
   scenario: Scenario;
   input: Record<string, unknown>;
   accepts: unknown[] | null;
+  rawAccepts: unknown;
   encoding: string;
   maxAuthSeconds: number;
 }
@@ -139,6 +141,7 @@ function buildShape(cases: FuzzCase[], shape: Shape, renderSeed: string): Built[
       scenario,
       input,
       accepts: offered.accepts,
+      rawAccepts: offered.rawAccepts,
       encoding: offered.encoding,
       maxAuthSeconds,
     };
@@ -195,8 +198,8 @@ export function generate(opts: GenerateOptions): GenerateResult {
   const manifestCases: ManifestCase[] = cases.map((c, i) => {
     const page = byShape.page[i] as Built;
     const chat = byShape.chat[i] as Built;
-    const pageHash = sha256Canonical(page.accepts);
-    if (pageHash !== sha256Canonical(chat.accepts)) {
+    const pageHash = sha256Canonical(page.rawAccepts);
+    if (pageHash !== sha256Canonical(chat.rawAccepts)) {
       throw new Error(`${c.id}: offered terms differ between the page and chat shapes`);
     }
     const first = Array.isArray(page.accepts) ? page.accepts[0] : undefined;
