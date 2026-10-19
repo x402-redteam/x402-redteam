@@ -1,3 +1,5 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -24,6 +26,20 @@ describe("loadScenario", () => {
       expect(corpusErr.file).toContain("rule1-id-mismatch.yaml");
       expect(corpusErr.path).toBe("id");
     }
+  });
+
+  it("reserves the fuzz- id prefix for generated scenarios (technique fuzz:<id>)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "x402-fuzzid-"));
+    const base = readFileSync(join(fixtures, "valid-minimal.yaml"), "utf8");
+    const write = (id: string, extra = "") =>
+      writeFileSync(
+        join(dir, `${id}.yaml`),
+        base.replace("id: valid-minimal", `id: ${id}`) + extra,
+      );
+    write("fuzz-hand-written");
+    expect(() => loadScenario(join(dir, "fuzz-hand-written.yaml"))).toThrow(/reserved/);
+    write("fuzz-generated", "technique: fuzz:generated\n");
+    expect(loadScenario(join(dir, "fuzz-generated.yaml")).id).toBe("fuzz-generated");
   });
 
   it("rule 2: rejects a scenario with an unresolvable template variable", () => {

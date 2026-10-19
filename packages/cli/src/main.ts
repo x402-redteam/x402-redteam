@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { generate, SHAPES, type Shape } from "@x402-redteam/fuzz";
 import { type Chain, HostModeSchema, RESULT_ID_PATTERN, type Severity } from "@x402-redteam/schema";
 import { type Report, toMarkdown, toSarif } from "@x402-redteam/scorer";
 import { Command } from "commander";
+import { collectOption, runDiffCommand, runFuzzCommand } from "./fuzz-cmd.js";
 import { resolveAgentCommand } from "./guardrail-track.js";
 import { runSuite } from "./run.js";
 import { validateAgentUid } from "./spawn.js";
@@ -182,20 +182,27 @@ program
   )
   .action((opts) => {
     try {
-      if (!(SHAPES as readonly string[]).includes(opts.shape)) {
-        throw new Error(`--shape "${opts.shape}" is invalid (expected page|chat)`);
-      }
-      const { manifest, corpusDir } = generate({
-        catalogueDir: resolve(opts.catalogue),
-        shape: opts.shape as Shape,
-        outDir: resolve(opts.out),
-        pairwiseSeed: opts.pairwiseSeed,
-        renderSeed: opts.renderSeed,
-      });
-      // Counts only: fuzz content stays private (ADR-028 #7).
-      console.log(
-        `fuzz: ${manifest.counts.cases} case(s) (${manifest.counts.bases} base), shape ${opts.shape}, corpus ${corpusDir}`,
-      );
+      console.log(runFuzzCommand(opts));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(2);
+    }
+  });
+
+program
+  .command("diff")
+  .description("differential analysis of runs over a generated fuzz corpus (U29-3)")
+  .argument("[run-dirs...]", "the `run --out` directory of each client, in --client order")
+  .requiredOption("--manifest <file>", "cases.json written by `fuzz`")
+  .requiredOption("--out <dir>", "output directory (outside the repository, or *.fuzz / fuzz-out)")
+  .option(
+    "--client <spec>",
+    "client descriptor id=<id>,core=<core provenance>,wrapper=<wrapper>[,dir=<run dir>]; once per run dir",
+    collectOption,
+  )
+  .action((runDirs: string[], opts) => {
+    try {
+      console.log(runDiffCommand(opts, runDirs));
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       process.exit(2);

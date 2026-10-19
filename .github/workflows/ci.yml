@@ -207,6 +207,9 @@ jobs:
         shard:
           - corpus-v2
           - driver-calibration
+          # macOS-only: the test needs sandbox-exec and skips itself on Linux. The diff logic
+          # is covered on ubuntu by packages/fuzz/test/diff.test.ts (stubbed runs).
+          - fuzz-diff
           - guardrail-integrity
           - hosts
           - rpc-capture

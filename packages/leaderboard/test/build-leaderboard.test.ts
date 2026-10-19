@@ -381,6 +381,40 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
     expect(staleRows.map((r) => r.id)).toEqual(["stale-guardrail"]);
   });
 
+  it("U29-3: rejects, not stale-marks, a report over a fuzz corpus (keyed on scenario ids)", () => {
+    const fuzzScenarios = OLD_SCENARIOS.map((sc) => ({ ...sc, id: `fuzz-${sc.id}` }));
+    const report = buildReport({
+      guardrailId: "fuzz-report",
+      scenarios: fuzzScenarios,
+      runs: fuzzScenarios.map((sc) => run({ run_id: `${sc.id}:evm:1`, scenario_id: sc.id })),
+    });
+    const entry: LeaderboardEntry = { id: "fuzz-report", data: report };
+    const {
+      rejected,
+      stale: staleRows,
+      guardrails,
+    } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(guardrails).toEqual([]);
+    expect(staleRows).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["fuzz-report"]);
+    expect(rejected[0]?.reason).toMatch(/fuzz/);
+  });
+
+  it("U29-3: also refuses a fuzz report that was renamed to look current (hash matches)", () => {
+    const entry = acceptedEntry("sneaky");
+    const data = entry.data as Report;
+    const tampered = {
+      ...data,
+      runs: data.runs.map((r, i) => (i === 0 ? { ...r, scenario_id: "fuzz-x" } : r)),
+    };
+    const { rejected } = buildLeaderboard(
+      [{ id: "sneaky", data: tampered }],
+      CURRENT_SCENARIOS,
+      NO_META,
+    );
+    expect(rejectedIds(rejected)).toEqual(["sneaky"]);
+  });
+
   it("check 3: rejects a non-canonical chains list (an evm-only report)", () => {
     const entry = acceptedEntry("evm-only", {
       config: { ...CANONICAL_CONFIG, chains: ["evm"] },

@@ -651,6 +651,32 @@ function checkRescore(report: Report, scenarios: Scenario[]): void {
 }
 
 /** U27: `guardrail_id` and `agent_id` must match `RESULT_ID_PATTERN`. */
+/**
+ * U29-3 (design §8 condition 4, ADR-033): a report over a generated fuzz corpus is never
+ * ranked, listed or marked stale; its summaries are meaningless. A report carries no
+ * `technique`, so the check keys on the data the generator always writes with it: every
+ * fuzz scenario id starts with `fuzz-` (and carries `technique: "fuzz:<id>"`). Any
+ * scenario in `scenarios[]` or run in `runs[]` with such an id, or a scenario row that
+ * does carry a `fuzz:` technique, refuses the whole report.
+ */
+function checkNotFuzz(data: unknown): void {
+  if (!isRecord(data)) return;
+  const ids: unknown[] = [];
+  if (Array.isArray(data.scenarios)) {
+    for (const s of data.scenarios) {
+      if (isRecord(s)) {
+        ids.push(s.id);
+        if (typeof s.technique === "string" && s.technique.startsWith("fuzz:")) ids.push("fuzz-");
+      }
+    }
+  }
+  if (Array.isArray(data.runs)) for (const r of data.runs) if (isRecord(r)) ids.push(r.scenario_id);
+  if (ids.some((id) => typeof id === "string" && id.startsWith("fuzz-"))) {
+    throw new RejectedError("fuzz report: reports over generated fuzz corpora are never published");
+  }
+}
+
+/** U27: `guardrail_id` and `agent_id` must match `RESULT_ID_PATTERN`. */
 function checkResultIds(report: { agent_id: unknown; guardrail_id: unknown }): void {
   for (const field of ["guardrail_id", "agent_id"] as const) {
     const value = report[field];
@@ -1016,6 +1042,7 @@ export function buildLeaderboard(
 
   for (const entry of entries) {
     try {
+      checkNotFuzz(entry.data);
       if (isRecord(entry.data) && entry.data.schema === "x402-redteam/report@3-redacted") {
         requireReportAtV3Redacted(entry.data);
         const report = entry.data;

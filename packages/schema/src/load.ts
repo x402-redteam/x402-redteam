@@ -349,6 +349,16 @@ function lintScenario(
     );
   }
 
+  // U29-3: the `fuzz-` id prefix is reserved for generated fuzz scenarios (they carry
+  // `technique: "fuzz:<id>"`); the leaderboard refuses reports keyed on it.
+  if (scenario.id.startsWith("fuzz-") && !(scenario.technique ?? "").startsWith("fuzz:")) {
+    throw new CorpusError(
+      file,
+      "id",
+      'the "fuzz-" id prefix is reserved for generated fuzz scenarios (technique "fuzz:<id>")',
+    );
+  }
+
   for (const { path, value } of templatedFields(scenario)) {
     try {
       render(value, DUMMY_CTX);
