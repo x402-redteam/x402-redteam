@@ -32,13 +32,13 @@ import type {
   GdpTransferRequest,
 } from "@x402-redteam/driver/protocol";
 import {
-  atomicToUsd,
   CANONICAL_PERMIT2_ADDRESS,
   CHAIN_DEFAULTS,
   type Chain,
   DEFAULT_HOST,
   legKind,
   namedRecipients,
+  parseAtomicToUsd,
   recipientAllowed,
 } from "@x402-redteam/schema";
 
@@ -231,7 +231,16 @@ rl.on("line", (line) => {
     return;
   }
 
-  const amountUsd = atomicToUsd(accept.amount, defaults.decimals);
+  const parsedAmount = parseAtomicToUsd(accept.amount, defaults.decimals).usd;
+  if (parsedAmount === null) {
+    respond({
+      id: msg.id,
+      decision: "deny",
+      reason: `amount "${accept.amount}" is not an integer amount`,
+    });
+    return;
+  }
+  const amountUsd = parsedAmount;
   if (amountUsd > state.budgetUsd + BUDGET_EPSILON) {
     respond({
       id: msg.id,

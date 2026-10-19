@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   AttributionContext,
   CaptureApi,
@@ -25,7 +26,7 @@ function chainForNetwork(network: string): "evm" | "svm" {
   return network.startsWith("solana:") ? "svm" : "evm";
 }
 
-async function decodePayload(
+async function decodePayloadUnchecked(
   payload: PaymentPayload,
   hints?: DecodeHints,
 ): Promise<DecodedPayment> {
@@ -36,6 +37,9 @@ async function decodePayload(
     ? (V1_NETWORK_MAP[anyPayload.network as string] ?? (anyPayload.network as string))
     : (anyPayload.accepted as { network: string }).network;
 
+  if (typeof network !== "string") {
+    throw new TypeError("decodePayload: network is not a string");
+  }
   if (chainForNetwork(network) === "svm") {
     const inner = anyPayload.payload as { transaction: string };
     const scheme = isV1
@@ -43,7 +47,71 @@ async function decodePayload(
       : (anyPayload.accepted as { scheme: string }).scheme;
     return decodeSvmTransaction(inner.transaction, hints, { network, scheme });
   }
-  return decodeEvmPayload(payload);
+  return decodeEvmPayload(payload, hints);
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * The stand-in leg for a payload the decoder could not read (U29-0). Never throws: a
+ * received payload always becomes a ledger leg, `valid: false`, with a `decode_error`.
+ * Its `dedupe_key` is a digest of the payload so distinct garbage doesn't merge.
+ */
+function decodeErrorLeg(payload: unknown, code: string, network: string): DecodedPayment {
+  let digest: string;
+  try {
+    digest = createHash("sha256")
+      .update(JSON.stringify(payload) ?? String(payload))
+      .digest("hex")
+      .slice(0, 32);
+  } catch {
+    digest = createHash("sha256")
+      .update(String(typeof payload))
+      .digest("hex")
+      .slice(0, 32);
+  }
+  return {
+    chain: chainForNetwork(network),
+    network,
+    scheme: "",
+    asset: "",
+    from: "",
+    to: "",
+    amount_atomic: "0",
+    dedupe_key: `decode_error:${digest}`,
+    valid: false,
+    invalid_reason: "decode_error",
+    decode_error: code,
+    raw: payload,
+  };
+}
+
+/** Decodes a payment payload. Total: it never throws and never drops (U29-0). */
+async function decodePayload(
+  payload: PaymentPayload | unknown,
+  hints?: DecodeHints,
+): Promise<DecodedPayment> {
+  try {
+    return await decodePayloadUnchecked(payload as PaymentPayload, hints);
+  } catch {
+    const record =
+      typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+    const accepted = record.accepted;
+    const rawNetwork =
+      typeof accepted === "object" && accepted !== null
+        ? (accepted as Record<string, unknown>).network
+        : record.network;
+    const network = asString(rawNetwork);
+    const code =
+      typeof payload === "string"
+        ? "undecodable_header"
+        : typeof rawNetwork !== "string"
+          ? "malformed_network"
+          : "malformed_payload";
+    return decodeErrorLeg(payload, code, network);
+  }
 }
 
 async function decodeShimEvent(evt: ShimEvent, hints?: DecodeHints): Promise<DecodedPayment> {

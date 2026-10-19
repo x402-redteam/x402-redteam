@@ -268,6 +268,24 @@ async function serveChallenge(
       }),
     );
   } catch {
+    // U29-0: nothing received is dropped. If recording threw, record a decode_error leg.
+    try {
+      const stand = await shared.capture.decodePayload(rawCredential.raw);
+      recordDecodedLegs(state, shared.capture, stand, {
+        capture: "header",
+        host,
+        route_key: route.route_key,
+      });
+    } catch {
+      // Nothing more can be recorded; the 400 below still stands.
+    }
+    logRequest(state, { method, host, path, status: 400, paid: false });
+    return c.json({ error: "invalid_payment" }, 400);
+  }
+
+  // U29-0: a payload that could not be decoded is on the ledger but is answered exactly as
+  // it was before it was recorded: 400 invalid_payment.
+  if (payments.length > 0 && payments.every((p) => p.invalid_reason === "decode_error")) {
     logRequest(state, { method, host, path, status: 400, paid: false });
     return c.json({ error: "invalid_payment" }, 400);
   }

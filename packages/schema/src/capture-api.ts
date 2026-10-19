@@ -8,6 +8,23 @@ import type { Chain } from "./scenario.js";
  * not implement decoders, the server, or scoring - see functional-design.md
  * §4 "Do not".
  */
+/**
+ * `offered`: the signature verifies under the offered domain (no fallback), to equals the
+ * offered payTo, and value equals the offered amount. `offered_domain_only`: the domain
+ * verifies but `to` or `value` differ. `client_copy`: only the client's echoed terms
+ * (with the USDC/2 fallback) verify. `none`: neither.
+ */
+export type TermsVerified = "offered" | "offered_domain_only" | "client_copy" | "none";
+
+/** One term set the adversary offered (an `accepts` entry), for offered-terms verification. */
+export interface OfferedTerms {
+  network: string;
+  asset: string;
+  payTo?: string;
+  amount?: string;
+  extra?: Record<string, unknown>;
+}
+
 export interface DecodedPayment {
   chain: Chain;
   network: string;
@@ -19,6 +36,21 @@ export interface DecodedPayment {
   dedupe_key: string;
   valid: boolean;
   invalid_reason?: string;
+  /**
+   * v5 (U29-0, ledger only): why the payload could not be parsed (`malformed_network`,
+   * `malformed_payload`, `undecodable_header`, `non_digit_amount`). Set on every leg that
+   * stands in for a payload the decoder could not read, and on a leg whose amount is not
+   * a digit string. Stripped from `report.json`.
+   */
+  decode_error?: string;
+  /**
+   * v5 (U29-0, ledger only, EVM EIP-3009 only): which reading of the terms verified the
+   * signature. `offered` = the terms the adversary issued; `client_copy` = the client's
+   * echoed `accepted` (with the USDC/2 fallback); `none` = neither. `valid` is still
+   * decided by the client-copy reading alone, so existing reports don't move. Stripped
+   * from `report.json`.
+   */
+  terms_verified?: TermsVerified;
   /** svm only: the TransferChecked destination token account */
   to_token_account?: string;
   /** v2 (authorization_lifetime, evm EIP-3009 only): validBefore - validAfter. */
@@ -65,6 +97,9 @@ export interface DecodedPayment {
 /** Owners the server knows (payTo values + canaries), used to map an SVM ATA back to its owner. */
 export interface DecodeHints {
   knownOwners?: string[];
+  /** v5 (U29-0): the `accepts` entries of the issuance the payload answers, so a signature
+   * can be checked against what was offered and not only against the client's copy. */
+  offeredTerms?: OfferedTerms[];
   /**
    * v3 (ADR-016 capture lows, U21 fills it in): the agent's own associated token
    * accounts for known mints (owner + mint per ATA address), so a plain SPL `Transfer`
@@ -124,7 +159,7 @@ export interface AttributionContext {
 
 export interface CaptureApi {
   /** header path (v1 or v2 payload) */
-  decodePayload(payload: PaymentPayload, hints?: DecodeHints): Promise<DecodedPayment>;
+  decodePayload(payload: PaymentPayload | unknown, hints?: DecodeHints): Promise<DecodedPayment>;
   decodeShimEvent(evt: ShimEvent, hints?: DecodeHints): Promise<DecodedPayment>;
   attribute(
     p: DecodedPayment,

@@ -6,6 +6,7 @@ import {
   CHAIN_DEFAULTS,
   KNOWN_ASSETS,
   NATIVE_ASSET,
+  parseAtomicToUsd,
   usdToAtomic,
 } from "../src/chains.js";
 
@@ -132,5 +133,37 @@ describe("native asset", () => {
     expect(amountUsd("evm", NATIVE_ASSET, "1000000000000000000")).toBe(2500);
     expect(amountUsd("svm", NATIVE_ASSET, "1000000000")).toBe(150);
     expect(assetInfo("evm", NATIVE_ASSET).known).toBe(true);
+  });
+});
+
+describe("atomicToUsd (U29-0: never NaN)", () => {
+  it("converts valid integer strings", () => {
+    expect(atomicToUsd("0", 6)).toBe(0);
+    expect(atomicToUsd("1", 6)).toBe(0.000001);
+    expect(atomicToUsd("30000", 6)).toBe(0.03);
+    expect(atomicToUsd("1000000", 6)).toBe(1);
+    expect(atomicToUsd("-1500000", 6)).toBe(-1.5);
+    expect(atomicToUsd("5", 0)).toBe(5);
+  });
+
+  it.each([" 1", "1 ", "1.5", "0x10", "+5", "1e6", "", "-", "--1", "abc", "１２"])(
+    "is null with a reason (and 0 from atomicToUsd, never NaN) for %j",
+    (input) => {
+      expect(atomicToUsd(input, 6)).toBe(0);
+      expect(parseAtomicToUsd(input, 6)).toEqual({ usd: null, reason: "non_integer_amount" });
+    },
+  );
+
+  it("treats a non-string input as unparseable instead of throwing", () => {
+    expect(parseAtomicToUsd(undefined as unknown as string, 6).usd).toBeNull();
+    expect(parseAtomicToUsd(5 as unknown as string, 6).usd).toBeNull();
+  });
+
+  it("still rejects bad decimals", () => {
+    expect(() => atomicToUsd("1", -1)).toThrow(RangeError);
+  });
+
+  it("amountUsd values an unparseable amount at 0, not NaN", () => {
+    expect(amountUsd("evm", "0x036CbD53842c5426634e7929541eC2318f3dCF7e", "1.5")).toBe(0);
   });
 });

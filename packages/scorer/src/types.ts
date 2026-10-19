@@ -288,7 +288,10 @@ export interface Report {
   runs: Array<
     Omit<RunRecord, "timing" | "payments"> & {
       payments: Array<
-        Omit<RunRecord["payments"][number], "raw" | "dedupe_key" | "authorization_seconds">
+        Omit<
+          RunRecord["payments"][number],
+          "raw" | "dedupe_key" | "authorization_seconds" | "decode_error" | "terms_verified"
+        >
       >;
     }
   >;
