@@ -54,3 +54,29 @@ describe("x402-redteam fuzz (U29-2)", () => {
     ).toBe(2);
   });
 });
+
+describe("x402-redteam diff argument handling (U29-3)", () => {
+  it("refuses an in-repo --out, a missing --client and a count mismatch with exit 2", () => {
+    const gen = mkdtempSync(join(tmpdir(), "x402-fuzz-cli-"));
+    expect(runCli(["fuzz", "--catalogue", PUBLIC, "--shape", "page", "--out", gen]).status).toBe(0);
+    const manifest = join(gen, "cases.json");
+    const spec = "id=a,core=c,wrapper=w";
+    const inRepo = runCli([
+      "diff",
+      "--manifest",
+      manifest,
+      "--out",
+      join(REPO, "d-out"),
+      "--client",
+      spec,
+      gen,
+    ]);
+    expect(inRepo.status).toBe(2);
+    expect(inRepo.stderr).toMatch(/inside a git repository/);
+    const out = join(gen, "d");
+    expect(runCli(["diff", "--manifest", manifest, "--out", out, gen]).status).toBe(2);
+    const two = runCli(["diff", "--manifest", manifest, "--out", out, "--client", spec, gen, gen]);
+    expect(two.status).toBe(2);
+    expect(two.stderr).toMatch(/one --client per run directory/);
+  });
+});
