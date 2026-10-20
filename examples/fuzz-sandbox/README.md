@@ -51,3 +51,21 @@ the exit-code pass-through, temp-dir cleanup, a start through a symlink, and the
 `examples/agents-py/.venv` exists; set `FUZZ_CANARY_PYTHON` to use another interpreter
 (a git worktree has no venv of its own). Nothing leaves the machine: every public attempt is
 refused by the OS.
+
+## CI smoke run and its golden
+
+CI runs the public smoke catalogue (`packages/fuzz/catalogue-public/`) through this wrapper on
+macOS (`packages/cli/test/fuzz-smoke.e2e.test.ts`, the `fuzz-smoke` job). It compares the
+`diff.json` of `sdk-default` with `packages/fuzz/test/golden/smoke-diff.json` and prints
+counts only on a mismatch. The test fails, rather than skips, when the wrapper finds no
+sandbox.
+
+After an `@x402/*` bump, or any change to the public catalogue, regenerate the golden on a
+Mac and review the diff of the file:
+
+```
+UPDATE_GOLDEN=1 pnpm vitest run --project cli fuzz-smoke.e2e
+pnpm vitest run --project cli fuzz-smoke.e2e fuzz-diff.e2e
+```
+
+The golden holds public-catalogue case ids only. It is stored without the private marker.

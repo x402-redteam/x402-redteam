@@ -346,6 +346,7 @@ describe("ci.yml gating (ADR-018 §1-2)", () => {
       FAST: `\${{ needs.fast.result }}`,
       HOST_RESOLUTION: `\${{ needs.host-resolution.result }}`,
       E2E: `\${{ needs.e2e.result }}`,
+      FUZZ_SMOKE: `\${{ needs.fuzz-smoke.result }}`,
       SELF_TEST: `\${{ needs.self-test.result }}`,
     });
   });
@@ -360,8 +361,11 @@ describe("ci.yml gating (ADR-018 §1-2)", () => {
       FAST: "success",
       HOST_RESOLUTION: "success",
     };
+    // FUZZ_SMOKE follows E2E unless a row sets it: both run, or are skipped, together.
     function runCheck(env: Record<string, string>): number | null {
-      return spawnSync("sh", ["-c", script()], { env: { PATH: process.env.PATH, ...env } }).status;
+      return spawnSync("sh", ["-c", script()], {
+        env: { PATH: process.env.PATH, FUZZ_SMOKE: env.E2E, ...env },
+      }).status;
     }
 
     it.each([
@@ -386,6 +390,16 @@ describe("ci.yml gating (ADR-018 §1-2)", () => {
         1,
       ],
       ["e2e failed", { ...ok, RUNTIME: "true", E2E: "failure", SELF_TEST: "success" }, 1],
+      [
+        "fuzz-smoke failed",
+        { ...ok, RUNTIME: "true", E2E: "success", FUZZ_SMOKE: "failure", SELF_TEST: "success" },
+        1,
+      ],
+      [
+        "fuzz-smoke skipped on a runtime change",
+        { ...ok, RUNTIME: "true", E2E: "success", FUZZ_SMOKE: "skipped", SELF_TEST: "success" },
+        1,
+      ],
       [
         "self-test cancelled",
         { ...ok, RUNTIME: "true", E2E: "success", SELF_TEST: "cancelled" },
@@ -427,7 +441,7 @@ describe("ci.yml gating (ADR-018 §1-2)", () => {
     expect(scripts).toContain("scripts/ci-changes.mjs");
   });
 
-  for (const name of ["e2e", "self-test"]) {
+  for (const name of ["e2e", "fuzz-smoke", "self-test"]) {
     it(`${name} runs only when the changes job reports a runtime change`, () => {
       const job = jobOf(ci(), name);
       expect(needsOf(job)).toContain("changes");

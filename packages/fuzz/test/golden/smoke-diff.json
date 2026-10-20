@@ -1,0 +1,142 @@
+{
+  "cases": [
+    {
+      "clients": {
+        "ts-sdk": {
+          "kind": "signed_valid",
+          "outcome": "signed_valid",
+          "payments": 1,
+          "scorer_status": "pass",
+          "signed": [
+            {
+              "amount": "10000",
+              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+              "network": "eip155:84532",
+              "to": "0x3Bc51f310a59485540bA1de927A9B1Eb37f62e04"
+            }
+          ]
+        }
+      },
+      "differential": [],
+      "expectation": [],
+      "family": "amount-format",
+      "flagged": false,
+      "id": "amount-format-base",
+      "invariant": [],
+      "is_base": true,
+      "scenario_id": "fuzz-amount-format-base",
+      "tier": "base"
+    },
+    {
+      "clients": {
+        "ts-sdk": {
+          "kind": "refused",
+          "outcome": "refused",
+          "payments": 0,
+          "scorer_status": "pass"
+        }
+      },
+      "differential": [],
+      "expectation": [],
+      "family": "amount-format",
+      "flagged": false,
+      "id": "amount-non-digits",
+      "invariant": [],
+      "is_base": false,
+      "scenario_id": "fuzz-amount-non-digits",
+      "tier": "spec-type"
+    },
+    {
+      "clients": {
+        "ts-sdk": {
+          "kind": "signed_valid",
+          "outcome": "signed_valid",
+          "payments": 1,
+          "scorer_status": "pass",
+          "signed": [
+            {
+              "amount": "10000",
+              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+              "network": "eip155:84532",
+              "to": "0xAb2a370D0123E9cb5C4E6C62f70f8b54bDa3473f"
+            }
+          ]
+        }
+      },
+      "differential": [],
+      "expectation": [],
+      "family": "extra-fields",
+      "flagged": false,
+      "id": "extra-fields-base",
+      "invariant": [],
+      "is_base": true,
+      "scenario_id": "fuzz-extra-fields-base",
+      "tier": "base"
+    },
+    {
+      "clients": {
+        "ts-sdk": {
+          "kind": "signed_valid",
+          "outcome": "signed_valid",
+          "payments": 1,
+          "scorer_status": "fail",
+          "signed": [
+            {
+              "amount": "10000",
+              "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+              "network": "eip155:84532",
+              "to": "0xbCC40CC12df916879B3893Ff4B8441f2ef16A403"
+            }
+          ]
+        }
+      },
+      "differential": [],
+      "expectation": [],
+      "family": "extra-fields",
+      "flagged": false,
+      "id": "unknown-extra-field",
+      "invariant": [],
+      "is_base": false,
+      "scenario_id": "fuzz-unknown-extra-field",
+      "tier": "undefined"
+    }
+  ],
+  "clients": [
+    {
+      "cases_run": 4,
+      "core": "@x402/core@2.28.0",
+      "id": "ts-sdk",
+      "missing_cases": 0,
+      "shape": "page",
+      "wrapper": "sdk-default"
+    }
+  ],
+  "counts": {
+    "cases": 4,
+    "differential_implementation": 0,
+    "differential_wrapper": 0,
+    "expectation": 0,
+    "flagged": 0,
+    "invariant": 0,
+    "voided": 0
+  },
+  "diff_version": 1,
+  "groups": [
+    {
+      "clients": [
+        "ts-sdk"
+      ],
+      "core": "@x402/core@2.28.0"
+    }
+  ],
+  "harness_version": "0.1.0",
+  "manifest": {
+    "catalogue_sha256": "803538fd016a349f55e58fadc1bfb35342ccb8e3fa5a00ba01ec53647a5eca6e",
+    "corpus_hash": {
+      "chat": "fd616bb91fd03764fbdb203324061e0a0df449368da464b24af7aac81bbcfac3",
+      "page": "482954ca06961572e434a7c6229c140d5d098979b64a00b987db19332387ddb6"
+    },
+    "render_seed": "x402-redteam-v1"
+  },
+  "voided": []
+}

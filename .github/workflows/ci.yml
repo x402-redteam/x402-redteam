@@ -210,6 +210,8 @@ jobs:
           # macOS-only: the test needs sandbox-exec and skips itself on Linux. The diff logic
           # is covered on ubuntu by packages/fuzz/test/diff.test.ts (stubbed runs).
           - fuzz-diff
+          # macOS-only like fuzz-diff; the fuzz-smoke job below runs both on macOS.
+          - fuzz-smoke
           - guardrail-integrity
           - hosts
           - rpc-capture
@@ -230,6 +232,30 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: pnpm vitest run --project cli "${SHARD}.e2e"
 
+  # The fuzz e2e files need sandbox-exec (macOS), so the ubuntu shards above skip them.
+  # This job runs them for real: the public smoke catalogue against a committed golden
+  # diff.json (ADR-028 #7). Output is counts only; nothing from the run is uploaded.
+  fuzz-smoke:
+    name: fuzz-smoke
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read # checkout to run the fuzz e2e files
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the fuzz e2e files on macOS
+        run: pnpm vitest run --project cli fuzz-smoke.e2e fuzz-diff.e2e
+
   # The composite action's exact-exit-code matrix (self-test.yml), called here so it
   # reports under `ci-ok` and runs once per commit.
   self-test:
@@ -240,12 +266,12 @@ jobs:
       contents: read # passed to self-test.yml, which checks out the Action under test
     uses: ./.github/workflows/self-test.yml
 
-  # The single required check. changes, fast and host-resolution must succeed. e2e and
-  # self-test must succeed when the changes job reported a runtime change and must be
+  # The single required check. changes, fast and host-resolution must succeed. e2e,
+  # fuzz-smoke and self-test must succeed when the changes job reported a runtime change and must be
   # skipped otherwise. Any other result fails it.
   ci-ok:
     name: ci-ok
-    needs: [changes, fast, host-resolution, e2e, self-test]
+    needs: [changes, fast, host-resolution, e2e, fuzz-smoke, self-test]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -258,6 +284,7 @@ jobs:
           FAST: ${{ needs.fast.result }}
           HOST_RESOLUTION: ${{ needs.host-resolution.result }}
           E2E: ${{ needs.e2e.result }}
+          FUZZ_SMOKE: ${{ needs.fuzz-smoke.result }}
           SELF_TEST: ${{ needs.self-test.result }}
         run: |
           if [ "$RUNTIME" = "true" ]; then heavy=success; else heavy=skipped; fi
@@ -273,5 +300,6 @@ jobs:
           check fast "$FAST" success
           check host-resolution "$HOST_RESOLUTION" success
           check e2e "$E2E" "$heavy"
+          check fuzz-smoke "$FUZZ_SMOKE" "$heavy"
           check self-test "$SELF_TEST" "$heavy"
           exit "$status"
