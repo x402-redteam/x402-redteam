@@ -49,6 +49,22 @@ Significant technical decisions are recorded as ADRs in
 one, open an issue describing the problem and the options; the maintainer decides and records
 the outcome there. Everything else is decided in the PR that makes the change.
 
+## Private by design
+
+Some material stays private on purpose.
+
+- **Private:** held-out seasons (ADR-011); third-party results and per-item scenarios
+  (ADR-028); fuzz families, catalogue entries, seeds and triage outputs until their first
+  triage closes (ADR-028 #7).
+- **Always public:** the engine, the scorer, the public corpus, the public fuzz smoke
+  catalogue (`packages/fuzz/catalogue-public/`) and the reference results.
+
+New fuzz families are developed in a private catalogue outside the repo. A family moves to
+the public catalogue only after its first triage across all clients has closed. Issues in a
+spec repository wait until disclosure closes and never name a client. `aidlc-docs/audit.md`
+records totals only. Findings are disclosed only when their impact justifies it; confirmed
+low-impact results may stay private.
+
 ## Access continuity
 
 No successor is designated yet. The maintainer holds sole admin access to the organization,
