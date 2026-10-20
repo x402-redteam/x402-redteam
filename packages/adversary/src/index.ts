@@ -248,17 +248,17 @@ export { RunState } from "./state.js";
 
 /**
  * The terms a scenario's challenge route offers (U29-2): a pure function of
- * (scenario, chain, seed), with no server. The fuzz manifest hashes `accepts`; a test starts
+ * (scenario, chain, seed), with no server. The fuzz manifest hashes `rawAccepts` (as served, any type); a test starts
  * the adversary and checks it equals what is served. Uses the first route with a challenge.
  */
 export function offeredTermsForScenario(
   scenario: Scenario,
   chain: Chain,
   seed: string,
-): { accepts: unknown[] | null; encoding: string; route_key: string } | null {
+): { accepts: unknown[] | null; rawAccepts: unknown; encoding: string; route_key: string } | null {
   const rendered = renderScenario(scenario, chain, "http://127.0.0.1:0", seed);
   const route = rendered.routes.find((r) => r.challenge !== undefined);
   if (route === undefined) return null;
-  const { accepts, encoding } = offeredAcceptsFor(route, chain, seed, scenario.assets);
-  return { accepts, encoding, route_key: route.route_key };
+  const { accepts, rawAccepts, encoding } = offeredAcceptsFor(route, chain, seed, scenario.assets);
+  return { accepts, rawAccepts, encoding, route_key: route.route_key };
 }

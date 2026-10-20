@@ -285,22 +285,26 @@ function wireHeader(
 /**
  * The `accepts` list a client can read from a route's challenge: the typed list for a plain
  * challenge, the offered object's `accepts` under a `wire` override, or null when the header
- * carries none (`invalid_json`, an undecodable `raw:`, or no `accepts` array). A pure
- * function of (route, chain, seed, scenarioAssets); the fuzz manifest hashes it (U29-2).
+ * carries none (`invalid_json`, an undecodable `raw:`, or no `accepts` array). `rawAccepts`
+ * is the offered `accepts` value as served, whatever its JSON type (an object or a string
+ * stays itself), or null when the header carries no `accepts` key at all. A pure function of
+ * (route, chain, seed, scenarioAssets); the fuzz manifest hashes `rawAccepts`, which is what
+ * `diff` re-hashes from the run record (U29-2).
  */
 export function offeredAcceptsFor(
   route: RenderedRoute,
   chain: Chain,
   seed: string,
   scenarioAssets?: AssetSpec[],
-): { accepts: unknown[] | null; encoding: WireEncodingKind } {
+): { accepts: unknown[] | null; rawAccepts: unknown; encoding: WireEncodingKind } {
   const list = buildRequirementsList(route, chain, seed, scenarioAssets);
   const wire = route.challenge?.wire;
-  if (wire === undefined) return { accepts: list, encoding: "standard" };
+  if (wire === undefined) return { accepts: list, rawAccepts: list, encoding: "standard" };
   const paymentRequired = buildPaymentRequired("http://offered.invalid/", route, list);
   const { offered } = wireHeader(paymentRequired, wire);
   return {
     accepts: Array.isArray(offered?.accepts) ? (offered.accepts as unknown[]) : null,
+    rawAccepts: offered?.accepts === undefined ? null : offered.accepts,
     encoding: wireEncodingKind(wire.encoding ?? "standard"),
   };
 }
