@@ -592,3 +592,25 @@ interface Scenario { /* v3 */ technique?: string; }   // non-empty free text
 - **Driver tag.** `config.driver` is `driver@2` from corpus v4 (`CANONICAL.driver`). driver@2 adds GDP `intent`/`payloads`/`source`, sign intents, the `parallel` fan-out and the `toClientEvmSigner` signer. reference-policy's hello hooks are `["payment", "transfer", "sign"]`.
 - **Corpus versioning.** Corpus v4 is 71 scenarios: 64 attacks and 7 controls (counts per category in `corpus/README.md`; `transfer_method_switch` is 2 attacks plus 2 controls). Reports against earlier corpora show as stale (corpus hash mismatch) and are not ranked until re-run. Season 1 keeps its frozen corpus and harness; the v4 categories and scorer semantics apply from Season 2.
 - **Reference payers.** The Python reference payer (`examples/agents-py`) installs `x402[evm,httpx]==2.25.0` and `jsonschema==4.26.0`, pinned exactly in `uv.lock` (jsonschema directly rather than the `extensions` extra, which would also pull `signinwithethereum` and hold `web3` at 7.x; orchestrator follow-up to the U26-3 sign-off). Without jsonschema, `x402` 2.25.0 rejects any challenge that declares extensions ("Extensions validation requires jsonschema").
+
+## Contracts (v6, Bolt 10) — U30 MCP seller mode (ADR-034/035)
+U30-0 lands the schema half. Signed off for build by senior-architect (architecture-review-u30.md, "Delta check (revision 2)", conditions 1 and 4). Every field below is optional with no zod default, so a scenario, request log, payment or task file that does not use MCP parses and serialises exactly as before and `corpus/`'s `corpusHash` does not move.
+
+```ts
+interface Scenario { /* v5 */ transport?: "http" | "mcp"; }          // absent = http, via scenarioTransport()
+interface Route {   /* v5 */ path: string;                           // always set after parsing
+  tool?: { name: string /* ^[a-z][a-z0-9_]{0,63}$ */; description: string;
+           input_schema: { type: "object"; ... } /* default {type:"object"} */ };
+  reprice?: { description?: string; challenge: ChallengeSpec };
+  behaviour: /* v5 */ | "settle_fail" | "reprice";                    // tool routes only
+}
+interface RequestLog { /* v5 */ tool?: string }                       // MCP only
+interface Payment    { /* v5 */ transport?: "mcp" }                   // MCP only; capture stays "header"
+interface TaskFile   { /* v4 */ mcp_servers?: Record<host, url> }     // only if the scenario has tool routes
+```
+- **Tool routes.** A route with `tool` is a paywalled MCP tool served at `POST /mcp`. Its `path` may be omitted or `/mcp` and is normalised once, in `RouteSchema` (`path: "/mcp"`, `method: "POST"`); any other path is an error. `page` is not allowed. `delivered_body` is the tool's text result. `reprice` is required on, and only allowed on, a `behaviour: reprice` route; `settle_fail` and `reprice` are rejected on a route without `tool`.
+- **Route identity (B2).** `toolRouteKey(host, name)` is `"<host>/mcp#<name>"`; `routeKeyFor(route)` gives it for a tool route and `"<host><path>"` otherwise. Exported from `@x402-redteam/schema`; the adversary uses it from U30-1.
+- **Lint.** Rule 3 text fields now include `tool.description`, every `description` inside `tool.input_schema`, a tool route's `delivered_body` and `reprice.description`; the payee fields include `reprice.challenge`. Rule 6 host references and the adversary's `collectScenarioCanaryNames` cover the same fields. Errors: duplicate tool name per host, `input_schema.type != "object"`, any `outputSchema`, `wire` on a tool route (or its repriced challenge), `transport: mcp` with a challenged HTTP route or with no tool route, a tool route without `transport: mcp`.
+- **Corpus partition (ADR-035).** `loadCorpus` refuses a `transport: mcp` scenario in a directory named `corpus`, and a scenario without a tool route in one named `corpus-mcp`. `corpus-mcp/` ships empty (scenarios arrive in U30-3). Default `validate` and `run` on `corpus/` are unchanged.
+- **Task file.** `mcp_servers` maps each host that serves tools to its `<origin>/mcp` URL under the active host mode. `cli/src/task.ts` sets it only when the scenario has a tool route; the version stays 4.
+- **Still to come.** `summary.transports`, the `/mcp` endpoint, the request-log rules for MCP and `header (mcp)` report text land with U30-1.

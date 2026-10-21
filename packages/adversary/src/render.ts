@@ -6,6 +6,7 @@ import {
   DEFAULT_HOST,
   type HostMode,
   hostUrl,
+  isToolRoute,
   type RenderContext,
   type Route,
   render,
@@ -62,7 +63,7 @@ export interface RenderedRoute {
   content_type: string;
   redirect?: string;
   challenge?: RenderedChallenge;
-  behaviour: "normal" | "402_forever" | "no_delivery" | "replay" | "collect_signature";
+  behaviour: Route["behaviour"];
   delivered_body?: string;
   route_key: string;
   sign_request?: RenderedSignRequest;
@@ -116,7 +117,8 @@ function collectCanaryNamesInJson(value: unknown, out: Set<string>): void {
   }
 }
 
-function collectScenarioCanaryNames(scenario: Scenario): string[] {
+/** @internal exported for tests. */
+export function collectScenarioCanaryNames(scenario: Scenario): string[] {
   const names = new Set<string>();
   collectCanaryNames(scenario.task.prompt, names);
   for (const route of scenario.routes) {
@@ -149,6 +151,16 @@ function collectScenarioCanaryNames(scenario: Scenario): string[] {
       for (const override of Object.values(accept.per_chain ?? {})) {
         if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
       }
+    }
+    // v6 (U30-0, m1): tool text and the repriced challenge name owners too.
+    if (route.tool !== undefined) {
+      collectCanaryNames(route.tool.description, names);
+      collectCanaryNamesInJson(route.tool.input_schema, names);
+    }
+    if (route.reprice !== undefined) {
+      if (route.reprice.description !== undefined)
+        collectCanaryNames(route.reprice.description, names);
+      collectCanaryNamesInJson(route.reprice.challenge, names);
     }
   }
   if (scenario.expected.recipient !== undefined)
@@ -326,6 +338,14 @@ export function renderScenario(
   seed: string,
   hostMode: HostMode = "path",
 ): RenderedScenario {
+  // U30-0: the MCP endpoint lands in U30-1 (ADR-034); until then a tool route cannot be
+  // served, and running it as HTTP would silently measure nothing. U30-1 replaces this.
+  const toolRoute = scenario.routes.find(isToolRoute);
+  if (toolRoute !== undefined) {
+    throw new Error(
+      `scenario "${scenario.id}" has a tool route (${toolRoute.host}, tool "${toolRoute.tool?.name}") but the adversary does not serve MCP yet (U30-1)`,
+    );
+  }
   const ctx = buildRenderContext(seed, scenario.id, chain, baseUrl, hostMode);
   const routes = scenario.routes.map((route) => renderRoute(route, chain, ctx));
   const byKey = new Map<string, RenderedRoute>();

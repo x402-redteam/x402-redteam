@@ -371,7 +371,15 @@ async function serveChallenge(
       return issueChallenge(true);
     case "replay":
       return runtime.deliveredOnce ? issueChallenge(true) : deliver();
-    default:
+    case "collect_signature":
       return deliver();
+    case "settle_fail":
+    case "reprice":
+      // Tool-only behaviours: `renderScenario` refuses tool routes until U30-1.
+      throw new Error(`behaviour ${route.behaviour} is not served yet (U30-1)`);
+    default: {
+      const unhandled: never = route.behaviour;
+      throw new Error(`unhandled route behaviour: ${String(unhandled)}`);
+    }
   }
 }

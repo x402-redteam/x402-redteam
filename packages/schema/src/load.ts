@@ -1,14 +1,16 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, extname, join, relative } from "node:path";
+import { basename, extname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { compareCodeUnits } from "./canonical.js";
 import {
   type Chain,
   type ChallengeSpec,
+  isToolRoute,
   minPayments,
   requireDelivered,
   type Scenario,
   ScenarioSchema,
+  scenarioTransport,
 } from "./scenario.js";
 import { collectVars, type RenderContext, render, renderJsonStrings } from "./template.js";
 import {
@@ -17,6 +19,10 @@ import {
   WIRE_RAW_JSON_PREFIX,
   WIRE_RAW_PREFIX,
 } from "./wire.js";
+
+/** v6 (U30-0, ADR-035): `transport: mcp` loads only from a directory with this name, and
+ * every scenario there needs a tool route. */
+export const MCP_CORPUS_DIRNAME = "corpus-mcp";
 
 const CHAINS: readonly Chain[] = ["evm", "svm"];
 
@@ -171,6 +177,45 @@ export function wireDecodedFields(
 }
 
 /**
+ * v6 (U30-0, m1): every `description` string inside a tool's `input_schema` (property
+ * descriptions are text the model reads), with the path to each.
+ */
+/** @internal shared with the adversary's canary collection via tests; not public. */
+export function inputSchemaDescriptions(basePath: string, schema: unknown): TemplatedField[] {
+  const out: TemplatedField[] = [];
+  const walk = (value: unknown, path: string): void => {
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => {
+        walk(v, `${path}[${i}]`);
+      });
+    } else if (value !== null && typeof value === "object") {
+      for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+        if (key === "description" && typeof v === "string") {
+          out.push({ path: `${path}.description`, value: v });
+        } else {
+          walk(v, `${path}.${key}`);
+        }
+      }
+    }
+  };
+  walk(schema, basePath);
+  return out;
+}
+
+/** v6 (U30-0): the text a tool route shows the model besides its challenge. */
+function toolTextFields(basePath: string, route: Scenario["routes"][number]): TemplatedField[] {
+  if (route.tool === undefined) return [];
+  const fields: TemplatedField[] = [
+    { path: `${basePath}.tool.description`, value: route.tool.description },
+    ...inputSchemaDescriptions(`${basePath}.tool.input_schema`, route.tool.input_schema),
+  ];
+  if (route.reprice?.description !== undefined) {
+    fields.push({ path: `${basePath}.reprice.description`, value: route.reprice.description });
+  }
+  return fields;
+}
+
+/**
  * Every plain-string field documented as templated in application-design.md §3, each
  * rendered with DUMMY_CTX. `body_json` (v2 challenge_injection) is deep-templated, not a
  * single string, so it's checked separately in `lintScenario` via `renderJsonStrings`
@@ -206,6 +251,19 @@ function templatedFields(scenario: Scenario): TemplatedField[] {
         path: `routes[${i}].challenge.resource_url`,
         value: route.challenge.resource_url,
       });
+    }
+    // v6 (U30-0, m1): tool text and the repriced challenge's payee fields.
+    fields.push(...toolTextFields(`routes[${i}]`, route));
+    if (route.reprice !== undefined) {
+      const base = `routes[${i}].reprice.challenge`;
+      fields.push(...payToFields(base, route.reprice.challenge));
+      fields.push(...wireFields(base, route.reprice.challenge));
+      if (route.reprice.challenge.description !== undefined) {
+        fields.push({ path: `${base}.description`, value: route.reprice.challenge.description });
+      }
+      if (route.reprice.challenge.resource_url !== undefined) {
+        fields.push({ path: `${base}.resource_url`, value: route.reprice.challenge.resource_url });
+      }
     }
   });
   if (scenario.expected.recipient !== undefined) {
@@ -247,6 +305,20 @@ function pageTextFields(scenario: Scenario): TemplatedField[] {
       fields.push({
         path: `routes[${i}].sign_request`,
         value: JSON.stringify(route.sign_request),
+      });
+    }
+    // v6 (U30-0, m1): tool text is page-visible, and so is the repriced challenge body.
+    fields.push(...toolTextFields(`routes[${i}]`, route));
+    if (route.reprice?.challenge.body_json !== undefined) {
+      fields.push({
+        path: `routes[${i}].reprice.challenge.body_json`,
+        value: JSON.stringify(route.reprice.challenge.body_json),
+      });
+    }
+    if (route.reprice?.challenge.extensions !== undefined) {
+      fields.push({
+        path: `routes[${i}].reprice.challenge.extensions`,
+        value: JSON.stringify(route.reprice.challenge.extensions),
       });
     }
   });
@@ -376,6 +448,8 @@ function lintScenario(
       [`routes[${i}].challenge.body_json`, route.challenge?.body_json],
       [`routes[${i}].challenge.extensions`, route.challenge?.extensions],
       [`routes[${i}].sign_request`, route.sign_request],
+      [`routes[${i}].reprice.challenge.body_json`, route.reprice?.challenge.body_json],
+      [`routes[${i}].reprice.challenge.extensions`, route.reprice?.challenge.extensions],
     ];
     for (const [path, value] of deep) {
       if (value === undefined) continue;
@@ -412,6 +486,7 @@ function lintScenario(
 
   lintCollectSignature(file, scenario);
   lintLowerCase(file, scenario);
+  lintMcp(file, scenario);
 
   // ADR-004 canary channel separation: a canary used as a payment recipient must never
   // also appear in any page-visible text (`page`, `delivered_body` or, v2, `body_json`),
@@ -419,17 +494,24 @@ function lintScenario(
   // per_chain overrides on both the top-level challenge and each accepts[] entry.
   const payToCanaries = new Map<string, string>();
   scenario.routes.forEach((route, i) => {
-    if (route.challenge === undefined) return;
-    // v5 (U29-1): the wire patch and raw header are challenge-side text, so a canary in
-    // one is a recipient canary for rule 3.
-    const challengeSide = [
-      ...payToFields(`routes[${i}].challenge`, route.challenge),
-      ...wireFields(`routes[${i}].challenge`, route.challenge),
-      ...wireDecodedFields(`routes[${i}].challenge`, route.challenge),
+    // v6 (U30-0, m1): a repriced challenge's payee is a recipient like any other.
+    const challenges: [string, ChallengeSpec | undefined][] = [
+      [`routes[${i}].challenge`, route.challenge],
+      [`routes[${i}].reprice.challenge`, route.reprice?.challenge],
     ];
-    for (const { path, value } of challengeSide) {
-      for (const name of extractCanaryNames(value)) {
-        if (!payToCanaries.has(name)) payToCanaries.set(name, path);
+    for (const [base, challenge] of challenges) {
+      if (challenge === undefined) continue;
+      // v5 (U29-1): the wire patch and raw header are challenge-side text, so a canary in
+      // one is a recipient canary for rule 3.
+      const challengeSide = [
+        ...payToFields(base, challenge),
+        ...wireFields(base, challenge),
+        ...wireDecodedFields(base, challenge),
+      ];
+      for (const { path, value } of challengeSide) {
+        for (const name of extractCanaryNames(value)) {
+          if (!payToCanaries.has(name)) payToCanaries.set(name, path);
+        }
       }
     }
   });
@@ -574,6 +656,88 @@ function lintScenario(
   }
 }
 
+/** True when `value` has an `outputSchema` key at any depth. */
+function hasOutputSchema(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasOutputSchema);
+  if (value === null || typeof value !== "object") return false;
+  return Object.entries(value as Record<string, unknown>).some(
+    ([key, v]) => key === "outputSchema" || hasOutputSchema(v),
+  );
+}
+
+/**
+ * v6 (U30-0, ADR-034/035): MCP transport lint. Tool routes need `transport: mcp`, an `mcp`
+ * scenario needs a tool route and no challenged HTTP route; tool names are unique per
+ * host; no `outputSchema` (the SDK validates structured content against it) and no `wire`
+ * (its encodings are defined over a base64 header). `input_schema.type` and the
+ * tool-only behaviours are checked by the route schema.
+ */
+function lintMcp(file: string, scenario: Scenario): void {
+  const mcp = scenarioTransport(scenario) === "mcp";
+  const seen = new Map<string, number>();
+  scenario.routes.forEach((route, i) => {
+    if (!isToolRoute(route)) {
+      if (mcp && route.challenge !== undefined) {
+        throw new CorpusError(
+          file,
+          `routes[${i}].challenge`,
+          "a transport: mcp scenario must not have a challenged HTTP route (only tool routes are paywalled)",
+        );
+      }
+      return;
+    }
+    if (!mcp) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].tool`,
+        "a tool route requires scenario transport: mcp",
+      );
+    }
+    const tool = route.tool;
+    if (tool === undefined) return;
+    const key = `${route.host}\u0000${tool.name}`;
+    if (seen.has(key)) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].tool.name`,
+        `duplicate tool name "${tool.name}" on host "${route.host}" (also routes[${seen.get(key)}])`,
+      );
+    }
+    seen.set(key, i);
+    if (hasOutputSchema(tool)) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].tool`,
+        "outputSchema is not allowed (the adversary never emits one)",
+      );
+    }
+    const unknownKeys = Object.keys(tool).filter(
+      (k) => k !== "name" && k !== "description" && k !== "input_schema",
+    );
+    if (unknownKeys.length > 0) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].tool.${unknownKeys[0]}`,
+        `unknown tool key "${unknownKeys[0]}" (only name, description and input_schema are allowed)`,
+      );
+    }
+    if (route.challenge?.wire !== undefined || route.reprice?.challenge.wire !== undefined) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].challenge.wire`,
+        "wire is not allowed on a tool route",
+      );
+    }
+  });
+  if (mcp && seen.size === 0) {
+    throw new CorpusError(
+      file,
+      "transport",
+      "a transport: mcp scenario needs at least one tool route",
+    );
+  }
+}
+
 /**
  * v4 (U26-3): `{{lower:NAME}}` lower-cases an address, which names the same account only
  * on EVM (base58 is case-sensitive), so a scenario that uses it anywhere is EVM only.
@@ -697,9 +861,26 @@ export function loadCorpus(dir: string): Scenario[] {
 
   const scenarios: Scenario[] = [];
   const seenIds = new Map<string, string>();
+  // v6 (U30-0, ADR-035): transport is a corpus dimension, decided by the directory name.
+  const dirName = basename(resolve(dir));
 
   for (const file of files) {
     const scenario = loadScenario(file, decoyDomains);
+    const hasTool = scenario.routes.some(isToolRoute);
+    if (dirName === MCP_CORPUS_DIRNAME && !hasTool) {
+      throw new CorpusError(
+        file,
+        "routes",
+        `a ${MCP_CORPUS_DIRNAME}/ scenario needs at least one tool route (ADR-035)`,
+      );
+    }
+    if (dirName !== MCP_CORPUS_DIRNAME && scenarioTransport(scenario) === "mcp") {
+      throw new CorpusError(
+        file,
+        "transport",
+        `a transport: mcp scenario loads only from a directory named ${MCP_CORPUS_DIRNAME}/ (ADR-035), not "${dirName}/"`,
+      );
+    }
     const priorFile = seenIds.get(scenario.id);
     if (priorFile !== undefined) {
       throw new CorpusError(

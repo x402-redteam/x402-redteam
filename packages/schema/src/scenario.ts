@@ -233,16 +233,65 @@ export const SignRequestSpecSchema = z
   });
 export type SignRequestSpec = z.infer<typeof SignRequestSpecSchema>;
 
-export const RouteSchema = z.object({
+/** v6 (U30-0, ADR-035): the transport a scenario speaks. */
+export const TransportSchema = z.enum(["http", "mcp"]);
+export type Transport = z.infer<typeof TransportSchema>;
+
+/** v6 (U30-0): `scenario.transport` default, applied at the point of use. */
+export function scenarioTransport(scenario: { transport?: Transport | undefined }): Transport {
+  return scenario.transport ?? "http";
+}
+
+/** v6 (U30-0, ADR-034): the one path every MCP tool route is served on. */
+export const MCP_PATH = "/mcp";
+
+/**
+ * v6 (U30-0): an MCP tool. A route with `tool` is a paywalled MCP tool served by the
+ * adversary at `POST /mcp`. Loose, so an unknown key such as `outputSchema` survives
+ * parsing and lint can name it (the adversary never emits `outputSchema`).
+ */
+export const ToolSpecSchema = z.looseObject({
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/, "tool.name must match ^[a-z][a-z0-9_]{0,63}$"),
+  description: z.string(),
+  /** JSON Schema for the tool's arguments; `type` must be "object" (the MCP SDK rejects
+   * anything else). Property descriptions are text the model reads (lint rule 3). */
+  input_schema: z
+    .looseObject({
+      type: z.literal("object", { error: 'tool.input_schema.type must be "object"' }),
+    })
+    .default({ type: "object" }),
+});
+export type ToolSpec = z.infer<typeof ToolSpecSchema>;
+
+/** v6 (U30-0): `behaviour: reprice` - after the first delivered call `tools/list` returns
+ * `description` and the next challenge is `challenge`. */
+export const RepriceSpecSchema = z.object({
+  description: z.string().optional(),
+  challenge: ChallengeSpecSchema,
+});
+export type RepriceSpec = z.infer<typeof RepriceSpecSchema>;
+
+const RouteBaseSchema = z.object({
   host: z.string().default("provider.test"),
-  path: z.string(),
+  // v6: optional only so a tool route may omit it; `RouteSchema` normalises it (below),
+  // so a parsed `Route.path` is always a string.
+  path: z.string().optional(),
   method: z.enum(["GET", "POST"]).default("GET"),
   page: z.string().optional(),
   content_type: z.string().default("text/markdown"),
   redirect: z.string().optional(),
   challenge: ChallengeSpecSchema.optional(),
   behaviour: z
-    .enum(["normal", "402_forever", "no_delivery", "replay", "collect_signature"])
+    .enum([
+      "normal",
+      "402_forever",
+      "no_delivery",
+      "replay",
+      "collect_signature",
+      // v6 (U30-0): tool-only.
+      "settle_fail",
+      "reprice",
+    ])
     .default("normal"),
   // v4 (U26-2, M2): required on, and only on, a `collect_signature` route.
   sign_request: SignRequestSpecSchema.optional(),
@@ -252,7 +301,79 @@ export const RouteSchema = z.object({
   // scenario with `reach_class` but no `surface: true` route is a lint-rule-7 warning,
   // not an error, and its `reached` is `null`. Controls carry no `surface`.
   surface: z.boolean().optional(),
+  // v6 (U30-0, ADR-034/035): optional, no default - a route without them parses to the
+  // same JSON, so `corpusHash` is unchanged.
+  tool: ToolSpecSchema.optional(),
+  reprice: RepriceSpecSchema.optional(),
 });
+
+/**
+ * v6 (U30-0): the single place a tool route's identity is normalised. A tool route is
+ * always served at `POST /mcp`; its `path` may be omitted or `/mcp`, and its `method`
+ * omitted or `POST` (anything else is a schema error below). Non-tool routes are
+ * returned untouched.
+ */
+function normaliseToolRoute<T extends { tool?: unknown; path?: string | undefined }>(
+  route: T,
+): T & { path: string } {
+  if (route.tool === undefined) return route as T & { path: string };
+  return { ...route, path: MCP_PATH, method: "POST" } as T & { path: string };
+}
+
+/** A tool route's omitted `method` means POST: applied before the schema's GET default,
+ * so an explicit `method: GET` on a tool route stays visible to the refine below. */
+function defaultToolMethod(input: unknown): unknown {
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) {
+    const obj = input as Record<string, unknown>;
+    if (obj.tool !== undefined && obj.method === undefined) return { ...obj, method: "POST" };
+  }
+  return input;
+}
+
+const RouteRefinedSchema = RouteBaseSchema.superRefine((route, ctx) => {
+  const isTool = route.tool !== undefined;
+  if (!isTool && route.path === undefined) {
+    ctx.addIssue({ code: "custom", path: ["path"], message: "path is required on a route" });
+  }
+  if (isTool && route.path !== undefined && route.path !== MCP_PATH) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["path"],
+      message: `a tool route's path must be absent or "${MCP_PATH}"`,
+    });
+  }
+  if (isTool && route.method !== "POST") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["method"],
+      message: "a tool route's method must be absent or POST",
+    });
+  }
+  if (isTool && route.page !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["page"],
+      message: "page is not allowed on a tool route",
+    });
+  }
+  const toolOnly = route.behaviour === "settle_fail" || route.behaviour === "reprice";
+  if (toolOnly && !isTool) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["behaviour"],
+      message: `behaviour ${route.behaviour} is allowed only on a tool route`,
+    });
+  }
+  if ((route.behaviour === "reprice") !== (route.reprice !== undefined)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["reprice"],
+      message: "reprice is required on, and only allowed on, a reprice route",
+    });
+  }
+}).transform((route) => normaliseToolRoute(route));
+
+export const RouteSchema = z.preprocess(defaultToolMethod, RouteRefinedSchema);
 export type Route = z.infer<typeof RouteSchema>;
 
 export const TaskSchema = z.object({
@@ -346,6 +467,10 @@ export const ScenarioSchema = z.object({
   // no default (scenarios without it parse unchanged), and never aggregated: by_category,
   // SARIF and the leaderboard all key on `category` only.
   technique: z.string().min(1).optional(),
+  // v6 (U30-0, ADR-035): which transport the scenario speaks. Optional with NO zod
+  // default (a default would write `transport: "http"` into every parsed scenario and
+  // move `corpusHash`); see `scenarioTransport()`.
+  transport: TransportSchema.optional(),
 });
 export type Scenario = z.infer<typeof ScenarioSchema>;
 
@@ -404,4 +529,29 @@ export function acceptsForChain(spec: ChallengeSpec, chain: Chain): AcceptSpec[]
     ...rest
   } = resolved;
   return [{ ...rest, pay_to }];
+}
+
+/** v6 (U30-0): true for an MCP tool route. */
+export function isToolRoute(route: { tool?: unknown }): boolean {
+  return route.tool !== undefined;
+}
+
+/** v6 (U30-0, B2): the route identity of tool `name` on `host`: `<host>/mcp#<name>`. */
+export function toolRouteKey(host: string, name: string): string {
+  return `${host}${MCP_PATH}#${name}`;
+}
+
+/**
+ * v6 (U30-0, B2): `<host>/mcp#<name>` for a tool route (so two tools on one host never
+ * share challenge ids, delivery state or loop counts), `<host><path>` otherwise - the
+ * same value the adversary uses for an HTTP route today.
+ */
+export function routeKeyFor(route: {
+  host: string;
+  path: string;
+  tool?: { name: string } | undefined;
+}): string {
+  return route.tool === undefined
+    ? `${route.host}${route.path}`
+    : toolRouteKey(route.host, route.tool.name);
 }

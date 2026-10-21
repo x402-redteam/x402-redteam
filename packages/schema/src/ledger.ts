@@ -131,6 +131,9 @@ export const PaymentSchema = z.object({
   // v5 (U29-0, ledger only; scoreSuite strips both from report.json): see DecodedPayment.
   decode_error: z.string().optional(),
   terms_verified: z.enum(["offered", "offered_domain_only", "client_copy", "none"]).optional(),
+  // v6 (U30-0, ADR-034): present only on a payment that arrived over MCP
+  // (`params._meta["x402/payment"]`); absent for HTTP, so existing ledgers are unchanged.
+  transport: z.literal("mcp").optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
 
@@ -147,6 +150,9 @@ export const RequestLogSchema = z.object({
   path: z.string(),
   status: z.number().int(),
   paid: z.boolean(),
+  // v6 (U30-0, ADR-034): the MCP tool name; present only on an MCP exchange's log,
+  // absent for HTTP.
+  tool: z.string().optional(),
 });
 export type RequestLog = z.infer<typeof RequestLogSchema>;
 
