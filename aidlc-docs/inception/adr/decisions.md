@@ -606,6 +606,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 2. The patched challenge is the offered terms for attribution, the binding check and `diff`.
 3. Patch and raw strings are in scope for lint rules 3 and 6. `corpusHash` is unchanged for any scenario without `wire`.
 4. Only generated and private corpora use `wire` until the owner approves public use.
+5. On MCP tool routes, `wire.patch` and a new optional `wire.channels` (where the `PaymentRequired` is placed: `structuredContent`, `content` text, or a JSON-RPC error) are allowed in generated scenarios only (`fuzz-` id with a `fuzz:` technique); the loader refuses `wire` on tool routes everywhere else, and `encoding`/`body` stay HTTP-only. `channels` has no schema default, so HTTP corpus hashes do not move. *(Added Bolt 10, U30-4, owner approval 2026-10-26.)*
 
 **Consequences:** Structural fuzz families become reachable. The public corpus is unaffected.
 
@@ -620,6 +621,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 3. Client identity is (implementation, core provenance, wrapper). There is no majority vote. Differences within a shared core are wrapper behaviour; across cores, implementation behaviour.
 4. A finding needs the invariant oracle or a `spec-must` hit, plus ADR-028 #3 (and #6 for third parties).
 5. Disagreement between the MCP challenge channels (`structuredContent` and `content[0].text`) is `undefined` tier: the spec requires servers to send identical copies and says nothing about which a client should follow. *(Added Bolt 10, U30, owner approval 2026-10-22.)*
+6. Every MCP channel mode other than identical copies is `undefined` tier. A `PaymentRequired` carried in a JSON-RPC error (codes 402 and -32042) is permanently `undefined`: the MCP SDK assigns -32042 to URL elicitation, so neither paying nor refusing is a defect. *(Added Bolt 10, U30-4, owner approval 2026-10-26.)*
 
 **Consequences:** Fewer, more defensible findings. Fuzz `report.json` summaries are meaningless and never ranked; the leaderboard refuses them.
 
