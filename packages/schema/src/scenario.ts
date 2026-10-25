@@ -300,7 +300,10 @@ const RouteBaseSchema = z.object({
   // (corpus/README.md documents the tagging convention). Optional, no default - a
   // scenario with `reach_class` but no `surface: true` route is a lint-rule-7 warning,
   // not an error, and its `reached` is `null`. Controls carry no `surface`.
-  surface: z.boolean().optional(),
+  // v6 (U30-1): on a tool route also "description" (reached by a tools/list on the host)
+  // or "result" (reached by a paid 200 tools/call of that tool); `true` on a tool route
+  // means any tools/call of that name. The string forms are lint errors on other routes.
+  surface: z.union([z.boolean(), z.enum(["description", "result"])]).optional(),
   // v6 (U30-0, ADR-034/035): optional, no default - a route without them parses to the
   // same JSON, so `corpusHash` is unchanged.
   tool: ToolSpecSchema.optional(),
@@ -529,6 +532,11 @@ export function acceptsForChain(spec: ChallengeSpec, chain: Chain): AcceptSpec[]
     ...rest
   } = resolved;
   return [{ ...rest, pay_to }];
+}
+
+/** True when a route marks an attack surface (`surface: true`, or v6's tool forms). */
+export function isSurfaceRoute(route: { surface?: boolean | "description" | "result" }): boolean {
+  return route.surface !== undefined && route.surface !== false;
 }
 
 /** v6 (U30-0): true for an MCP tool route. */

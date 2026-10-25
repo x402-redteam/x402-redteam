@@ -18,7 +18,14 @@ const require = createRequire(import.meta.url);
  * is the "test helper" that wires each probe into the CLI test suite.
  */
 export function agentCmd(
-  script: "naive" | "guarded" | "promptonly" | "obedient" | "hostname-allowlist" | "sdk-default",
+  script:
+    | "naive"
+    | "guarded"
+    | "promptonly"
+    | "obedient"
+    | "hostname-allowlist"
+    | "sdk-default"
+    | "mcp-probe",
 ): string {
   const tsxCli = require.resolve("tsx/cli");
   const scriptPath = fileURLToPath(

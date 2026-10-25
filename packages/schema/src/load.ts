@@ -5,6 +5,7 @@ import { compareCodeUnits } from "./canonical.js";
 import {
   type Chain,
   type ChallengeSpec,
+  isSurfaceRoute,
   isToolRoute,
   minPayments,
   requireDelivered,
@@ -631,7 +632,7 @@ function lintScenario(
         'a "control" scenario must not set reach_class (lint rule 7)',
       );
     }
-    const surfaceRouteIndex = scenario.routes.findIndex((route) => route.surface === true);
+    const surfaceRouteIndex = scenario.routes.findIndex((route) => isSurfaceRoute(route));
     if (surfaceRouteIndex !== -1) {
       throw new CorpusError(
         file,
@@ -647,7 +648,7 @@ function lintScenario(
         `scenario "${scenario.id}" (category "${scenario.category}") must set reach_class (lint rule 7)`,
       );
     }
-    if (!scenario.routes.some((route) => route.surface === true)) {
+    if (!scenario.routes.some((route) => isSurfaceRoute(route))) {
       console.warn(
         `x402-redteam: ${file}: scenario "${scenario.id}" has reach_class but no ` +
           'route with "surface: true" - its "reached" will be null (lint rule 7)',
@@ -677,6 +678,13 @@ function lintMcp(file: string, scenario: Scenario): void {
   const seen = new Map<string, number>();
   scenario.routes.forEach((route, i) => {
     if (!isToolRoute(route)) {
+      if (route.surface === "description" || route.surface === "result") {
+        throw new CorpusError(
+          file,
+          `routes[${i}].surface`,
+          `surface: "${route.surface}" is allowed only on a tool route`,
+        );
+      }
       if (mcp && route.challenge !== undefined) {
         throw new CorpusError(
           file,
@@ -719,6 +727,29 @@ function lintMcp(file: string, scenario: Scenario): void {
         file,
         `routes[${i}].tool.${unknownKeys[0]}`,
         `unknown tool key "${unknownKeys[0]}" (only name, description and input_schema are allowed)`,
+      );
+    }
+    // The MCP transport builds a plain PaymentRequired: these HTTP-only fields would be
+    // silently ignored, so they are errors on a tool route.
+    for (const [label, challenge] of [
+      ["challenge", route.challenge],
+      ["reprice.challenge", route.reprice?.challenge],
+    ] as const) {
+      for (const field of ["body_json", "extensions"] as const) {
+        if (challenge?.[field] !== undefined) {
+          throw new CorpusError(
+            file,
+            `routes[${i}].${label}.${field}`,
+            `${field} is not allowed on a tool route (the MCP transport ignores it)`,
+          );
+        }
+      }
+    }
+    if (route.sign_request !== undefined) {
+      throw new CorpusError(
+        file,
+        `routes[${i}].sign_request`,
+        "sign_request is not allowed on a tool route",
       );
     }
     if (route.challenge?.wire !== undefined || route.reprice?.challenge.wire !== undefined) {

@@ -241,6 +241,40 @@ describe("MCP lint", () => {
     expect(lintError(scenario({ routes: [b] })).message).toMatch(/wire is not allowed/);
   });
 
+  it("rejects HTTP-only challenge fields and sign_request on a tool route (U30-1)", () => {
+    const body = tool("a", { challenge: challenge({ body_json: { x: 1 } }) });
+    expect(lintError(scenario({ routes: [body] })).message).toMatch(/body_json is not allowed/);
+    const ext = tool("b", { challenge: challenge({ extensions: { e: {} } }) });
+    expect(lintError(scenario({ routes: [ext] })).message).toMatch(/extensions is not allowed/);
+    const rep = tool("c", {
+      behaviour: "reprice",
+      reprice: { challenge: challenge({ extensions: { e: {} } }) },
+    });
+    expect(lintError(scenario({ routes: [rep] })).path).toBe(
+      "routes[0].reprice.challenge.extensions",
+    );
+    const sign = tool("d", {
+      sign_request: {
+        submit_path: "/s",
+        kind: "message",
+        message: "hello",
+        status: 200,
+      },
+    });
+    expect(lintError(scenario({ routes: [sign] })).message).toMatch(/sign_request/);
+  });
+
+  it("surface accepts true, description and result on a tool route, strings only there (U30-1)", () => {
+    for (const surface of [true, "description", "result"]) {
+      const s = scenario({ routes: [tool("a", { surface })] });
+      expect(() => loadScenario(write(s))).not.toThrow();
+    }
+    const http = { path: "/p", page: "x", surface: "description" };
+    const err = lintError(scenario({ routes: [tool("a"), http] }));
+    expect(err.message).toMatch(/allowed only on a tool route/);
+    expect(err.path).toBe("routes[1].surface");
+  });
+
   it("rejects an mcp scenario with a challenged HTTP route", () => {
     const http = { path: "/pay", challenge: challenge(), delivered_body: "x" };
     expect(lintError(scenario({ routes: [tool("a"), http] })).message).toMatch(
