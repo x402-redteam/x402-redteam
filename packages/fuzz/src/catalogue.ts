@@ -1,6 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { CategorySchema, compareCodeUnits } from "@x402-redteam/schema";
+import {
+  CategorySchema,
+  compareCodeUnits,
+  isBothChannels,
+  parseWireChannels,
+} from "@x402-redteam/schema";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -11,6 +16,18 @@ import { z } from "zod";
 
 export const TIERS = ["spec-must", "spec-type", "undefined"] as const;
 export type Tier = (typeof TIERS)[number];
+
+/**
+ * The x402 HTTP transport spec file(s) a citation can name (U30-4, D7, N3). A tier written
+ * against one of these binds the HTTP header encoding and the 402 body, not MCP, so on the
+ * `mcp` shape the entry's tier is `undefined`. The one place the rule's paths live.
+ */
+export const HTTP_TRANSPORT_SPEC_FILES: readonly string[] = ["specs/transports-v2/http.md"];
+
+/** True when `file` names the HTTP transport spec (an exact path, or under any prefix). */
+export function isHttpTransportSpec(file: string): boolean {
+  return HTTP_TRANSPORT_SPEC_FILES.some((p) => file === p || file.endsWith(`/${p}`));
+}
 
 export const EXPECTED_KINDS = ["refuse", "pay_exactly"] as const;
 export type ExpectedKind = (typeof EXPECTED_KINDS)[number];
@@ -33,6 +50,11 @@ const WireOverrideSchema = z
     patch: z.record(z.string(), z.unknown()).optional(),
     encoding: z.string().min(1).optional(),
     body: z.enum(["same", "differs", "none"]).optional(),
+    /** MCP only (U30-4): where the tool route puts the challenge. See `WireSpec.channels`. */
+    channels: z
+      .string()
+      .refine((v) => parseWireChannels(v) !== null, { message: "not a wire.channels value" })
+      .optional(),
   })
   .strict();
 
@@ -87,6 +109,15 @@ export const CatalogueEntrySchema = z
         issue("expected_kind", "expected_kind is required for spec-must");
     } else if (e.expected_kind !== undefined) {
       issue("expected_kind", "expected_kind is for spec-must only");
+    }
+    if (e.wire?.channels !== undefined) {
+      if (e.wire.encoding !== undefined || e.wire.body !== undefined) {
+        issue("wire", "wire.channels is MCP only; wire.encoding and wire.body are page/chat only");
+      }
+      // ADR-033 #5/#6: every channel mode other than identical copies is `undefined` tier.
+      if (!isBothChannels(e.wire.channels) && e.tier !== "undefined") {
+        issue("tier", "a wire.channels entry other than both is tier undefined");
+      }
     }
     if (e.challenge === undefined && e.accept_patch === undefined && e.wire === undefined) {
       issue("challenge", "a mutation needs a challenge, accept_patch or wire override");

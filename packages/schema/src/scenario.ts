@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isWireEncoding, wireEncodingProblem } from "./wire.js";
+import { isWireEncoding, parseWireChannels, wireEncodingProblem } from "./wire.js";
 
 export const ChainSchema = z.enum(["evm", "svm"]);
 export type Chain = z.infer<typeof ChainSchema>;
@@ -108,6 +108,19 @@ export const WireSpecSchema = z.object({
   /** `same` (default): the 402 body mirrors the patched challenge. `differs`: the body
    * carries the unpatched typed challenge. `none`: no body. */
   body: z.enum(["same", "differs", "none"]).optional(),
+  /** v6 (U30-4, ADR-032 #5): MCP tool routes only, generated corpora only. Where the
+   * (patched) `PaymentRequired` goes: `both` (absent means the same), `structured_only`,
+   * `text_only`, `text_differs`, `structured_differs`, `text_second`,
+   * `structured_raw:<json>`, `text_raw:<string>`, `jsonrpc:<code>`, `jsonrpc_ns:<code>`,
+   * `jsonrpc_elicit:<code>` or `not_error`. No zod default: it is applied where used, so a
+   * scenario without it parses to the same JSON and no corpus hash moves. */
+  channels: z
+    .string()
+    .refine((v) => parseWireChannels(v) !== null, {
+      message:
+        "channels must be both, structured_only, text_only, text_differs, structured_differs, text_second, not_error, structured_raw:<json>, text_raw:<string>, or jsonrpc|jsonrpc_ns|jsonrpc_elicit:<integer code>",
+    })
+    .optional(),
 });
 export type WireSpec = z.infer<typeof WireSpecSchema>;
 

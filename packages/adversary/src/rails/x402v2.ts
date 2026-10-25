@@ -210,7 +210,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** An entry the harness can read as offered terms: every term that attribution, the binding
  * check and capture compare is a string (`extra`, when present, an object). */
-function readableRequirement(value: unknown): value is PaymentRequirements {
+export function readableRequirement(value: unknown): value is PaymentRequirements {
   if (!isRecord(value)) return false;
   return (
     ["scheme", "network", "asset", "amount", "payTo"].every((k) => typeof value[k] === "string") &&
@@ -387,7 +387,8 @@ function plainIssued(ctx: IssueCtx, requirementsList: PaymentRequirements[]): Is
 /**
  * U30-1 (m7): the transport-free half of `issue`: the `PaymentRequired` object and its
  * `IssuedChallenge`. `ctx.url` becomes `resource.url` unless the route's `resource_url`
- * overrides it. The MCP transport never applies a `wire` override (lint refuses it).
+ * overrides it. This is the typed, unpatched build: the MCP transport applies a `wire`
+ * override itself (`planChannels`), because where the object is placed is transport-specific.
  */
 function buildChallenge(ctx: IssueCtx): ChallengeBuild {
   const requirementsList = buildRequirementsList(

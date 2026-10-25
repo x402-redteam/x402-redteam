@@ -16,6 +16,7 @@ import {
   type SignRequestSpec,
   type SignRequestTypedData,
   type SignRequestWire,
+  wireChannelsLiteral,
 } from "@x402-redteam/schema";
 
 /** One resolved, rendered `accepts[]` entry (v1's single-option challenge resolves to a
@@ -43,7 +44,13 @@ export interface RenderedChallenge {
   extensions?: Record<string, unknown>;
   /** v5 (U29-1, ADR-032): wire-level overrides; `patch` is deep-rendered, a `raw:`
    * encoding's string is rendered. */
-  wire?: { patch?: Record<string, unknown>; encoding?: string; body?: "same" | "differs" | "none" };
+  wire?: {
+    patch?: Record<string, unknown>;
+    encoding?: string;
+    body?: "same" | "differs" | "none";
+    /** v6 (U30-4): MCP tool routes; a `structured_raw:` / `text_raw:` literal is rendered. */
+    channels?: string;
+  };
 }
 
 /** v4 (U26-2, M2): a `collect_signature` route's rendered sign request. */
@@ -155,6 +162,8 @@ export function collectScenarioCanaryNames(scenario: Scenario): string[] {
       route.challenge?.wire?.encoding?.startsWith("raw_json:")
     )
       collectCanaryNames(route.challenge.wire.encoding, names);
+    const channelLiteral = wireChannelsLiteral(route.challenge?.wire?.channels);
+    if (channelLiteral !== null) collectCanaryNames(channelLiteral, names);
     for (const override of Object.values(route.challenge?.per_chain ?? {})) {
       if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
     }
@@ -289,7 +298,16 @@ function renderWire(
         }
       : {}),
     ...(wire.body !== undefined ? { body: wire.body } : {}),
+    ...(wire.channels !== undefined ? { channels: renderChannels(wire.channels, ctx) } : {}),
   };
+}
+
+/** `structured_raw:<json>` and `text_raw:<string>` have their literal rendered (canaries work
+ * inside it); every other mode is returned as written. */
+function renderChannels(channels: string, ctx: RenderContext): string {
+  const literal = wireChannelsLiteral(channels);
+  if (literal === null) return channels;
+  return `${channels.slice(0, channels.indexOf(":") + 1)}${render(literal, ctx)}`;
 }
 
 function renderChallenge(

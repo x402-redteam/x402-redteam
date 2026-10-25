@@ -23,7 +23,7 @@ export function runFuzzCommand(opts: {
   renderSeed?: string;
 }): string {
   if (!(SHAPES as readonly string[]).includes(opts.shape)) {
-    throw new Error(`--shape "${opts.shape}" is invalid (expected page|chat)`);
+    throw new Error(`--shape "${opts.shape}" is invalid (expected ${SHAPES.join("|")})`);
   }
   const { manifest, corpusDir } = generate({
     catalogueDir: resolve(opts.catalogue),

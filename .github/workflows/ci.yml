@@ -74,6 +74,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # U30-4 (N2): a generated fuzz scenario (a fuzz- id, a fuzz: technique, or the private
+      # marker) must not sit in the committed corpora or anywhere else. The hooks run on a
+      # contributor's machine only; this runs the same rules over every tracked file. It prints
+      # paths, never contents.
+      - name: Fuzz privacy guard over the tracked tree
+        run: node scripts/fuzz-guard.mjs --tree
       - run: pnpm lint
       - run: pnpm typecheck
       - name: Unit tests with coverage thresholds
@@ -257,6 +263,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run the fuzz e2e files on macOS
         run: pnpm vitest run --project cli fuzz-smoke.e2e fuzz-diff.e2e
+      # The `mcp` leg (U30-4) is built but DISABLED (`if: false`). `mcp-sdk-default` is a new
+      # client for the public families, and GOVERNANCE.md keeps a family private until its first
+      # triage across all clients closes, so this step is enabled only after a private triage of
+      # the 4 public cases. It asserts alignment only: no refusal, and cases run equal the
+      # manifest's cases for the mcp shape. It prints a refusal reason and counts, never agent or
+      # tool output and never flagged, invariant or voided counts; the run uses --quiet and
+      # nothing is uploaded.
+      - name: Run the fuzz-smoke mcp leg (alignment only)
+        if: false
+        env:
+          FUZZ_SMOKE_MCP: "1"
+        run: pnpm vitest run --project cli fuzz-smoke.e2e -t "mcp leg"
 
   # The composite action's exact-exit-code matrix (self-test.yml), called here so it
   # reports under `ci-ok` and runs once per commit.

@@ -12,10 +12,17 @@
 // closes (private catalogue: ~/x402-redteam-private/fuzz/catalogue/). It prints paths only,
 // never file contents.
 //
-// Modes: (default) staged files; --pre-push: commits about to be pushed, refs on stdin.
+//   4. (U30-4, N2) a scenario file named `fuzz-*` in the committed corpora, corpus/ or
+//      corpus-mcp/. The loader allows `wire` on an MCP tool route only for a generated
+//      scenario (a `fuzz-` id with a `fuzz:` technique), so this is what keeps one out of
+//      the committed corpus; the technique and marker rules above already refuse the content.
+//
+// Modes: (default) staged files; --pre-push: commits about to be pushed, refs on stdin;
+// --tree: every tracked file of the working tree, run by CI so the same rules hold there
+// (the hooks run on a contributor's machine only).
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 /** The only place a scenario with a `fuzz:` technique may be committed. */
@@ -24,6 +31,8 @@ export const PUBLIC_CATALOGUE = "packages/fuzz/catalogue-public/";
 const OUTPUT_DIR_RE = /(?:^|\/)(?:fuzz-out|[^/]*\.fuzz)\//;
 const SCENARIO_EXT_RE = /\.(?:ya?ml|jsonl?)$/i;
 const MARKED_EXT_RE = /\.(?:ya?ml|jsonl?|md)$/i;
+/** A scenario file named like a generated one inside a committed corpus. */
+const COMMITTED_CORPUS_FUZZ_RE = /^corpus(?:-mcp)?\/(?:.*\/)?fuzz-[^/]*\.ya?ml$/i;
 
 /** Same value as FUZZ_PRIVATE_MARKER in packages/schema/src/fuzz-private.ts (a test checks). */
 export const FUZZ_PRIVATE_MARKER = "x402_redteam_fuzz_private";
@@ -40,6 +49,11 @@ export function isPublicCataloguePath(path) {
   return path.startsWith(PUBLIC_CATALOGUE);
 }
 
+/** True when `path` is a `fuzz-*` scenario in corpus/ or corpus-mcp/ (the committed corpora). */
+export function isCommittedCorpusFuzzPath(path) {
+  return COMMITTED_CORPUS_FUZZ_RE.test(path);
+}
+
 /** True when scenario text declares a `fuzz:` technique. */
 export function hasFuzzTechnique(text) {
   return FUZZ_TECHNIQUE_RE.test(text);
@@ -54,6 +68,7 @@ export function hasFuzzTechnique(text) {
  */
 export function violationsFor(path, read) {
   if (isFuzzOutputPath(path)) return [`${path}: fuzz output path`];
+  if (isCommittedCorpusFuzzPath(path)) return [`${path}: fuzz- scenario in a committed corpus`];
   if (isPublicCataloguePath(path)) return [];
   if (MARKED_EXT_RE.test(path)) {
     const text = read();
@@ -77,6 +92,16 @@ function scanStaged() {
     git(["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]),
   )) {
     hits.push(...violationsFor(name, () => git(["show", `:${name}`]).toString("utf8")));
+  }
+  return hits;
+}
+
+function scanTree() {
+  const hits = [];
+  for (const name of nulList(git(["ls-files", "-z"]))) {
+    // A tracked file deleted in the working tree has nothing to scan.
+    if (!existsSync(name)) continue;
+    hits.push(...violationsFor(name, () => readFileSync(name, "utf8")));
   }
   return hits;
 }
@@ -119,7 +144,11 @@ function scanPrePush(stdin) {
 }
 
 function main(argv) {
-  const hits = argv.includes("--pre-push") ? scanPrePush(readFileSync(0, "utf8")) : scanStaged();
+  const hits = argv.includes("--tree")
+    ? scanTree()
+    : argv.includes("--pre-push")
+      ? scanPrePush(readFileSync(0, "utf8"))
+      : scanStaged();
   if (hits.length === 0) return 0;
   console.error(`fuzz guard: ${hits.length} file(s) must stay private (ADR-028 #7):`);
   for (const h of hits) console.error(`  ${h}`);

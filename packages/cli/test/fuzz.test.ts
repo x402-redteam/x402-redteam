@@ -21,7 +21,7 @@ function runCli(args: string[]) {
 }
 
 describe("x402-redteam fuzz (U29-2)", () => {
-  for (const shape of ["page", "chat"]) {
+  for (const shape of ["page", "chat", "mcp"]) {
     it(`generates the public smoke catalogue (${shape}) and \`validate\` passes it`, () => {
       const out = mkdtempSync(join(tmpdir(), "x402-fuzz-cli-"));
       const gen = runCli(["fuzz", "--catalogue", PUBLIC, "--shape", shape, "--out", out]);
@@ -29,7 +29,8 @@ describe("x402-redteam fuzz (U29-2)", () => {
       expect(gen.stdout).toMatch(/^fuzz: 4 case\(s\) \(2 base\)/);
       const cases = readFileSync(join(out, "cases.json"), "utf8");
       expect(cases).toContain(FUZZ_PRIVATE_MARKER);
-      const validate = runCli(["validate", "--corpus", join(out, "corpus")]);
+      const dir = shape === "mcp" ? "corpus-mcp" : "corpus";
+      const validate = runCli(["validate", "--corpus", join(out, dir)]);
       expect(validate.status, validate.stderr).toBe(0);
       expect(validate.stdout).toContain("OK: 4 scenario(s)");
     });
@@ -48,7 +49,7 @@ describe("x402-redteam fuzz (U29-2)", () => {
     expect(inRepo.status).toBe(2);
     expect(inRepo.stderr).toMatch(/inside a git repository/);
     const out = mkdtempSync(join(tmpdir(), "x402-fuzz-cli-"));
-    expect(runCli(["fuzz", "--catalogue", PUBLIC, "--shape", "mcp", "--out", out]).status).toBe(2);
+    expect(runCli(["fuzz", "--catalogue", PUBLIC, "--shape", "sse", "--out", out]).status).toBe(2);
     expect(
       runCli(["fuzz", "--catalogue", join(out, "nope"), "--shape", "page", "--out", out]).status,
     ).toBe(2);

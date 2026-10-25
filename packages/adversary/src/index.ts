@@ -243,6 +243,7 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
   };
 }
 
+export { type OfferedMcpTerms, offeredMcpTermsForScenario } from "./mcp-offered.js";
 export type { RenderedRoute, RenderedScenario } from "./render.js";
 export { RunState } from "./state.js";
 

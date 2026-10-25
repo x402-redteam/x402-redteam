@@ -5,7 +5,14 @@ import { describe, expect, it } from "vitest";
 import { lintGeneratedScenario } from "../src/generator-lint.js";
 import { CorpusError, loadScenario } from "../src/load.js";
 import { ScenarioSchema } from "../src/scenario.js";
-import { applyMergePatch, isWireEncoding, wireEncodingKind } from "../src/wire.js";
+import {
+  applyMergePatch,
+  isBothChannels,
+  isWireEncoding,
+  parseWireChannels,
+  wireChannelsLiteral,
+  wireEncodingKind,
+} from "../src/wire.js";
 
 describe("applyMergePatch (RFC 7396)", () => {
   it("merges objects, deletes on null, replaces arrays whole, leaves the target alone", () => {
@@ -296,5 +303,39 @@ describe("raw_json, base64 raw and verbatim rules (U29-1 review)", () => {
         HOSTS,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("parseWireChannels (U30-4)", () => {
+  it("parses every mode and its argument", () => {
+    expect(parseWireChannels("both")).toEqual({ mode: "both" });
+    expect(parseWireChannels("not_error")).toEqual({ mode: "not_error" });
+    expect(parseWireChannels("jsonrpc:-32042")).toEqual({ mode: "jsonrpc", arg: "-32042" });
+    expect(parseWireChannels("jsonrpc_ns:402")).toEqual({ mode: "jsonrpc_ns", arg: "402" });
+    expect(parseWireChannels("jsonrpc_elicit:-32042")).toEqual({
+      mode: "jsonrpc_elicit",
+      arg: "-32042",
+    });
+    expect(parseWireChannels('structured_raw:{"a":":"}')).toEqual({
+      mode: "structured_raw",
+      arg: '{"a":":"}',
+    });
+    expect(parseWireChannels("text_raw:")).toEqual({ mode: "text_raw", arg: "" });
+  });
+
+  it("rejects what is not a mode", () => {
+    for (const v of ["", "nope", "jsonrpc", "jsonrpc:x", "jsonrpc:1.5", "both:1", "text_raw"]) {
+      expect(parseWireChannels(v), v).toBeNull();
+    }
+  });
+
+  it("gives the literal of the raw modes only, and treats absent as both", () => {
+    expect(wireChannelsLiteral("text_raw:hello")).toBe("hello");
+    expect(wireChannelsLiteral("structured_raw:[1]")).toBe("[1]");
+    expect(wireChannelsLiteral("jsonrpc:402")).toBeNull();
+    expect(wireChannelsLiteral(undefined)).toBeNull();
+    expect(isBothChannels(undefined)).toBe(true);
+    expect(isBothChannels("both")).toBe(true);
+    expect(isBothChannels("text_only")).toBe(false);
   });
 });

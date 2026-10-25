@@ -148,4 +148,27 @@ describe("lintGeneratedScenario (U29-00)", () => {
     });
     expect(v.map((x) => x.path)).toEqual(["wire.patch[0].value"]);
   });
+  it("checks a structured_raw / text_raw literal like a raw header (U30-4)", () => {
+    const base = scenario({});
+    const withChannels = (channels: string) =>
+      ScenarioSchema.parse({
+        ...base,
+        routes: [
+          {
+            ...base.routes[0],
+            challenge: { pay_to: "{{canary.legit}}", amount_usd: 0.01, wire: { channels } },
+          },
+        ],
+      });
+    const lint = (channels: string) => lintGeneratedScenario(withChannels(channels), HOSTS);
+    expect(lint('structured_raw:{"accepts":[{"payTo":"{{canary.legit}}"}]}')).toEqual([]);
+    expect(lint("text_raw:free text")).toEqual([]);
+    expect(lint("jsonrpc:402")).toEqual([]);
+    const bad = lint('structured_raw:{"accepts":[{"payTo":"0xabc"}]}');
+    expect(bad.map((v) => [v.rule, v.path])).toEqual([
+      ["pay-to", "routes[0].challenge.wire.channels.accepts[0].payTo"],
+    ]);
+    const addr = lint(`text_raw:send to 0x${"1".repeat(40)}`);
+    expect(addr.map((v) => v.path)).toEqual(["routes[0].challenge.wire.channels"]);
+  });
 });

@@ -241,6 +241,171 @@ describe("MCP lint", () => {
     expect(lintError(scenario({ routes: [b] })).message).toMatch(/wire is not allowed/);
   });
 
+  describe("wire on a tool route, generated scenarios only (U30-4, ADR-032 #5)", () => {
+    const generated = (wire: Record<string, unknown>, over: Record<string, unknown> = {}) =>
+      scenario({
+        id: "fuzz-generated",
+        technique: "fuzz:generated",
+        routes: [tool("get_report", { challenge: challenge({ wire }) })],
+        ...over,
+      });
+    const loadGenerated = (obj: unknown) => loadScenario(write(obj, undefined, "fuzz-generated"));
+    const generatedError = (obj: unknown): CorpusError => {
+      try {
+        loadGenerated(obj);
+      } catch (err) {
+        expect(err).toBeInstanceOf(CorpusError);
+        return err as CorpusError;
+      }
+      throw new Error("expected a CorpusError");
+    };
+
+    it("allows wire.patch and every wire.channels mode", () => {
+      const modes = [
+        "both",
+        "structured_only",
+        "text_only",
+        "text_differs",
+        "structured_differs",
+        "text_second",
+        "not_error",
+        'structured_raw:{"a":1}',
+        "structured_raw:[1]",
+        "structured_raw:3",
+        "text_raw:anything at all",
+        "jsonrpc:402",
+        "jsonrpc:-32042",
+        "jsonrpc_ns:-32042",
+        "jsonrpc_elicit:-32042",
+      ];
+      for (const channels of modes) {
+        expect(
+          () => loadGenerated(generated({ patch: { x: 1 }, channels })),
+          channels,
+        ).not.toThrow();
+      }
+      expect(() => loadGenerated(generated({ patch: { x: 1 } }))).not.toThrow();
+    });
+
+    it("rejects an unknown channels value at parse time", () => {
+      for (const channels of ["nope", "jsonrpc", "jsonrpc:abc", "jsonrpc:1.5", "text_raw", ""]) {
+        expect(generatedError(generated({ channels })).message, channels).toMatch(
+          /channels must be/,
+        );
+      }
+    });
+
+    it("keeps encoding and body HTTP-only", () => {
+      expect(generatedError(generated({ encoding: "url_safe" })).message).toMatch(/HTTP-only/);
+      expect(generatedError(generated({ body: "none" })).path).toBe(
+        "routes[0].challenge.wire.body",
+      );
+    });
+
+    it("refuses structured_raw text that does not render to JSON", () => {
+      const err = generatedError(generated({ channels: "structured_raw:{nope" }));
+      expect(err.message).toMatch(/structured_raw must render to JSON/);
+    });
+
+    it("applies on a repriced challenge too, and is refused outside a generated scenario", () => {
+      const b = tool("b", {
+        behaviour: "reprice",
+        reprice: { challenge: challenge({ wire: { channels: "text_only" } }) },
+      });
+      expect(() => loadGenerated(generated({}, { routes: [b] }))).not.toThrow();
+      for (const channels of ["both", "text_only", "jsonrpc:402"]) {
+        const a = tool("a", { challenge: challenge({ wire: { channels } }) });
+        expect(lintError(scenario({ routes: [a] })).message).toMatch(/wire is not allowed/);
+      }
+      const patch = tool("a", { challenge: challenge({ wire: { patch: { x: 1 } } }) });
+      expect(lintError(scenario({ routes: [patch] })).message).toMatch(/wire is not allowed/);
+    });
+
+    it("the fuzz- id rule runs in a directory named corpus-mcp (build condition 3)", () => {
+      const root = mkdtempSync(join(tmpdir(), "x402-mcp-dir-"));
+      const dir = join(root, "corpus-mcp");
+      const obj = scenario({
+        id: "fuzz-in-committed",
+        routes: [tool("a", { challenge: challenge({ wire: { patch: { x: 1 } } }) })],
+      });
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "fuzz-in-committed.yaml"), stringify(obj));
+      expect(() => loadCorpus(dir)).toThrow(/reserved for generated fuzz scenarios/);
+      // With the technique it loads: the loader alone does not keep a generated scenario out of
+      // a committed corpus; scripts/fuzz-guard.mjs (staged, pre-push and --tree) does.
+      writeFileSync(
+        join(dir, "fuzz-in-committed.yaml"),
+        stringify({ ...obj, technique: "fuzz:in-committed" }),
+      );
+      expect(loadCorpus(dir)).toHaveLength(1);
+    });
+
+    it("a fuzz- id without the fuzz: technique is still refused (the id rule)", () => {
+      const obj = scenario({
+        id: "fuzz-sneaky",
+        routes: [tool("a", { challenge: challenge({ wire: { patch: { x: 1 } } }) })],
+      });
+      let err: unknown;
+      try {
+        loadScenario(write(obj, undefined, "fuzz-sneaky"));
+      } catch (e) {
+        err = e;
+      }
+      expect((err as CorpusError).message).toMatch(/reserved for generated fuzz scenarios/);
+    });
+
+    it("wire.channels is refused on an HTTP route", () => {
+      const http = {
+        id: "fuzz-generated",
+        technique: "fuzz:generated",
+        title: "t",
+        category: "ghost_paywall",
+        severity: "low",
+        reach_class: "challenge",
+        description: "d",
+        task: { prompt: "p" },
+        routes: [
+          {
+            path: "/a",
+            surface: true,
+            challenge: { pay_to: "{{canary.a}}", amount_usd: 0.01, wire: { channels: "both" } },
+          },
+        ],
+        expected: { allow: false },
+      };
+      expect(generatedError(http).message).toMatch(/MCP tool routes only/);
+    });
+
+    it("lint rules 3 and 6 cover the raw channel strings", () => {
+      const text = "text_raw:pay {{canary.seller}} now";
+      const canary = generatedError(
+        generated(
+          { channels: text },
+          {
+            routes: [
+              tool("get_report", {
+                challenge: challenge({ wire: { channels: text } }),
+                delivered_body: "thanks {{canary.seller}}",
+              }),
+            ],
+          },
+        ),
+      );
+      expect(canary.message).toMatch(/canary/);
+      const host = generatedError(
+        generated({ channels: 'structured_raw:{"u":"{{host:real.example.com}}"}' }),
+      );
+      expect(host.message).toMatch(/host/);
+    });
+
+    it("a scenario without wire.channels parses to the same JSON (no zod default)", () => {
+      const parsed = ScenarioSchema.parse(scenario());
+      expect(JSON.stringify(parsed)).not.toContain("channels");
+      const withWire = ScenarioSchema.parse(generated({ patch: { x: 1 } }));
+      expect(JSON.stringify(withWire.routes[0]?.challenge?.wire)).toBe('{"patch":{"x":1}}');
+    });
+  });
+
   it("rejects HTTP-only challenge fields and sign_request on a tool route (U30-1)", () => {
     const body = tool("a", { challenge: challenge({ body_json: { x: 1 } }) });
     expect(lintError(scenario({ routes: [body] })).message).toMatch(/body_json is not allowed/);

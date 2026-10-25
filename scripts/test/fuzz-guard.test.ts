@@ -1,13 +1,15 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { generate } from "../../packages/fuzz/src/index.js";
 import { FUZZ_PRIVATE_MARKER as SCHEMA_MARKER } from "../../packages/schema/src/fuzz-private.js";
 import {
   FUZZ_PRIVATE_MARKER,
   hasFuzzTechnique,
+  isCommittedCorpusFuzzPath,
   isFuzzOutputPath,
   isPublicCataloguePath,
   violationsFor,
@@ -95,6 +97,92 @@ describe("private marker", () => {
   });
 });
 
+describe("fuzz- scenarios in the committed corpora (U30-4, N2)", () => {
+  it.each([
+    "corpus/fuzz-a.yaml",
+    "corpus/sub/fuzz-a.yml",
+    "corpus-mcp/fuzz-a.yaml",
+    "corpus-mcp/nested/fuzz-get-report.yaml",
+  ])("refuses %s", (p) => {
+    expect(isCommittedCorpusFuzzPath(p)).toBe(true);
+    expect(violationsFor(p, () => PLAIN_YAML)).toHaveLength(1);
+  });
+
+  it.each([
+    "corpus/mcp-fuzzy.yaml",
+    "corpus/not-fuzz-a.yaml",
+    "corpus-mcp/mcp-control-paid-tool.yaml",
+    "packages/fuzz/catalogue-public/fuzz-a.yaml",
+    "examples/corpus/fuzz-a.yaml",
+    "corpus/fuzz-a.txt",
+  ])("allows %s", (p) => {
+    expect(isCommittedCorpusFuzzPath(p)).toBe(false);
+    expect(violationsFor(p, () => PLAIN_YAML)).toEqual([]);
+  });
+
+  it("a generated mcp scenario with a fuzz: technique is refused wherever it is committed", () => {
+    const generated = "id: fuzz-get-report\ntechnique: fuzz:get-report\ntransport: mcp\n";
+    expect(violationsFor("corpus-mcp/anything.yaml", () => generated)).toHaveLength(1);
+    expect(violationsFor("corpus/anything.yaml", () => generated)).toHaveLength(1);
+  });
+});
+
+describe("generated corpus-mcp output (U30-4, build condition 3)", () => {
+  /** Every file `fuzz --shape mcp` writes for the public catalogue, as {relative path: text}. */
+  function generated(): Record<string, string> {
+    const out = mkdtempSync(join(tmpdir(), "fuzz-guard-mcp-"));
+    try {
+      generate({
+        catalogueDir: fileURLToPath(
+          new URL("../../packages/fuzz/catalogue-public", import.meta.url),
+        ),
+        shape: "mcp",
+        outDir: out,
+      });
+      const files: Record<string, string> = {};
+      const walk = (rel: string) => {
+        for (const e of readdirSync(join(out, rel), { withFileTypes: true })) {
+          const r = join(rel, e.name);
+          if (e.isDirectory()) walk(r);
+          else files[r] = readFileSync(join(out, r), "utf8");
+        }
+      };
+      walk("");
+      return files;
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }
+
+  it("is refused under a fuzz output directory", () => {
+    const files = generated();
+    expect(Object.keys(files).some((f) => f.startsWith("corpus-mcp/"))).toBe(true);
+    for (const rel of Object.keys(files)) {
+      expect(violationsFor(`seed7.fuzz/gen/${rel}`, () => files[rel] as string)).toHaveLength(1);
+      expect(violationsFor(`fuzz-out/${rel}`, () => files[rel] as string)).toHaveLength(1);
+    }
+  });
+
+  it("is refused anywhere else by the private marker every generated file carries", () => {
+    const files = generated();
+    for (const [rel, text] of Object.entries(files)) {
+      expect(text, rel).toContain(FUZZ_PRIVATE_MARKER);
+      expect(
+        violationsFor(`elsewhere/${rel}`, () => text),
+        rel,
+      ).toHaveLength(1);
+    }
+    // ...including a copy placed in the committed corpus-mcp/ directory.
+    for (const [rel, text] of Object.entries(files)) {
+      if (!rel.startsWith("corpus-mcp/")) continue;
+      expect(
+        violationsFor(rel, () => text),
+        rel,
+      ).toHaveLength(1);
+    }
+  });
+});
+
 describe("hook behaviour in a scratch repository", () => {
   let repo: string;
   const git = (...args: string[]) =>
@@ -143,6 +231,37 @@ describe("hook behaviour in a scratch repository", () => {
     const r = guard();
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("somewhere/else/diff.json");
+  });
+
+  it("--tree scans every tracked file, as CI runs it", () => {
+    write("corpus/a.yaml", PLAIN_YAML);
+    write("corpus-mcp/b.yaml", PLAIN_YAML);
+    git("commit", "-qm", "clean");
+    expect(guard("--tree").status).toBe(0);
+    write("corpus-mcp/fuzz-get-report.yaml", FUZZ_YAML);
+    git("commit", "-qm", "offending");
+    const r = guard("--tree");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("corpus-mcp/fuzz-get-report.yaml");
+    expect(r.stderr).not.toContain("amount_overflow");
+  });
+
+  it("--tree skips a tracked file that was deleted in the working tree", () => {
+    write("corpus/a.yaml", PLAIN_YAML);
+    write("corpus/b.yaml", PLAIN_YAML);
+    git("commit", "-qm", "two files");
+    rmSync(join(repo, "corpus/b.yaml"));
+    const r = guard("--tree");
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toContain("ENOENT");
+  });
+
+  it("--tree refuses a fuzz: technique committed in the HTTP corpus too", () => {
+    write("corpus/a.yaml", FUZZ_YAML);
+    git("commit", "-qm", "offending");
+    const r = guard("--tree");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("corpus/a.yaml");
   });
 
   it("--pre-push refuses a committed offending file", () => {

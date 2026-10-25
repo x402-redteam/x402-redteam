@@ -134,6 +134,7 @@
     "catalogue_sha256": "803538fd016a349f55e58fadc1bfb35342ccb8e3fa5a00ba01ec53647a5eca6e",
     "corpus_hash": {
       "chat": "fd616bb91fd03764fbdb203324061e0a0df449368da464b24af7aac81bbcfac3",
+      "mcp": "8b0df4e794979520754c6b393ee8c3a6472735b005eef659d84db135d8bbf52c",
       "page": "482954ca06961572e434a7c6229c140d5d098979b64a00b987db19332387ddb6"
     },
     "render_seed": "x402-redteam-v1"

@@ -17,8 +17,10 @@ import { collectVars, type RenderContext, render, renderJsonStrings } from "./te
 import {
   decodeBase64Json,
   headerValueProblem,
+  parseWireChannels,
   WIRE_RAW_JSON_PREFIX,
   WIRE_RAW_PREFIX,
+  wireChannelsLiteral,
 } from "./wire.js";
 
 /** v6 (U30-0, ADR-035): `transport: mcp` loads only from a directory with this name, and
@@ -158,6 +160,9 @@ export function wireFields(
       value: wire.encoding.slice(WIRE_RAW_JSON_PREFIX.length),
     });
   }
+  // U30-4: the `structured_raw:` / `text_raw:` literals reach the agent like a `raw:` header.
+  const literal = wireChannelsLiteral(wire.channels);
+  if (literal !== null) fields.push({ path: `${basePath}.wire.channels`, value: literal });
   return fields;
 }
 
@@ -670,9 +675,16 @@ function hasOutputSchema(value: unknown): boolean {
  * v6 (U30-0, ADR-034/035): MCP transport lint. Tool routes need `transport: mcp`, an `mcp`
  * scenario needs a tool route and no challenged HTTP route; tool names are unique per
  * host; no `outputSchema` (the SDK validates structured content against it) and no `wire`
- * (its encodings are defined over a base64 header). `input_schema.type` and the
+ * except `patch` and `channels` in a generated scenario (U30-4: `encoding` and `body` are
+ * defined over an HTTP header and body). `input_schema.type` and the
  * tool-only behaviours are checked by the route schema.
  */
+/** A generated fuzz scenario: a `fuzz-` id with a `fuzz:` technique (the id rule in
+ * `lintScenario` makes the two go together). Never present in a committed corpus. */
+function isGeneratedScenario(scenario: Scenario): boolean {
+  return scenario.id.startsWith("fuzz-") && (scenario.technique ?? "").startsWith("fuzz:");
+}
+
 function lintMcp(file: string, scenario: Scenario): void {
   const mcp = scenarioTransport(scenario) === "mcp";
   const seen = new Map<string, number>();
@@ -683,6 +695,13 @@ function lintMcp(file: string, scenario: Scenario): void {
           file,
           `routes[${i}].surface`,
           `surface: "${route.surface}" is allowed only on a tool route`,
+        );
+      }
+      if (route.challenge?.wire?.channels !== undefined) {
+        throw new CorpusError(
+          file,
+          `routes[${i}].challenge.wire.channels`,
+          "wire.channels is for MCP tool routes only",
         );
       }
       if (mcp && route.challenge !== undefined) {
@@ -752,12 +771,48 @@ function lintMcp(file: string, scenario: Scenario): void {
         "sign_request is not allowed on a tool route",
       );
     }
-    if (route.challenge?.wire !== undefined || route.reprice?.challenge.wire !== undefined) {
-      throw new CorpusError(
-        file,
-        `routes[${i}].challenge.wire`,
-        "wire is not allowed on a tool route",
-      );
+    // U30-4 (ADR-032 #5, D5): `wire.patch` and `wire.channels` are allowed on a tool route in
+    // generated scenarios only (a `fuzz-` id with a `fuzz:` technique, which the fuzz guard
+    // keeps out of commits). `encoding` and `body` are defined over an HTTP header and body.
+    for (const [label, challenge] of [
+      ["challenge", route.challenge],
+      ["reprice.challenge", route.reprice?.challenge],
+    ] as const) {
+      const wire = challenge?.wire;
+      if (wire === undefined) continue;
+      const path = `routes[${i}].${label}.wire`;
+      if (!isGeneratedScenario(scenario)) {
+        throw new CorpusError(
+          file,
+          path,
+          "wire is not allowed on a tool route (generated fuzz scenarios only)",
+        );
+      }
+      for (const field of ["encoding", "body"] as const) {
+        if (wire[field] !== undefined) {
+          throw new CorpusError(
+            file,
+            `${path}.${field}`,
+            `wire.${field} is HTTP-only and is not allowed on a tool route`,
+          );
+        }
+      }
+      const parsed = wire.channels === undefined ? null : parseWireChannels(wire.channels);
+      if (parsed?.mode === "structured_raw") {
+        let ok = true;
+        try {
+          JSON.parse(render(parsed.arg ?? "", DUMMY_CTX));
+        } catch {
+          ok = false;
+        }
+        if (!ok) {
+          throw new CorpusError(
+            file,
+            `${path}.channels`,
+            "structured_raw must render to JSON text",
+          );
+        }
+      }
     }
   });
   if (mcp && seen.size === 0) {

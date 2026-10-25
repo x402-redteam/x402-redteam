@@ -11,8 +11,12 @@ import type { RunState } from "./state.js";
 import {
   deliveryResult,
   extractMcpCredential,
+  issuedUnderWire,
+  McpRpcError,
   paymentRequiredResult,
   plainResult,
+  planAnswer,
+  planChannels,
 } from "./transports/mcp.js";
 
 export { MCP_PATH };
@@ -137,15 +141,25 @@ export async function serveMcp(
       if (typeof name !== "string")
         return fail(-32602, "Invalid params: tools/call needs a tool name");
       const result = await callTool(c, shared, state, rendered, host, name, params);
-      return result === "unknown_tool" ? fail(-32602, `Unknown tool: ${name}`) : respond(result);
+      if (result === "unknown_tool") return fail(-32602, `Unknown tool: ${name}`);
+      // U30-4 (D9): a `jsonrpc*` channel mode answers HTTP 200 with a JSON-RPC error that has
+      // the request id, a string message, and nothing else in the envelope.
+      if (result instanceof McpRpcError) {
+        return c.json(rpcErrorBody(id, result.code, result.message, result.data));
+      }
+      return respond(result);
     }
     default:
       return fail(-32601, `Method not found: ${method}`);
   }
 }
 
-function rpcErrorBody(id: Id, code: number, message: string): Json {
-  return { jsonrpc: "2.0", id, error: { code, message } };
+function rpcErrorBody(id: Id, code: number, message: string, data?: unknown): Json {
+  return {
+    jsonrpc: "2.0",
+    id,
+    error: { code, message, ...(data !== undefined ? { data } : {}) },
+  };
 }
 
 /** `tools/list`: the host's tool routes, with a repriced description after the first
@@ -190,7 +204,7 @@ async function callTool(
   host: string,
   name: string,
   params: unknown,
-): Promise<Json | "unknown_tool"> {
+): Promise<Json | McpRpcError | "unknown_tool"> {
   const log = (status: number, paid: boolean): void =>
     logRequest(state, { method: "POST", host, path: MCP_PATH, status, paid, tool: name });
 
@@ -227,7 +241,7 @@ async function callTool(
     error?: string,
     settlement?: unknown,
     status = 402,
-  ): Json => {
+  ): Json | McpRpcError => {
     runtime.challengeCounter += 1;
     const built = rail.buildChallenge({
       route: active,
@@ -238,16 +252,26 @@ async function callTool(
       challenge_id: `${route.route_key}#${runtime.challengeCounter}`,
       seq: state.nextSeq(),
     });
-    for (const issued of built.issued) state.challenges.push(issued);
-    runtime.currentChallengeIds = built.issued.map((issued) => issued.challenge_id);
-    log(status, paid);
     const body =
       error === undefined ? built.paymentRequired : withError(built.paymentRequired, error);
-    return paymentRequiredResult(body, settlement);
+    // U30-4: under `wire`, the patch and channel mode decide what is served; the ledger
+    // records the union of the channels' entries as the offered terms.
+    const wire = active.challenge?.wire;
+    const plan = wire === undefined ? undefined : planChannels(body, wire);
+    const issuedList =
+      plan === undefined
+        ? built.issued
+        : built.issued.map((issued) => issuedUnderWire(issued, plan));
+    for (const issued of issuedList) state.challenges.push(issued);
+    runtime.currentChallengeIds = issuedList.map((issued) => issued.challenge_id);
+    log(status, paid);
+    return plan === undefined
+      ? paymentRequiredResult(body, settlement)
+      : planAnswer(plan, settlement);
   };
 
   /** The current terms again, without issuing: the answer to a payment that was not accepted. */
-  const represent = (error: string, settlement: unknown): Json => {
+  const represent = (error: string, settlement: unknown): Json | McpRpcError => {
     const built = rail.buildChallenge({
       route: active,
       chain: state.chain,
@@ -258,7 +282,11 @@ async function callTool(
         runtime.currentChallengeIds[0] ?? `${route.route_key}#${runtime.challengeCounter}`,
       seq: state.peekSeq(),
     });
-    return paymentRequiredResult(withError(built.paymentRequired, error), settlement);
+    const body = withError(built.paymentRequired, error);
+    const wire = active.challenge?.wire;
+    return wire === undefined
+      ? paymentRequiredResult(body, settlement)
+      : planAnswer(planChannels(body, wire), settlement);
   };
 
   // m6: the payment rides in `_meta["x402/payment"]`; a PAYMENT-SIGNATURE header on /mcp is

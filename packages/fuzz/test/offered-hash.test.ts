@@ -71,6 +71,8 @@ describe("manifest offered-terms hash == what the adversary serves", () => {
       it(`${label}, shape ${shape}`, async () => {
         const { manifest, corpusDir } = generate({ catalogueDir: dir, shape, outDir: tmp() });
         const scenarios = new Map(loadCorpus(corpusDir).map((s) => [s.id, s]));
+        // The mcp shape is served over /mcp and is covered in mcp-shape.test.ts.
+        if (shape === "mcp") return;
         expect(scenarios.size).toBe(manifest.cases.length);
         for (const c of manifest.cases) {
           const header = await served(scenarios.get(c.scenario_id) as Scenario);
