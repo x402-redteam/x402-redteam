@@ -84,6 +84,10 @@ export async function serveMcp(
   }
   if (c.req.method !== "POST") {
     // The Streamable HTTP SSE stream (GET) and session termination (DELETE) are not served.
+    // Opt-in trace to stderr, outside report.json (the interop test counts these).
+    if (process.env.X402_REDTEAM_MCP_TRACE === "1") {
+      console.error(`x402-redteam adversary: /mcp ${c.req.method} answered 405`);
+    }
     c.header("Allow", "POST");
     return c.body(null, 405);
   }

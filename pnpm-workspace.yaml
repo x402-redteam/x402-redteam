@@ -10,3 +10,13 @@ overrides:
   source-map-js: 1.2.2
   # GHSA launch-editor advisories (3): dev-only (vitest pulls vite), fixed in 8.3.3.
   vite: 8.3.3
+  # U30-2 (m5): @x402/mcp declares ^1.12.1, which floats. 1.32.1 is what it resolved to at design time;
+  # 1.32.2 was published 2026-10-23, inside the minimumReleaseAge window. examples/agents only.
+  "@modelcontextprotocol/sdk": 1.32.1
+  # U30-2 (build condition 6): zod 3, pinned exactly, scoped to the MCP packages (the workspace packages use zod 4.6.5).
+  "@x402/mcp>zod": 3.25.76
+  "@modelcontextprotocol/sdk>zod": 3.25.76
+  # GHSA-w74x-v6f9-j3xg and 3 more: reached through @modelcontextprotocol/sdk>ajv, fixed in 3.1.9.
+  fast-uri: 3.1.9
+  # GHSA-27r3-jxmh-p828: reached through @modelcontextprotocol/sdk>express, fixed in 2.4.0.
+  body-parser: 2.4.0

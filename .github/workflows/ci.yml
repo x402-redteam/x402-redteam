@@ -214,6 +214,7 @@ jobs:
           - fuzz-smoke
           - guardrail-integrity
           - hosts
+          - mcp-interop
           - rpc-capture
           - run-suite
           - u26-capabilities

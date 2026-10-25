@@ -25,7 +25,10 @@ export function agentCmd(
     | "obedient"
     | "hostname-allowlist"
     | "sdk-default"
-    | "mcp-probe",
+    | "mcp-probe"
+    | "mcp-sdk-default"
+    | "mcp-naive"
+    | "mcp-guarded",
 ): string {
   const tsxCli = require.resolve("tsx/cli");
   const scriptPath = fileURLToPath(
