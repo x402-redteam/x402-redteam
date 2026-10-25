@@ -205,6 +205,7 @@ jobs:
         # if this list and that glob ever diverge, so a new e2e file can't go silently
         # un-sharded, and a removed one can't leave a dangling, always-skipped shard).
         shard:
+          - corpus-mcp
           - corpus-v2
           - driver-calibration
           # macOS-only: the test needs sandbox-exec and skips itself on Linux. The diff logic

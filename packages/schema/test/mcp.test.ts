@@ -424,8 +424,13 @@ describe("corpus partition (ADR-035)", () => {
     expect(loadCorpus(dir)).toHaveLength(1);
   });
 
-  it("an empty corpus-mcp/ loads zero scenarios; the shipped one is empty", () => {
-    expect(loadCorpus(REAL_MCP_CORPUS)).toEqual([]);
+  it("an empty corpus-mcp/ loads zero scenarios; the shipped one is the nine-scenario family (U30-3)", () => {
+    const empty = join(root, "empty", "corpus-mcp");
+    mkdirSync(empty, { recursive: true });
+    expect(loadCorpus(empty)).toEqual([]);
+    const shipped = loadCorpus(REAL_MCP_CORPUS);
+    expect(shipped).toHaveLength(9);
+    expect(shipped.every((s) => scenarioTransport(s) === "mcp")).toBe(true);
   });
 
   it("the real corpus/ contains no mcp scenario", () => {

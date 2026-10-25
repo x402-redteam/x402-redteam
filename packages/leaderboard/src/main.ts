@@ -20,7 +20,7 @@ import { execFile } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadCorpus } from "@x402-redteam/schema";
-import { buildLeaderboard } from "./build-leaderboard.js";
+import { buildLeaderboard, buildMcpSection } from "./build-leaderboard.js";
 import {
   loadHarnessAllowlist,
   loadResultsDir,
@@ -156,13 +156,41 @@ async function main(): Promise<void> {
     verified,
     seasonRecords,
   );
-  writeFileSync(resolve(root, "LEADERBOARD.md"), markdown);
+
+  // U30-3 (ADR-035 #3): the MCP family has its own corpus, results and section. It is
+  // appended after the HTTP document, which is built exactly as before.
+  const mcpCorpusDir = resolve(root, "corpus-mcp");
+  const mcpResultsDir = resolve(resultsDir, "mcp");
+  const mcp = existsSync(mcpCorpusDir)
+    ? buildMcpSection(
+        loadResultsDir(mcpResultsDir),
+        loadCorpus(mcpCorpusDir),
+        loadResultsMeta(mcpResultsDir),
+      )
+    : undefined;
+  if (mcp !== undefined && mcp.refused.length > 0) {
+    console.error(
+      `results/mcp/: not a harness reference result (only mcp-guarded and mcp-naive, marked ` +
+        `reference in results/mcp/_meta.json, are accepted): ${mcp.refused.join(", ")}`,
+    );
+    process.exit(1);
+  }
+  writeFileSync(
+    resolve(root, "LEADERBOARD.md"),
+    mcp === undefined ? markdown : `${markdown}\n${mcp.markdown}`,
+  );
 
   console.log(
     `Wrote LEADERBOARD.md: ${ranked.length} ranked (Tier 1), ${guardrails.length} verified ` +
       `(Tier 2), ${agents.length} agent-track, ${reference.length} reference, ${stale.length} ` +
       `stale, ${rejected.length} rejected`,
   );
+  if (mcp !== undefined) {
+    console.log(
+      `MCP section: ${mcp.rows.length} reference, ${mcp.stale.length} stale, ` +
+        `${mcp.rejected.length} rejected`,
+    );
+  }
 }
 
 await main();
