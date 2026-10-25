@@ -227,3 +227,150 @@ design delta (condition 9).
    `wire.structured` and does not say how the fuzz shape expresses these modes.
 10. The `reprice` scenario's budget covers both calls (at least $0.51 with the example
     prices), so only price binding decides the run.
+
+## U30-4 delta review
+
+Reviewer: senior-architect. Date: 2026-10-26. Subject:
+`aidlc-docs/construction/U30-mcp-seller/u30-4-delta.md` (draft), branch
+`docs/u30-mcp-seller` at `093a753`. Read against design §1, §3 item 5 and §8, ADR-028/029/
+032/033/034/035, GOVERNANCE.md "Private by design", `packages/fuzz/src/{cases,generate,diff}.ts`,
+`packages/schema/src/{scenario,load}.ts`, `packages/adversary/src/{mcp-server.ts,transports/mcp.ts}`,
+the installed `@x402/mcp` 2.28.0 dist, `@x402/core` 2.28.0 and `@modelcontextprotocol/sdk`
+1.32.1 under `node_modules/.pnpm`. Facts marked "checked" were run with a short `node -e` against
+the installed packages. Paths below are relative to `node_modules/.pnpm/` for the packages.
+
+### Facts checked
+
+- **§1.1 order: correct, with omissions.**
+  - The result path runs only when `isError` is truthy. It tries `structuredContent` first, if
+    truthy and it passes `parsePaymentRequired`. Otherwise it tries `content[0]`, only when that
+    is `type: "text"` and `JSON.parse` gives an object that passes the same schema
+    (`@x402+mcp@2.28.0/.../dist/esm/index.mjs:714-747`).
+  - "Parses" means the zod `PaymentRequiredSchema` of `@x402/core`: positive
+    `maxTimeoutSeconds`, CAIP-2 `network`, `resource.url` required. Unknown keys are
+    **stripped**, at the top level and in each `accepts` entry (checked).
+  - The JSON-RPC error path is read **only on the unpaid probe call** (`index.mjs:455-465`).
+    `callToolWithPayment` does not catch (`index.mjs:544`), so an error answer to a paid call
+    reaches the agent as a thrown error.
+  - `isPaymentRequiredError` also needs `message` to be a string (`index.mjs:100-120`). For
+    **either** code, `data.x402` is used whenever the key exists, with no fallback to the flat
+    copy (`index.mjs:768-775`; README "Supported PaymentRequired Shapes", line 266). Checked:
+    `402` with a valid flat copy plus a bad `data.x402` is not read.
+- **§1.2: correct.** A missing or schema-failing `structuredContent` falls back to the text
+  silently; when both parse, the structured copy wins.
+- **§1.3: confirmed.** SDK 1.32.1 defines `-32042` as `ErrorCode.UrlElicitationRequired`
+  (`@modelcontextprotocol+sdk@1.32.1_zod@3.25.76/.../dist/esm/types.js:170`), with
+  `URL_ELICITATION_REQUIRED = -32042` in `spec.types.js:23`, at `LATEST_PROTOCOL_VERSION
+  2025-11-25` (`types.js:2`).
+  - Every error response goes through `McpError.fromError` (`shared/protocol.js:518`). For
+    `-32042`, when `data.elicitations` is set, it builds a `UrlElicitationRequiredError` whose
+    `data` is replaced by `{ elicitations }` (`types.js:2039-2061`). Checked: a `-32042` that
+    carries both `elicitations` and `x402` arrives with `x402` gone, and `@x402/mcp` reads no
+    payment.
+  - I could not verify offline whether the x402 MCP transport spec at the pinned commit
+    defines `-32042`. The `@x402/mcp` README lists it as a supported shape.
+- **The SDK checks results before `@x402/mcp` sees them.** `structuredContent` must be a
+  record (`types.js:1302`), so a non-object makes the whole call throw before any fallback.
+  `JSONRPCErrorResponseSchema` is `.strict()` (`types.js:175-194`). A POST answered with a
+  non-2xx status throws `StreamableHTTPError` and loses the body (`client/streamableHttp.js:326-378`).
+
+### Findings
+
+| id | severity | area | finding | impact | required change |
+|---|---|---|---|---|---|
+| D1 | major | oracle, tiers | §1.3 is settled: the base protocol assigns `-32042` to URL elicitation (facts above). §2.4 still says "pending". `jsonrpc:402` and `jsonrpc:-32042` (flat data, no `elicitations`) behave the same in `@x402/mcp` 2.28.0 on SDK 1.32.1 (checked). The only `-32042` variant where the SDK behaves differently, data carrying both `elicitations` and `x402`, has no mode. | The `jsonrpc:*` tier can never rise above `undefined`. Neither paying on `-32042` nor refusing it is a defect. A triage that treats one of them as a lead imports the harness's own reading. The mode set misses the one case where the protocol collision is visible. | Rewrite §1.3 and §2.4 as fact: `jsonrpc:*` is `undefined` for good, and the triage note says "base-protocol code collision", never a verdict. Add `jsonrpc_elicit:-32042` (data = `{elicitations:[…], x402: patched}`), or put it in §4 out of scope. Say that `jsonrpc:402` and flat `jsonrpc:-32042` cannot be told apart by the only in-scope client. Correct §1.1 with the omissions above: probe-only error path, `data.x402` precedence for both codes, `message` string, zod parse and strip, `content[0]` must be text. |
+| D2 | major | measurement, recording | §2.3 applies the union of channel offers to the diff invariant only. The adversary's own match still uses the one issuance it records: `issueChallenge` pushes `built.issued` (`mcp-server.ts:225-246`), and payments are evaluated against `currentChallengeIds`. The diff invariant compares entry fields (`diff.ts:196-245`), so per-channel **hashes** cannot feed it. | In `text_differs` and `structured_differs`, a client that follows the other channel is recorded `signed_invalid`, the scorer fails it, and the invariant reports `terms_mismatch`. That is the rev-1 M2 problem again, now in private triage. | Record each channel's readable `accepts` entries (not only hashes) in an optional `IssuedChallenge.channels`. The adversary's binding check and `IssuedChallenge.accepts` use the union, and hashes are derived from the entries. The `channel` observation also needs `multiple`, for signed terms that match more than one channel (always the case in `both`, and whenever the patch touches only fields that are not signed). |
+| D3 | major | diff alignment | The F5 check compares every recorded challenge with one `offered_terms_sha256` (`diff.ts:439-453`), documented as "identical in both shapes" (`generate.ts:61-64`). A differs mode serves two offers, and a channel-only case has no page twin. | Every `*_differs` run is refused at alignment ("offered accepts … do not match the manifest hash"). The same class of bug as the U29 non-array-`accepts` fix. | The manifest case gains `offered_terms_sha256_by_channel`, present only for channel cases, and F5 compares each recorded channel with its own hash. MCP issuances with a patch record `wire.offered` exactly as HTTP does, so the `both` hash equals the page hash. Extend the cross-shape check (`generate.ts:198-204`) to mcp vs page for every case both carry. |
+| D4 | major | generation | `generate()` aligns shapes by array index (`generate.ts:190-225`). `resolveEntry` copies only `patch`, `encoding` and `body` into `wire` (`cases.ts:133-143`). `pairable`/`pairEntry` merge `body` and `encoding` across entries (`cases.ts:195-240`). `offeredTermsForScenario` renders the HTTP header path only (`adversary/src/index.ts:254-264`). | Per-case `shapes` silently misaligns cases. A pair of a `body` entry and a `channels` entry is valid on no shape. The mcp offer is computed through the HTTP encoder. | Key built cases by id. A pair's shapes are the intersection of its members' shapes, and a pair with none is skipped. Never pair `channels` entries, or pair them only with patch-only entries. Add an MCP-aware offered-terms function that returns each channel. Add `counts.skipped` per shape. When `--shape mcp`, write to `corpus-mcp/` and clear a stale `corpus/`, and the reverse (`generate.ts:245-250` clears only `corpus/`). |
+| D5 | major | contracts, public corpus | The table gives `both` as the default. `WireSpecSchema` is shared with HTTP (`scenario.ts:92-112`): a zod `.default("both")` writes `channels` into every HTTP `wire` scenario and moves the page/chat `corpus_hash`. This is the rev-2 condition-1 trap again. The loader refuses any `wire` on a tool route today (`load.ts:755-760`). §2.2 replaces that with "the public `corpus-mcp/` lint refuses any other value", which implies `wire.patch` and `channels: both` become legal in public `corpus-mcp/`. | It breaks every private manifest and the smoke golden. It loosens a code-enforced guard into a policy, against ADR-032 #4 and rev-1 M2. | `channels` is optional with no zod default, applied where used. The loader keeps refusing `wire` on tool routes except in generated scenarios: id prefix `fuzz-` with a `fuzz:` technique, already paired by `load.ts:425-432` and blocked from commit by `scripts/fuzz-guard.mjs`. Extend `wireFields` (`load.ts:139-160`) so lint rules 3 and 6 cover the `text_raw:` string, as they cover `raw:`. Record the contract change in `application-design.md`. Add an ADR-032 amendment to the owner decisions. |
+| D6 | major | differential | "Any outcome difference there is a transport-layer divergence" is wrong. Known non-transport causes: (a) `@x402/mcp` zod-validates and strips the challenge, while the HTTP path only `JSON.parse`s the header (`@x402+core@2.28.0/.../chunk-FV2JN4FK.mjs:2156-2160,2313-2318`). Every case that fails the schema shows mcp `refused` against whatever the page client did. (b) Config: `sdk-default` uses `registerExactEvmScheme`, which also registers the V1 networks, while `mcp-sdk-default` registers only v2 `eip155:*` (`examples/agents/src/lib/mcp.ts:173-177`). (c) The paid-call timeout comes from `maxTimeoutSeconds` (D8). (d) `@x402/mcp` declares `@x402/core ~2.28.0` (a range, no override). The `core=` value in the smoke test is read from `examples/agents/node_modules/@x402/core` (`fuzz-smoke.e2e.test.ts:36-40`), not from what `@x402/mcp` loads. | Wrapper-scope disagreements are predictable and many, and they are not transport findings. A lockfile refresh could split the cores while the diff still says `wrapper`. | Keep one group, but: record per case and per channel whether the served object passes `parsePaymentRequired` of `@x402/core` 2.28.0 (the adversary already depends on it) as `sdk_schema_ok`, and have the triage annotate differences where it is false. Either give `mcp-sdk-default` the same scheme set (V1 included) or record the as-shipped difference (owner decision). Read the mcp client's core provenance from `@x402/mcp`'s resolved `@x402/core`, and pin `@x402/mcp>@x402/core` exactly. State that fuzz cases use `normal` behaviour only, so `settle_fail` semantics do not enter the comparison. Add an interop fixture showing the generated prompt resolves to one server and one call to `get_report`; otherwise every mcp case is `errored` and both base controls void the client. |
+| D7 | major | tiers | "Keeps its HTTP tier": `tier` is one value per case (`generate.ts:56`, `diff.ts:546`). A `spec-must` entry whose citation is the HTTP transport (header encoding, the 402 body) does not bind MCP. | Oracle 2 would report false `spec-must` hits on mcp, the one oracle that is scored. | Make tier per shape. It carries over to mcp only when `cite.file` is not the HTTP transport spec; otherwise it is `undefined` for mcp. Give the manifest `tier_by_shape`, or let diff derive it. |
+| D8 | major | determinism | `paidTimeoutMs` sets the paid call's timer to `floor(min(maxTimeoutSeconds, 600) × 1000)` ms (`index.mjs:138-160`; SDK timer in `protocol.js:740-742`). The schema rejects 0 and negatives, which is deterministic, but accepts fractions: 0.5 parses (checked). | For small positive values, the outcome (`errored` timeout or signed and delivered) depends on scheduling. That breaks ADR-028 #3 (byte-identical over 2 runs) and puts noise into `attempts_differ`. | The generator records `mcp_paid_timeout_ms` per case. Below a fixed threshold (for example 5000 ms), a case is timing-sensitive: run it with at least 2 attempts, leave it out of the differential, and report it as an observation. The alternative is for the agent to pass a fixed per-call `timeout` (owner decision: it departs from as-shipped). |
+| D9 | minor | determinism, interop | JSON-RPC error modes are unspecified on the wire. The SDK throws on a non-2xx status and loses the body, and the error envelope is strict. The re-presentation path (`mcp-server.ts:250-262`) has to apply the same channel. | A mode sent with HTTP 402 or an extra envelope key tests the SDK's transport, not `@x402/mcp`. | Send HTTP 200, echo `id`, give a string `message`, and nothing else at the envelope level. Log status 402 (rev-1 m4). Apply the channel in `represent` too. The un-awaited GET is unaffected: it is still a 405 with no log and no `seq` (`mcp-server.ts:85-92`), and the error modes add no unlogged request. The client's close after a thrown error sends a DELETE, which is also an unlogged 405. |
+| D10 | minor | compatibility | Adding `mcp` to `SHAPES` makes `generate` hash every shape (`generate.ts:195-196`), and `diff` echoes `manifest.corpus_hash` (`diff.ts:628-632`). The committed `packages/fuzz/test/golden/smoke-diff.json:135-138` then gains an `"mcp"` key, and fuzz-smoke fails until `UPDATE_GOLDEN=1`. Old manifests still parse (`parseManifest` checks only the version, `diff.ts:106-122`); they have no `mcp` hash and no `shapes`. `missing_cases` (`diff.ts:640`) needs a per-shape count, which changes meaning but not the `diff.json` structure. | §3's "every committed result is byte-identical" is false for the golden. | List the golden regeneration as an expected change, limited to that one key, and have the reviewer check exactly that. Absent `shapes` defaults to `["page","chat"]`. Keep `manifest_version: 1` with optional fields (or bump to 2, and diff accepts both). Add a test: an old manifest plus a page run gives an unchanged `diff.json`. |
+| D11 | minor | recording | Committed `results/mcp/*.json` (U30-3) carry `runs[].challenges`. If the per-channel field is written for every MCP issuance, `both` included, those files change. `IssuedChallenge.wire.encoding` has no MCP value (`schema/src/ledger.ts:32`). | Byte identity of the U30-3 results and of HTTP records depends on how the field is written. | `channels` on `IssuedChallenge` is optional and present only when `wire.channels` is set and is not `both`. Define what an MCP `wire` issuance records as `encoding` without widening the HTTP enum. The `channel` observation lives in `diff.json` only, never in `report.json`. HTTP records are then unchanged by construction. |
+| D12 | major | privacy | Alignment refusals do not depend on outcomes: they turn on `corpus_hash`, seed, run-record presence and the offered-terms hash (`diff.ts:397-466`). But the smoke test passes `fuzz.stderr`, `run.stderr` and `diff.stderr` into assertion messages (`fuzz-smoke.e2e.test.ts:74,92,105`). `mcp-sdk-default` prints one JSON line per call with `paymentMade`, `isError` and the result text (`examples/agents/src/lib/mcp.ts:221-230`). The public families were triaged for the U29 clients only; GOVERNANCE.md says "first triage across all clients". | A failing or verbose CI run would print `@x402/mcp` outcomes in public logs before any private triage, which is what ADR-028 #7 and #8 forbid. | Before the leg is enabled, run the mcp shape on the public catalogue privately and triage it (4 cases). The leg asserts only "no refusal" and "cases run = manifest cases for shape mcp". It prints only the refusal reason and that count, never stderr or stdout, and never flagged, invariant or voided counts (unlike `countsOf` for the golden). It runs with `--quiet` and uploads no artifact. |
+| D13 | minor | `wire.channels` completeness | Missing modes where SDK behaviour differs: `jsonrpc_elicit` (D1); a non-object `structuredContent` (the SDK rejects the whole result, `types.js:1302`; `wire.patch` cannot produce one because it is a record, `scenario.ts:95`); `content[0]` not text with the JSON second (`index.mjs:728-731`). "Structured present but failing the schema, text valid" is not separate from `text_differs`: it is `text_differs` with a patch that breaks the schema. Vacuous for `@x402/mcp`: `not_error` (never read, `index.mjs:715`), `text_raw:<JSON of patched>` (same as `text_only`), and `jsonrpc:402` vs `-32042` (D1). | Without these, the mode set looks complete but misses SDK-level paths. Without the notes, vacuous modes read as coverage. | Add `structured_raw:<json>` and `text_second`, or list them in §4. State the schema-breaking case explicitly, backed by `sdk_schema_ok` (D6). Keep the vacuous modes as cheap observations for the Bolt 10 adapters, marked as not exercising `@x402/mcp`. |
+| D14 | minor | housekeeping | `mkdtempSync` gives a random basename (`generate.ts:162`), so the hash has to load from `join(tmp, "corpus-mcp")`. `corpusHash` does not depend on paths (`scorer/src/score-suite.ts:38-42`), so the result equals the out dir's hash. `scripts/fuzz-guard.mjs` already refuses any file under `*.fuzz/` or `fuzz-out/` and any file stamped with the marker, and `generate` stamps every YAML (`generate.ts:155`). The `fuzz-` id rule already runs for every directory (`load.ts:425-432`). | Two §2 items are already in place. | §2.1 and §2.6: replace "covers" with a test for each. |
+
+### Verdict
+
+**Sound with required changes.** The direction is right: a third shape over the same
+catalogue, the private channel modes, the `undefined` tier for every channel disagreement, the
+alignment-only CI leg, and no committed `mcp-sdk-default` golden. §1's facts hold against the
+dist, apart from the omissions in D1. No finding needs a redesign. D1–D8 and D12 must be folded
+into the delta before build; D9–D14 can be build conditions.
+
+**Owner decisions:**
+
+1. ADR-032 amendment: `wire.channels` on tool routes, in generated corpora only (D5). The
+   ADR-033 #5 note extends to the `jsonrpc:*` modes as permanently `undefined` (D1).
+2. `mcp-sdk-default`: keep it as shipped (v2 schemes only, timeouts from `maxTimeoutSeconds`),
+   or match `sdk-default`'s scheme set and pass a fixed per-call timeout (D6, D8). As shipped
+   is closer to the measurement goal; it then needs the annotations in D6 and D8.
+3. CI `mcp` leg: enable it only after a private triage of the mcp shape on the 4 public cases
+   (D12). It then publishes alignment only.
+4. Accept the one-key regeneration of `smoke-diff.json` as an expected committed change (D10).
+
+### Delta check (revision 2)
+
+I read revision 2 of `u30-4-delta.md` against D1–D14 and the same code and packages.
+
+**Status of each finding**
+
+| id | status | reason |
+|---|---|---|
+| D1 | resolved | §1.2–1.3 state the facts. `jsonrpc*` is permanently `undefined` (§2.4). `jsonrpc_elicit` is added, and `jsonrpc:402` is labelled as the same as `-32042`. |
+| D2 | resolved | `IssuedChallenge.channels` holds entries, and the adversary's binding and `accepts` use the union (§2.3). The order of the union is not given (N1). |
+| D3 | resolved | `offered_terms_sha256_by_channel`, a per-channel F5 check, `both` recorded like HTTP, and a differs-mode alignment fixture. |
+| D4 | resolved | Cases keyed by id, per-case `shapes`, pair intersection, `counts.skipped`, an MCP-aware offered-terms function, both corpus directories cleared, and the prompt interop fixture. |
+| D5 | resolved, with a condition | No zod default. The loader refuses tool-route `wire` except in generated scenarios, and lint covers `text_raw:`/`structured_raw:`. The exception rests on the `fuzz-` id, but `scripts/fuzz-guard.mjs` runs only in local hooks (`.githooks/pre-commit`, `pre-push`), not in CI (N2). |
+| D6 | resolved | Wrapper scope stated, `sdk_schema_ok` annotation, core provenance read from `@x402/mcp`'s resolution and pinned. The scheme set is owner decision 2. |
+| D7 | partly | `tier_by_shape` is in the manifest, but the delta does not say that diff oracle 2 reads the tier of each client's shape (`diff.ts:546` reads `mc.tier`), or what `CaseResult.tier` shows (N3). |
+| D8 | partly | `mcp_paid_timeout_ms` and the 5000 ms rule are in. But "at least 2 attempts" per case cannot be expressed: attempts come from the run-wide `--repeat` (`packages/cli/src/main.ts:33`), and a scenario has no attempts field (N4). |
+| D9 | resolved | Build condition 1. |
+| D10 | resolved | §3 states the one-key golden change, old-manifest defaults and `manifest_version` 1. Build condition 4. It is at risk from N5. |
+| D11 | resolved | `channels` present only when not `both`; the observation lives in `diff.json` only; an MCP `encoding` without widening the HTTP enum (build condition 2). |
+| D12 | resolved | The leg is enabled only after the private triage, prints only the refusal reason and the case count, never agent output or oracle counts, runs `--quiet`, and uploads no artifact. |
+| D13 | resolved, with conditions | `text_second`, `structured_raw` and `jsonrpc_elicit` are added; the vacuous modes are labelled. Both new modes need wire details (N6). |
+| D14 | resolved | Build condition 3. |
+
+**New issues in revision 2**
+
+- **N1 (minor).** The union order is not given. `accepts[0]` becomes `requirements`, and the
+  scorer falls back to `issued.accepts` for prices (`scorer/src/score-run.ts:76-85`). Fix the
+  order (structured, text, error), dedupe identical entries canonically, and let the order
+  never depend on what the client sent.
+- **N2 (minor).** A PR that adds a scenario with a `fuzz-` id and a `fuzz:` technique to
+  `corpus-mcp/` would load with tool-route `wire`, and CI would not stop it, because the fuzz
+  guard is hook-only. Make `validate` (or a CI step) refuse `fuzz-` ids in the committed
+  `corpus/` and `corpus-mcp/`, or run `scripts/fuzz-guard.mjs` in CI. The HTTP side has the
+  same gap under ADR-032 #4, so the same check closes both.
+- **N3 (minor).** Diff oracle 2 must use the tier of the client's own shape. `CaseResult.tier`
+  stays the page/chat tier, so the golden does not move. Name the HTTP transport spec path(s)
+  in one constant, for the `cite.file` rule.
+- **N4 (minor).** Run timing-sensitive cases as a separate private run with `--repeat 2`. The
+  runner selects them from the manifest's `mcp_paid_timeout_ms`. Alternatively, add a
+  per-scenario attempts field, which is a contract change; the separate run is cheaper.
+  Record `mcp_paid_timeout_ms` only when the channel the client reads passes the schema.
+- **N5 (minor).** Golden byte-identity beyond the one key: the new per-client fields (the
+  `channel` observation, `sdk_schema_ok` and timing annotations) must appear only on results
+  from mcp-shape clients, and only when they apply. Otherwise the page-only smoke
+  `diff.json` grows fields. Add this to build condition 4.
+- **N6 (minor).** Wire details for the two new modes.
+  - `text_second`: the first item must be a content block the SDK accepts (for example a
+    `resource_link`, or an `image` with valid base64 and `mimeType`). Otherwise the SDK
+    rejects the whole result, and the mode tests the SDK instead of `@x402/mcp`.
+  - `structured_raw:<json>`: when the literal is an object with readable `accepts`, record it
+    as a third channel offer in `IssuedChallenge.channels`, its own hash and `sdk_schema_ok`.
+    When it is not an object, record no offer for it.
+- **Nit.** §1.3's last sentence ("`@x402/mcp` reads a code the base protocol assigns to
+  something else") reads as a judgement on a third-party library in a public document. Keep it
+  to the protocol facts (ADR-028 #8): "`@x402/mcp` also accepts `-32042`; the MCP SDK assigns
+  that code to URL elicitation."
+
+**Verdict: signed off for build, subject to these conditions.** Fold N1–N6 into §4 as build
+conditions 5–10. The lead developer applies them in U30-4, and the code reviewer checks them.
+N3 and N5 must hold before the smoke golden is regenerated, and N2 before the branch is pushed.
+None of them needs another review round. The §6 owner decisions are unchanged; the
+recommendation of option 2 (as shipped) is sound.
