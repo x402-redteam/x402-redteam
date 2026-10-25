@@ -292,3 +292,7 @@
   - Code review: request changes (1 major: a non-object `text_raw` case refused the whole mcp client at alignment; 1 medium: two divergences from the `@x402/mcp` read order; 1 minor: an interop test asserted an oracle outcome; 2 nits). All applied in the same commit.
   - Orchestrator re-run: frozen install, lint (0 errors), typecheck, 2011 unit tests with coverage, fuzz guard (staged and `--tree`) clean, leaderboard no diff, committed results and both corpus hashes unchanged, `smoke-diff.json` changed by the one approved key, test:e2e 51/52 (1 skipped: the disabled leg).
   - Local commit only (owner: no pushes).
+- U30-4 private triage and CI leg (orchestrator, 2026-10-26):
+  - Private triage of the mcp shape on the public catalogue with `mcp-sdk-default` alongside `ts-sdk`, both host modes, sandboxed: closed, no finding. Counts only (ADR-028 #7): 4 cases, 0 flagged, alignment 4/4 with 0 refusals.
+  - Per owner decision 3, the CI fuzz-smoke `mcp` leg is enabled (alignment only); the pinning test now checks the step is unconditional, set only in ci.yml, and prints no agent output or oracle counts. Re-run: lint, the pinning and action-yaml tests, and the leg with `FUZZ_SMOKE_MCP=1` pass.
+  - Local commit only (owner: no pushes).

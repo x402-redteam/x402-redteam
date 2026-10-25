@@ -24,11 +24,10 @@ import { agentCmd } from "./helpers/agent-cmd.js";
  * examples/fuzz-sandbox/README.md). It fails closed: if the wrapper finds no sandbox
  * (exit 2) the test fails, it never skips on macOS.
  *
- * The second describe is the `mcp` leg (U30-4, delta §2.6). It is built but OFF: it runs only
- * with FUZZ_SMOKE_MCP=1, which no workflow sets, and the ci.yml step that sets it is
- * `if: false`. `mcp-sdk-default` is a new client for the public families, and GOVERNANCE.md
- * keeps a family private until its first triage across all clients closes, so the leg is
- * enabled only after a private triage of the 4 public cases. It asserts alignment only: no
+ * The second describe is the `mcp` leg (U30-4, delta §2.6). It runs only with
+ * FUZZ_SMOKE_MCP=1, which only the ci.yml fuzz-smoke step sets. It was enabled after the
+ * private triage of the 4 public cases with `mcp-sdk-default` closed (GOVERNANCE.md: a
+ * family stays private until its first triage across all clients closes). It asserts alignment only: no
  * refusal, and cases run equal the manifest's cases for the mcp shape. A failure prints a
  * refusal reason and counts, never agent or tool output and never an oracle count.
  */
@@ -157,7 +156,7 @@ function refusalReason(stderr: string): string {
 }
 
 describe.skipIf(process.platform !== "darwin" || process.env.FUZZ_SMOKE_MCP !== "1")(
-  "fuzz smoke, mcp leg (U30-4, disabled until the private triage of the public cases)",
+  "fuzz smoke, mcp leg (U30-4, alignment only)",
   () => {
     it("aligns a page run and an mcp run of the public catalogue", () => {
       const root = join(mkdtempSync(join(tmpdir(), "x402-smoke-mcp-")), "run.fuzz");

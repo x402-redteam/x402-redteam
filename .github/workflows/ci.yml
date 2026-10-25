@@ -263,15 +263,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run the fuzz e2e files on macOS
         run: pnpm vitest run --project cli fuzz-smoke.e2e fuzz-diff.e2e
-      # The `mcp` leg (U30-4) is built but DISABLED (`if: false`). `mcp-sdk-default` is a new
-      # client for the public families, and GOVERNANCE.md keeps a family private until its first
-      # triage across all clients closes, so this step is enabled only after a private triage of
-      # the 4 public cases. It asserts alignment only: no refusal, and cases run equal the
-      # manifest's cases for the mcp shape. It prints a refusal reason and counts, never agent or
-      # tool output and never flagged, invariant or voided counts; the run uses --quiet and
-      # nothing is uploaded.
+      # The `mcp` leg (U30-4): enabled after the private triage of the 4 public cases closed
+      # (2026-10-26, owner decision 3; GOVERNANCE.md "Private by design"). It asserts alignment
+      # only: no refusal, and cases run equal the manifest's mcp cases. It prints only a refusal
+      # reason and that count, never agent or tool output and never flagged, invariant or voided
+      # counts; the run uses --quiet and nothing is uploaded.
       - name: Run the fuzz-smoke mcp leg (alignment only)
-        if: false
         env:
           FUZZ_SMOKE_MCP: "1"
         run: pnpm vitest run --project cli fuzz-smoke.e2e -t "mcp leg"
