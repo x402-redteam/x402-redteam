@@ -259,3 +259,9 @@
   - Owner approved: the design and its five sub-units (U30-4 needs its own reviewed delta first); ADR-034 (MCP endpoint on the harness port), ADR-035 (transport is a corpus dimension, `corpus-mcp/`); notes to ADR-008, ADR-028 (#8) and ADR-033 (#5).
   - Owner approved the `examples/agents` dependencies (`@x402/mcp` 2.28.0, `@modelcontextprotocol/sdk` and `zod` pinned exactly) and one manual G5-capped LLM reachability run on the prose scenarios (results private).
   - Owner instruction (2026-10-21/22): local commits only; no pushes, PRs or merges on GitHub until the owner says to send.
+- U30-0 schema v6, MCP lint and corpus partition (lead-developer, worktree; ADR-034, ADR-035):
+  - Optional scenario `transport` (no default), `RouteSchema.tool`/`reprice`, tool-only behaviours `settle_fail` and `reprice`, per-tool route identity helper, optional `RequestLog.tool`, `Payment.transport`, task `mcp_servers`; lint for tool text (rules 3 and 6), duplicate tool names, `input_schema.type`, `outputSchema`, unknown tool keys, `wire` on tools; `transport: mcp` loads only from `corpus-mcp/` (empty, README); the adversary refuses tool routes until U30-1.
+  - Code review: approve with nits (1 medium: adversary would mis-serve tool routes before U30-1; 2 low: partition keyed on `corpus` only, loose tool keys; 2 nits). All fixed in the same commit.
+  - Contract changes recorded in `application-design.md` per the architect-reviewed design (revision 2, §2.3–2.5).
+  - Orchestrator re-run: lint (0 errors), typecheck, 1836 unit tests, validate (71; `corpus-mcp` 0), corpus hash unchanged, fuzz guard clean. test:e2e: 31/39 with 8 timeouts during a machine sleep; the 3 affected files re-run 11/11.
+  - Local commit only (owner: no pushes).
