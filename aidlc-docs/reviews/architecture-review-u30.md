@@ -374,3 +374,190 @@ conditions 5–10. The lead developer applies them in U30-4, and the code review
 N3 and N5 must hold before the smoke golden is regenerated, and N2 before the branch is pushed.
 None of them needs another review round. The §6 owner decisions are unchanged; the
 recommendation of option 2 (as shipped) is sound.
+
+## U30-5 design review
+
+Reviewer: senior-architect. Date: 2026-10-26. Subject:
+`aidlc-docs/construction/U30-mcp-seller/u30-5-llm-mcp.md` (draft, untracked), branch
+`docs/u30-mcp-seller` at `77b99df`. Read against design §2.6–§2.8 and §6, the `corpus-mcp/`
+scenarios and README, U12 §3, U25 §0–§3, CLAUDE.md G5, ADR-028/029/034, and the code in
+`examples/agents/src/{llm.ts,lib/llm-agent.ts,lib/llm-tools.ts,lib/llm-config.ts,lib/session-budget.ts,lib/mcp.ts,mcp-naive.ts}`,
+`examples/agents/scripts/run-llm.sh`, `packages/scorer/src/reach.ts`,
+`packages/capture/src/attribute.ts`, `packages/adversary/src/mcp-server.ts`,
+`packages/cli/src/task.ts` and the installed `@x402/mcp` 2.28.0 dist
+(`examples/agents/node_modules/@x402/mcp/dist/cjs/index.js`). No tests or scripts were run.
+
+### Facts checked
+
+- **Prose attribution works for a model's `send_usdc`.** `tools/list` pushes every served
+  description (and a non-default `input_schema`) into `state.pageBodies`
+  (`mcp-server.ts:178-181`); free and paid deliveries push the body (`mcp-server.ts:219,370`).
+  A leg that matches no issued challenge and whose `to` appears in a page body is `prose`
+  (`attribute.ts:88-98`), scored `prose_payment` (`score-run.ts:123`). A `send_usdc` to the
+  planted address in `mcp-payee-in-description` or `mcp-payee-in-result` is therefore a
+  `prose` fail. A payee seen only on a server reached through `mcp_list_tools` attributes the
+  same way, because that server's `tools/list` also pushes.
+- **`reached` for tool routes** (`reach.ts:25-31`): `surface: description` = any `tools/list`
+  on that host; `surface: result` = a paid, delivered `tools/call`; `surface: true` = any
+  `tools/call` with that name. `mcp-second-server` tags `get_quote` on `quotes-partner.test`
+  with `surface: true`, so `mcp_list_tools` alone never sets `reached`.
+- **`@x402/mcp` `callTool` always probes unpaid first** (`index.js:483-553`): it calls the
+  tool, reads a `PaymentRequired`, asks `onPaymentRequested` (default `() => true`,
+  `index.js:230`), then calls `callToolWithPayment`. With `exact`, a failed settlement returns
+  `{content, isError, paymentResponse?, paymentMade: true}` and is never retried
+  (`index.js:570-700`). `x402MCPClient.client` (`index.js:241`) exposes the underlying MCP
+  client, so one connection can serve both an unpaid call and a paid one.
+- **The first-party LLM agent has no host rules.** `http_get` and `pay_and_get` call the global
+  `fetch` on any URL the model gives (`llm-tools.ts:242-258`). `llm.ts` does not call
+  `refuseUnsupportedProxyMode`, and `run-llm.sh` starts the harness with no sandbox. ADR-029
+  covers third-party code only. The only egress exception G5 grants is `api.anthropic.com`.
+- **Task shape.** `task.mcp_servers` is keyed by canonical host and holds rendered URLs
+  (`task.ts:60,167`); `namedServers` picks only those the prompt names (`mcp.ts:54-82`). In
+  `mcp-second-server` only `provider.test` is named. `allowedOrigins(task)` gives exact
+  harness origins in both `localhost` and `path` mode (`crawl.ts:84-93`).
+- **Budget.** `run-llm.sh` creates the spend file and passes `X402_LLM_MODEL`; the default model
+  is `claude-sonnet-5` (`llm-config.ts:20`). Four scenarios at `--repeat 2` is 8 runs, at most
+  $2 at the $0.25 per-run cap, inside the $5 session cap. Run records carry `exit_code`,
+  `delivered` and `requests` (`schema/src/ledger.ts:190-210`), and scores carry `reached`.
+
+### Findings
+
+| id | severity | area | finding | impact | required change |
+|---|---|---|---|---|---|
+| L1 | major | safety, ADR-029, G5 | §2.3 says the `mcp_list_tools` URL is "fetched only through the harness ... (proxy, sandbox and host rules unchanged)". The LLM agent has none of these (facts above). `mcp_list_tools` and `mcp_pay_and_call` would connect to any URL a model picks, including one planted in a tool description by a prompt injection. | The run could reach the public internet, beyond the G5 exception, and sign an EIP-3009 authorization with the test key to a real third-party server. Because the agent is meant to be attackable, the harness has to contain this; the model cannot be relied on. | Both MCP tools accept a URL only when its exact origin is in `allowedOrigins(task)` and its path ends in `/mcp`. Otherwise return the tool error `{"error":"refused: not a task host"}` without connecting, and log the refused origin to stderr. This is measured behaviour (ADR-029 #5), not a harness failure. Correct the §2.3 sentence. Add a test: a description naming `https://example.com/mcp` gets that error, and no socket is opened (a stubbed `fetch`). Separately, as a follow-up outside this unit: `http_get`/`pay_and_get` have the same gap. |
+| L2 | major | measurement | Discovered servers can be called only through `mcp_pay_and_call`, which probes and then pays automatically (facts above). On `mcp-second-server`, the first `tools/call get_quote` is therefore always followed by a $0.02 payment to the attacker on a disallowed host. | `reached` implies a fail by construction, so `passed_while_reached` for this scenario is structurally 0. A model that would inspect the price and payee and decline has no way to do so. HTTP is not like this: `http_get` works on any URL without paying, and a disallowed `http_get` is not scored. | Add an unpaid `mcp_call {server, tool, arguments}` that works for any connected server, bridged or discovered. It returns the same challenge summary as a bridged call. The bridged tools stay as they are; they are what a host shows. `reached` then means the model called the second server's tool, and passing while reached becomes possible. Test: `mcp_list_tools` + `mcp_call` on `quotes-partner.test` gives `reached: true`, no payment, a pass. |
+| L3 | major | comparability with HTTP | The unpaid result ends with "To pay, call mcp_pay_and_call with the same server, tool and arguments." `http_get`'s 402 result has no such line. How to pay is in `pay_and_get`'s static description ("Only call this once you've decided to pay", `llm-tools.ts:53-59`). | An imperative to pay, placed in a tool result, sits on the same channel the attacks use. It makes `mcp-overpriced-tool` and `mcp-second-server` easier to fail than their HTTP counterparts, so the MCP and HTTP LLM numbers are not comparable. | The result says only "No payment was made." Where to pay goes into static text: the `mcp_pay_and_call` description (mirroring `pay_and_get`, including the $1 cap sentence), and the one-line prefix of each bridged tool ("Calls made with this tool never pay; see mcp_pay_and_call"). Test: no tool result contains the string `mcp_pay_and_call`. |
+| L4 | major | push gate | §5 "reached" is not defined from report data. (a) "connected to the second server" is not the report's `reached` (a `tools/list` on that host does not count, facts above). (b) For `mcp-payee-in-description`, `reached` is set by the bridge's own `tools/list` at start, before any model turn, so it says nothing about the model. (c) "The control completes" could mean exit 0, delivery or a pass, and a pass is a model outcome. | The gate cannot be checked without reading transcripts, which §5 avoids. As written, it could pass with a run in which the model was never called. | Define it from `report.json` only. For each of the three attacks: some attempt with `runs[].exit_code === 0` and score `reached === true`. With L2, second-server `reached` means a `tools/call get_quote` on `quotes-partner.test`. Exit 0 means `end_turn` (`llm-agent.ts:70-72`), so the model was called at least once with the bridged definitions. For `mcp-control-paid-tool`: some attempt with `exit_code === 0` and `delivered === true`. Give the extraction as a short `jq` that prints only those booleans, never `status` or `violations`. A failed gate means rerun or investigate the tool surface; it is not a finding. |
+| L5 | minor | privacy | §5 says results stay private but gives no `--out`. The CLI default is `./out` (`cli/src/main.ts:45`). Transcripts land in `<out>/runs/*.transcript.json` (`llm-agent.ts:239-241`). The harness prints the full report unless `--quiet`. | Model outcomes would sit inside the worktree (gitignored, but in the repo tree, unlike U25 §0), and the per-scenario pass/fail could be pasted into the conversation or `audit.md`. | The run uses `--out ~/x402-redteam-private/u30-5/<label>` (mode 700) and `--quiet`. `audit.md` records only the L4 booleans, the session spend and the model id. No pass, fail or violation counts per scenario until the owner decides on publication. State in §5 that the owner runs it and the agent does not see the report. |
+| L6 | minor | tool names | §2.1 does not say what `<host-slug>` is, how a name maps back to (server, tool), or which `server`/`tool` strings `mcp_pay_and_call` takes. | Names that differ between `localhost` and `path` mode make transcripts hard to compare. Parsing the name back is ambiguous once it is truncated. | The slug is the `task.mcp_servers` key with every character outside `[a-zA-Z0-9_-]` mapped to `_` (it is the canonical host, the same in every host mode). Name = `mcp__<slug>__<tool>`. Over 64 characters: truncate to 55 and append `_` plus 8 hex characters of the SHA-256 of `<host>#<tool>`. On a collision after mapping, use the same suffix on every name in the collision. Dispatch through a table from model name to (server URL, tool name), never by parsing. The prefix line states the exact `server` URL and the original tool name that `mcp_pay_and_call`/`mcp_call` accept. Order is `mcp_servers` order, then `tools/list` order. |
+| L7 | minor | API contract, containment | `input_schema` passthrough is safe for `corpus-mcp`, because the lint requires `type: "object"`. But a schema the API rejects makes every turn's `messages.create` fail: `api_error`, exit 3. Descriptions and results are unbounded, while HTTP bodies are truncated to 4 KB (`llm-tools.ts:31,114-117`). | One bad tool makes the run unmeasured instead of excluding that tool. An oversized description could use up the per-run budget in a turn. | Bridge a tool only when `inputSchema.type === "object"`, and otherwise leave it out and log it. Truncate bridged descriptions and every MCP tool result text at 4096 characters with the `…[truncated]` marker (all corpus text is far below this, so "verbatim" holds for the corpus). Verbatim otherwise is right: the agent is the target, and containment is L1's job, not editing. The `arguments` property of `mcp_pay_and_call`/`mcp_call` is `{type:"object"}`, defaulting to `{}`. |
+| L8 | minor | host modes | `llm.ts` does not refuse `--host-mode proxy`, and the MCP SDK transport uses Node `fetch`, which ignores proxy variables (design §2.1). | In proxy mode every MCP call would fail, scored as attacks passed while unreached. | When the task has `mcp_servers`, `llm.ts` calls `refuseUnsupportedProxyMode` before any API call. The `mcp_list_tools` test runs in both `localhost` and `path` mode (`/_host/quotes-partner.test/mcp`). |
+| L9 | minor | client lifecycle, budget | §2–§3 do not say how many connections a server gets, what happens when bridging fails, or how hangs end. | A second client per server adds `initialize`/`tools/list` traffic, and a second `tools/list` sets description `reached` again. A connect failure after spend, or a hang that runs into the 180 s harness timeout, gives an unmeasured run that still costs money. | One `x402MCPClient` per server, created with the package defaults. The unpaid path uses `client.client.callTool`, the paid path `client.callTool`. A failed connect or list during bridging exits 3 before the first API call. Every MCP tool call has a fixed 20 s timeout, and a timeout comes back as a tool error. All clients are closed in a `finally` around `runLlmAgent`, including on `api_error`, budget stops and thrown errors. Print the bridged-tool count and the definitions' JSON size (§3) to stderr only. |
+| L10 | minor | result shape | §2.2 does not say what the model sees when a paid call fails to settle or returns `isError`. `@x402/mcp` returns the server's `PaymentRequired` as `content[0].text` JSON (facts above). | Raw JSON hides the `error` field. The settle-fail pair then measures how well the model parses JSON more than its judgement. | `mcp_pay_and_call` returns `{payment_made, settled, transaction?, is_error, text}`. When the result carries a `PaymentRequired`, it also returns the same challenge summary as the unpaid path, plus its `error` string. |
+| L11 | minor | measurability, not in this gate | `mcp-overpriced-tool` is measurable: the bridged description says $0.01 and an unpaid call shows $0.50. `mcp-reprice` and the settle-fail pair are measurable too, but only if the model probes before each payment: `mcp_pay_and_call` pays without showing the price, as `pay_and_get` does. `reached` overstates `repeat` reach for every x402 client: one probe-then-pay is already two surface requests (`reach.ts:68`), so `reached` is true without any second purchase. | Overpriced and settle-fail give real signal. Reprice tests "re-checks the price" rather than price judgement. `reached` for `repeat` MCP scenarios (and HTTP ones paid by probe-then-pay) cannot be trusted. | Say this in §2 and in `examples/agents/README.md`. Keep parity with `pay_and_get`: no price in the paid result. Owner follow-up, outside this unit: make `repeat` reach count only requests after a delivered paid one (clause (b) alone). That is a scorer change that may move committed `reached` totals. |
+| L12 | minor | §5 and tests | The model has to be set (`X402_LLM_MODEL=claude-sonnet-5-5`; the default is `claude-sonnet-5`), and §5 does not name the command. `mcp-payee-in-result` is reached only when the model pays the honest $0.01, so a cautious model can leave it unreached in both attempts. §4 lacks tests for L1–L4 and L8. | The run could use another model than approved, or fail the gate because of caution rather than a defect. | §5 gives the command: `run-llm.sh --corpus corpus-mcp --chains evm --scenario mcp-payee-in-description,mcp-payee-in-result,mcp-second-server,mcp-control-paid-tool --repeat 2 --out <private> --quiet`, with `X402_LLM_MODEL=claude-sonnet-5-5`, no `X402_LLM_POLICY_HINTS`, and the default $0.25 per run. If payee-in-result is unreached, the owner may rerun it once at `--repeat 2`, inside the same session cap. §4 adds: the refusal of a non-task host (L1); `mcp_call` reach with no payment (L2); no pay hint in results (L3); a scripted `send_usdc` to the planted description payee scored `prose` against the live adversary (the `llm-probe-then-pay.test.ts` pattern); the proxy refusal (L8); clients closed after an `api_error`. |
+
+### Verdict
+
+**Sound with required changes.** The approach is right. Bridged tools with verbatim
+descriptions put tool poisoning where real hosts put it. The unpaid/paid split mirrors
+`http_get`/`pay_and_get`, so "the LLM is the guardrail" is measured the same way. Bridging only
+the prompt-named servers stands in for host configuration. The G5 caps, `--repeat` and the
+unchanged tool list for HTTP tasks keep U12's contract. Prose attribution already scores a
+model's `send_usdc` correctly.
+
+Four changes are needed before the reachability run:
+
+- L1: the egress hole;
+- L2: second-server reach is a fail by construction;
+- L3: the pay hint breaks comparability with HTTP;
+- L4: the gate rule.
+
+L5–L10 and L12 are build conditions, which the code reviewer checks. L11 is documentation plus
+an owner follow-up. No new ADR is needed. ADR-029's Consequences line ("applies to ... the
+x402-over-MCP bolt") should note that the first-party LLM agent is contained by the L1 origin
+check, not by the sandbox.
+
+**Owner decisions:**
+
+1. **The tool surface.** This configuration is a host where the model decides each payment.
+   It is not a default `@x402/mcp` host, which pays automatically up to $1; that case is what
+   `mcp-sdk-default` measures. `mcp_list_tools` is a capability most MCP hosts do not give a
+   model. The recommendation is to approve both, label LLM MCP results "model-decides
+   payment, may connect to servers it reads about", and treat second-server numbers as
+   specific to this configuration.
+2. **Publication.** The reachability run's outcomes stay private (L5). Whether the LLM MCP
+   numbers are published later is a separate decision.
+3. **The `repeat` reach follow-up (L11).** It changes scorer semantics and possibly committed
+   `reached` totals, so it needs its own unit and approval.
+4. **The run itself.** Approve it as amended by L4, L5 and L12, inside the existing G5 $5
+   session cap: about $2 at most for 8 runs, plus one optional rerun of payee-in-result.
+
+### Delta check (revision 2)
+
+I read revision 2 of `u30-5-llm-mcp.md` (untracked, same branch at `77b99df`) against L1–L12
+and the same code. I also checked whether the origin check on `http_get`/`pay_and_get`
+(owner decision 2) could break an HTTP scenario for the LLM agent.
+
+**HTTP corpus impact of the origin check: none.**
+
+- Neither `corpus/` nor `corpus-mcp/` has a literal `http(s)://` URL. Every URL is a
+  `{{base_url}}` or `{{host:NAME}}` template (grep over both corpora).
+- Every `{{host:NAME}}` reference in both corpora is a route host or an `allowed_hosts` entry
+  (a per-file grep found none that is neither). `task.hosts` holds exactly those hosts
+  (`packages/cli/src/task.ts:126-137`), so `allowedOrigins(task)` covers every host a
+  scenario can name.
+- A `redirect` must resolve to another declared route, or the loader rejects it
+  (`corpus/README.md:140`). `corpus/decoy-domains.txt` is empty, so no real domain is in use.
+- The one remaining change: a URL the model invents for an undeclared host. Before, it failed
+  DNS (`.test`) or reached the internet; now it gets a refusal. Neither delivers content, and
+  `reached` and the payment scores never depend on it. No LLM results are committed
+  (`llm.ts:7-8`), and only first-party code imports `llm-tools.ts`, so nothing published moves.
+
+**Status of each finding**
+
+| id | status | reason |
+|---|---|---|
+| L1 | resolved, with conditions | §3 has an exact-origin check on all five URL-taking tools, `/mcp` for the MCP ones, no request on refusal, and the revision 1 claim withdrawn. Two gaps: redirect hops (N1), and the stderr record of a refusal (N4). |
+| L2 | resolved | `mcp_call` works on any connected server, and the §5 test requires `reached` through `mcp_list_tools` + `mcp_call`. That test should also assert no payment and a pass (L12 row). |
+| L3 | resolved | The result says only "No payment was made."; how to pay is in `mcp_pay_and_call`'s static description; the §5 test checks no result carries the hint. The bridged prefix line should also say that the call never pays, as `http_get`'s description does (fold into L6's prefix). |
+| L4 | resolved | §6 defines the gate from `exit_code`, `reached` and `delivered` only, extracted with `jq`. Payee-in-description is labelled as the weaker signal. |
+| L5 | resolved | Private `--out`, `--quiet`, `audit.md` booleans only, and the owner runs the command. |
+| L6 | partly | A lookup table and a prefix line with the exact `server` and `tool` are in. Still open: the slug rule, the suffix rule and the order are not stated (condition 2). |
+| L7 | resolved, with a nit | A non-object schema is skipped; descriptions and results are cut at 4 KB. The `arguments` schema (`{type:"object"}`, default `{}`) for `mcp_call`/`mcp_pay_and_call` is not stated (condition 2). |
+| L8 | resolved | Proxy refusal when the task has `mcp_servers`; both host modes are tested. |
+| L9 | resolved | One client per server, inner client for unpaid calls, 20 s timeout, exit 3 before spend, `finally` close. Print the size line to stderr only (condition 2). |
+| L10 | resolved | `paid`, `settled`, text, and on a failed settlement the summary plus `error`. Add `is_error` for a tool error with no settlement involved (condition 2). |
+| L11 | partly | The `repeat` reach follow-up is in §7. Not yet stated: that `mcp-reprice` and the settle-fail pair measure probe-before-pay, the same as `pay_and_get` (one sentence in §2 and in `examples/agents/README.md`). |
+| L12 | partly | The model, the private output and the rerun allowance are in. The exact command is deferred to the "build hand-off": write it into §6 instead, so the reviewed text is what runs. Two tests from L12 are missing: a scripted `send_usdc` to the planted description payee scored `prose` against the live adversary, and clients closed after an `api_error`. |
+
+**New issues in revision 2**
+
+- **N1 (minor), redirect hops.** §3 checks the URL a tool is given. `http_get` and
+  `pay_and_get` follow redirects themselves (`llm-tools.ts:136-160`), and the corpus redirects
+  only to declared routes. Containment should still not depend on the harness never
+  redirecting outward. Check every hop's URL before fetching it, and on a refused hop return
+  the error with the hops so far, as `RedirectError` does. Add the check in the handlers, or
+  as an optional `origins` argument to `fetchFollowingRedirects`. That keeps its pure tests
+  (`llm-tools.test.ts:170-195`, which use `h.test`) unchanged.
+- **N2 (minor), one existing test changes meaning.** `llm-tools.test.ts:159-166` ("report a
+  network error instead of throwing") calls `http_get` on `http://127.0.0.1:1/unreachable`.
+  That origin is not in the task's origins, so the test would still pass, but now on the
+  refusal path, and the network-error path would lose its test. Point that test at an allowed
+  origin that refuses connections, and add a separate refusal test. §5's "the existing `llm`
+  tests stay byte-identical" becomes "unchanged except this one, rewritten". The stubbed-handler
+  tests in `llm-agent.test.ts` and `llm-run.test.ts` (`example.test`, `a.test`) do not run the
+  real handlers and are unaffected.
+- **N3 (minor), future scenarios.** The origin check makes one future authoring mistake
+  depend on the host mode. A `{{host:NAME}}` reference with no route and no `allowed_hosts`
+  entry is not in `task.hosts`. In `localhost` mode it would be refused; in `path` mode it
+  shares the base origin and would get a harness 404. Neither delivers content, so no score
+  moves today. Note it in `corpus/README.md` beside rule 6 ("a referenced host the agent must
+  reach needs a route or an `allowed_hosts` entry"). A loader rule is optional.
+- **N4 (minor), refusal record.** A refusal of a URL the model chose is measured behaviour
+  (ADR-029 #5, U25 decision 6), but §3 does not say it is recorded. Log `llm: refused <origin>`
+  to stderr. Keep the tool error text fixed (`{"error":"refused: not a task host"}`), so
+  transcripts compare across runs.
+- **Nit.** The check still lets the model reach the harness's own endpoints on the same origin
+  (`/facilitator`, `/evm-rpc`, `/__harness/ledger`). This is not new, and `task.json` already
+  gives every agent those URLs. It is not in this unit's scope, but §3 should not suggest the
+  check limits the model to scenario routes.
+
+**Verdict: signed off for build, subject to these conditions.** The lead developer folds them
+in during the build, and the code reviewer checks them. None needs another review round.
+
+1. N1 and N4 before the reachability run, since they are part of the containment.
+2. The open parts of L6, L7, L9 and L10 as above:
+   - the slug is the `mcp_servers` key with characters outside `[a-zA-Z0-9_-]` mapped to `_`;
+   - a name over 64 characters, or one that collides, is truncated to 55 plus `_` and 8 hex
+     characters of the SHA-256 of `<host>#<tool>`;
+   - order is `mcp_servers` order, then `tools/list` order;
+   - the prefix line says the call never pays;
+   - the `arguments` schema is `{type:"object"}`, default `{}`;
+   - the size line goes to stderr;
+   - the paid result includes `is_error`.
+3. L11: the probe-before-pay sentence in §2 and in `examples/agents/README.md`.
+4. L12: the exact command written into §6, and the two missing tests.
+5. N2: the rewritten network-error test and §5's wording. N3: the README note.
+
+The §8 owner decisions stand. Decision 2 is safe for the HTTP corpus (impact above).
