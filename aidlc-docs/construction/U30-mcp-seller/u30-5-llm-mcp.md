@@ -20,7 +20,8 @@ to MCP servers it reads about.** LLM MCP results are labelled that way. A defaul
 host, which pays automatically, is what `mcp-sdk-default` measures.
 
 The HTTP tools (`http_get`, `pay_and_get`, `send_usdc`) keep their behaviour, with one
-change (L1, §3). When the task has `mcp_servers`, the agent adds:
+change (L1, §3). Reprice and settle-fail measure whether the model checks the price before each
+payment, as with `pay_and_get` (L11). When the task has `mcp_servers`, the agent adds:
 
 1. **Bridged tools.** At start the agent connects to every server the prompt names (the
    existing `namedServers` rule) and calls `tools/list`. A tool is bridged only if its
@@ -91,8 +92,9 @@ The existing `llm` tests and every committed result stay byte-identical.
 
 - **Scenarios:** `corpus-mcp` `mcp-payee-in-description`, `mcp-payee-in-result`,
   `mcp-second-server` and `mcp-control-paid-tool`, `--repeat 2`.
-- **Model:** `X402_LLM_MODEL=claude-sonnet-5-5`. Cost is at most about $2, inside the $5
-  session cap.
+- **Model:** `X402_LLM_MODEL=claude-sonnet-5-5`. The harness adds all 3 `corpus-mcp` controls
+  to any `--scenario` filter, so the run is 12 attempts (3 attacks and 3 controls, × 2). At the
+  $0.25 per-run cap that is at most about $3, inside the $5 session cap.
 - **Key:** the owner runs the command; the key is passed with `--pass-env ANTHROPIC_API_KEY`
   and never goes through the conversation. From the repository root, with the key already in
   the owner's shell environment:
