@@ -13,7 +13,13 @@ import {
   CHAIN_DEFAULTS,
   type Chain,
   canaries,
+  DEFAULT_HOST,
+  type HostMode,
+  hostName,
+  hostUrl,
+  isToolRoute,
   loadCorpus,
+  MCP_PATH,
   type RenderContext,
   render,
   type Scenario,
@@ -79,4 +85,60 @@ export function buildLiveTask(scenario: Scenario, chain: Chain, baseUrl: string)
     wallet_balance_usd: walletBalanceUsd(scenario.task),
     evm_rpc_url: `${baseUrl}/evm-rpc`,
   };
+}
+
+const MCP_CORPUS_DIR = fileURLToPath(new URL("../../../../corpus-mcp", import.meta.url));
+
+let cachedMcpCorpus: Scenario[] | undefined;
+
+/** Loads a real `corpus-mcp` scenario by id. */
+export function loadMcpScenarioById(id: string): Scenario {
+  if (!cachedMcpCorpus) cachedMcpCorpus = loadCorpus(MCP_CORPUS_DIR);
+  const scenario = cachedMcpCorpus.find((s) => s.id === id);
+  if (!scenario) throw new Error(`live-task: scenario "${id}" not found in ${MCP_CORPUS_DIR}`);
+  return scenario;
+}
+
+/**
+ * Like `buildLiveTask`, for an MCP scenario under a host mode: a v4 task with `hosts` and
+ * `mcp_servers`, rendered like `cli/src/task.ts`'s `buildTask`. The adversary must be
+ * created with the same `hostMode`.
+ */
+export function buildLiveMcpTask(
+  scenario: Scenario,
+  baseUrl: string,
+  hostMode: HostMode = "path",
+): TaskFile {
+  const chain: Chain = "evm";
+  const defaults = CHAIN_DEFAULTS[chain];
+  const scenarioCanaries = canaries(SEED, scenario.id, chain);
+  const ctx: RenderContext = {
+    base_url: hostMode === "path" ? baseUrl : hostUrl(hostMode, baseUrl, DEFAULT_HOST),
+    chain,
+    network: defaults.network,
+    usdc: defaults.asset,
+    host: (name: string) => hostUrl(hostMode, baseUrl, name),
+    canary: (name: string) => scenarioCanaries.get(name).address,
+    poison: (name: string) => scenarioCanaries.poison(name),
+  };
+  const hostNames = new Set<string>([
+    ...scenario.routes.map((r) => r.host),
+    ...(scenario.task.allowed_hosts ?? []),
+  ]);
+  const hosts: Record<string, string> = {};
+  for (const name of hostNames) hosts[name] = hostUrl(hostMode, baseUrl, name);
+  const mcp_servers: Record<string, string> = {};
+  for (const route of scenario.routes) {
+    if (isToolRoute(route)) mcp_servers[route.host] = `${hosts[route.host]}${MCP_PATH}`;
+  }
+  return {
+    ...buildLiveTask(scenario, chain, baseUrl),
+    version: 4,
+    prompt: render(scenario.task.prompt, ctx),
+    allowed_hosts: (scenario.task.allowed_hosts ?? []).map((h) => hostName(hostMode, h)),
+    host_mode: hostMode,
+    hosts,
+    parallel: false,
+    mcp_servers,
+  } as unknown as TaskFile;
 }

@@ -144,6 +144,11 @@ equivalent entry points).
 | `delivered_body` | string (templated) | route's `page`, else `"ok"` | body returned after a successful payment |
 | `surface` | boolean | — | **v3** (ADR-016): marks this route as the one that presents the attack; see "Reach class and `surface`" above. Forbidden-in-spirit on a `control`'s routes (not separately enforced, since controls never set `reach_class`) |
 
+A host the agent must reach (a `{{host:NAME}}` in the prompt or in served text) needs a route or
+an `allowed_hosts` entry. A host with neither is not in `task.hosts`, so the LLM agent's origin
+check (`examples/agents/README.md`, "LLM agent") refuses it in `localhost` mode, while in
+`path` mode it shares the base origin and gets a harness 404. Neither delivers content.
+
 ### `routes[].challenge`
 
 A challenge is either a single option (`pay_to` + the fields below) **or**

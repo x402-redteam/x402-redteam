@@ -7,6 +7,7 @@
  */
 
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Network } from "@x402/core/types";
 import { toClientEvmSigner } from "@x402/evm";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
@@ -179,8 +180,14 @@ export async function createMcpClient(
 }
 
 /** Connects `client` to the Streamable HTTP endpoint at `url`. */
-export async function connectServer(client: x402MCPClient, url: string): Promise<void> {
-  await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+export async function connectServer(
+  client: x402MCPClient,
+  url: string,
+  fetchFn?: FetchLike,
+): Promise<void> {
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(url), fetchFn ? { fetch: fetchFn } : undefined),
+  );
 }
 
 /** `tools/list` for a connected client. */

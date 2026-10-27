@@ -8,11 +8,15 @@
 import { type Adversary, createAdversary } from "@x402-redteam/adversary";
 import { capture } from "@x402-redteam/capture";
 import { type Chain, canaries, type Scenario } from "@x402-redteam/schema";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   createToolHandlers,
+  createUrlGuard,
   fetchFollowingRedirects,
+  REFUSED_MESSAGE,
+  REFUSED_RESULT,
   RedirectError,
+  RefusedError,
 } from "../src/lib/llm-tools.js";
 import type { TaskFile } from "../src/lib/wallet.js";
 import { buildLiveTask, loadScenarioById, SEED } from "./helpers/live-task.js";
@@ -158,11 +162,65 @@ describe.each(CHAINS)("llm-tools handlers (%s)", (chain) => {
 
   it("http_get and pay_and_get report a network error instead of throwing", async () => {
     load("network-error");
-    const handlers = createToolHandlers(task);
+    // An allowed origin (a declared host) that refuses connections, so this reaches the
+    // network-error path and not the origin check (U30-5 N2).
+    const down = { ...task, hosts: { "down.test": "http://127.0.0.1:1" } };
+    const handlers = createToolHandlers(down);
 
     const raw = await handlers.http_get({ url: "http://127.0.0.1:1/unreachable" });
     const result = JSON.parse(raw);
     expect(typeof result.error).toBe("string");
+    expect(result.error).not.toBe(REFUSED_MESSAGE);
+    const paid = JSON.parse(await handlers.pay_and_get({ url: "http://127.0.0.1:1/unreachable" }));
+    expect(typeof paid.error).toBe("string");
+    expect(paid.error).not.toBe(REFUSED_MESSAGE);
+  });
+
+  it("http_get and pay_and_get refuse a URL outside the task's origins and send no request", async () => {
+    load("refused");
+    const lines: string[] = [];
+    const handlers = createToolHandlers(task, { log: (line) => lines.push(line) });
+    const fetchSpy = vi.fn(async () => new Response("x"));
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      for (const url of ["https://example.com/x", "http://127.0.0.1:1/unreachable", "not a url"]) {
+        expect(await handlers.http_get({ url })).toBe(REFUSED_RESULT);
+        expect(await handlers.pay_and_get({ url })).toBe(REFUSED_RESULT);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(lines).toContain("llm: refused https://example.com");
+    expect(lines).toContain("llm: refused http://127.0.0.1:1");
+    expect(adversary.drain().payments).toHaveLength(0);
+  });
+
+  it("http_get and pay_and_get refuse a redirect hop that leaves the task's origins", async () => {
+    load("refused-hop");
+    const lines: string[] = [];
+    const handlers = createToolHandlers(task, { log: (line) => lines.push(line) });
+    const start = `${task.base_url}/api/report`;
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(null, { status: 302, headers: { location: "https://example.com/x" } }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      for (const tool of ["http_get", "pay_and_get"] as const) {
+        fetchSpy.mockClear();
+        const result = JSON.parse(await handlers[tool]({ url: start }));
+        expect(result.error).toBe(REFUSED_MESSAGE);
+        expect(result.redirects).toEqual([
+          { status: 302, from: start, to: "https://example.com/x" },
+        ]);
+        // Only the first URL was requested; the hop was refused before it was fetched.
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(lines.filter((l) => l === "llm: refused https://example.com")).toHaveLength(2);
   });
 });
 
@@ -184,6 +242,47 @@ describe("fetchFollowingRedirects", () => {
     expect(out.redirects).toEqual([
       { status: 302, from: "http://h.test/a", to: "http://h.test/b" },
     ]);
+  });
+
+  it("checks every URL before it is fetched, the first and each hop", async () => {
+    const calls: string[] = [];
+    const fetchFn = async (url: string) => {
+      calls.push(url);
+      return url.endsWith("/a")
+        ? res(302, { location: "/b" })
+        : res(302, { location: "http://evil.test/c" });
+    };
+    const lines: string[] = [];
+    const guard = createUrlGuard({ base_url: "http://h.test" }, (l) => lines.push(l));
+    const allows = (u: string) => guard.allows(u);
+
+    const err = await fetchFollowingRedirects(fetchFn, "http://h.test/a", allows).catch((e) => e);
+    expect(err).toBeInstanceOf(RefusedError);
+    expect(err.message).toBe(REFUSED_MESSAGE);
+    expect(err.redirects.map((h: { to: string }) => h.to)).toEqual([
+      "http://h.test/b",
+      "http://evil.test/c",
+    ]);
+    expect(calls).toEqual(["http://h.test/a", "http://h.test/b"]);
+    expect(lines).toEqual(["llm: refused http://evil.test"]);
+
+    const first = await fetchFollowingRedirects(fetchFn, "http://evil.test/a", allows).catch(
+      (e) => e,
+    );
+    expect(first).toBeInstanceOf(RefusedError);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("the guard matches the exact origin, and an MCP URL must end in /mcp", () => {
+    const guard = createUrlGuard({ base_url: "http://h.test:9000" }, () => {});
+    expect(guard.allows("http://h.test:9000/x")).toBe(true);
+    expect(guard.allows("http://h.test:9001/x")).toBe(false);
+    expect(guard.allows("http://h.test:9000.evil.test/x")).toBe(false);
+    expect(guard.allows("http://h.test:9000@evil.test/x")).toBe(false);
+    expect(guard.allows(undefined)).toBe(false);
+    expect(guard.allows("http://h.test:9000/mcp", { mcp: true })).toBe(true);
+    expect(guard.allows("http://h.test:9000/_host/a.test/mcp", { mcp: true })).toBe(true);
+    expect(guard.allows("http://h.test:9000/mcp/x", { mcp: true })).toBe(false);
   });
 
   it("keeps the hops taken when the redirect limit is reached", async () => {

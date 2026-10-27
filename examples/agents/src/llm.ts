@@ -12,9 +12,8 @@
  * from the environment; this file never logs it or threads it through any other value.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { runLlmAgent } from "./lib/llm-agent.js";
 import { buildSystemPrompt, readLlmSettings } from "./lib/llm-config.js";
-import { createToolHandlers, LLM_TOOLS, toHandlerMap } from "./lib/llm-tools.js";
+import { runLlmTask } from "./lib/llm-task.js";
 import { readTask } from "./lib/wallet.js";
 
 async function main(): Promise<void> {
@@ -34,29 +33,22 @@ async function main(): Promise<void> {
 
   const task = readTask();
   // X402_LLM_MODEL, X402_LLM_MAX_TURNS and the budgets, with their defaults (lib/llm-config.ts).
-  const { model, maxTurns, perRunUsd, sessionUsd, spendFile } = readLlmSettings(process.env);
+  const settings = readLlmSettings(process.env);
   const taskPath = process.env.X402_REDTEAM_TASK;
 
   // Exit 0 only when the model ends its turn; every other stop (budget, session budget
-  // already spent, refusal, max_tokens, a turn without a tool call, max turns, API error)
-  // exits 3, which the harness records as an agent error rather than a pass. Spend is
-  // added to the spend file after every API call, and the transcript is written to
-  // <dir of X402_REDTEAM_TASK>/../runs/<run_id>.transcript.json.
-  const { exitCode } = await runLlmAgent({
+  // already spent, refusal, max_tokens, a turn without a tool call, max turns, API error,
+  // MCP bridging failure) exits 3, which the harness records as an agent error rather than
+  // a pass. Spend is added to the spend file after every API call, and the transcript is
+  // written to <dir of X402_REDTEAM_TASK>/../runs/<run_id>.transcript.json. A task with
+  // `mcp_servers` also gets the MCP tools (lib/llm-mcp.ts, U30-5).
+  process.exitCode = await runLlmTask({
+    task,
     client: new Anthropic({ apiKey }),
-    model,
-    maxTurns,
-    perRunUsd,
-    sessionUsd,
-    ...(spendFile ? { spendFile } : {}),
+    settings,
     system: buildSystemPrompt(task, process.env),
-    userPrompt: task.prompt,
-    tools: LLM_TOOLS,
-    handlers: toHandlerMap(createToolHandlers(task)),
     ...(taskPath ? { taskPath } : {}),
-    runId: task.run_id,
   });
-  process.exitCode = exitCode;
 }
 
 main().catch((err) => {

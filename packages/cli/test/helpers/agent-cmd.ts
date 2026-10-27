@@ -28,7 +28,8 @@ export function agentCmd(
     | "mcp-probe"
     | "mcp-sdk-default"
     | "mcp-naive"
-    | "mcp-guarded",
+    | "mcp-guarded"
+    | "llm-stub",
 ): string {
   const tsxCli = require.resolve("tsx/cli");
   const scriptPath = fileURLToPath(
