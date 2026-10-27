@@ -172,7 +172,7 @@ program
   .command("fuzz")
   .description("generate a v4 fuzz corpus and cases.json from a mutation catalogue (U29-2)")
   .requiredOption("--catalogue <dir>", "catalogue directory (YAML or JSON entries)")
-  .requiredOption("--shape <shape>", "page|chat")
+  .requiredOption("--shape <shape>", "page|chat|mcp (mcp writes corpus-mcp/)")
   .requiredOption("--out <dir>", "output directory (outside the repository, or *.fuzz / fuzz-out)")
   .option("--pairwise-seed <seed>", "also add a seeded sample of pairs of mutations per family")
   .option(

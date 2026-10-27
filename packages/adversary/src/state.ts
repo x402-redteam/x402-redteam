@@ -11,6 +11,8 @@ export interface RouteRuntime {
    * recent issuance (x402v2: always one; MPP: several) - a credential answering ANY of
    * them delivers, not only the first. Empty until the first `issueChallenge()`. */
   currentChallengeIds: string[];
+  /** U30-1 (tool routes): true once a `settle_fail` tool has returned its settlement failure. */
+  settleFailed: boolean;
 }
 
 /**
@@ -108,7 +110,12 @@ export class RunState {
   runtimeFor(routeKey: string): RouteRuntime {
     let runtime = this.routeRuntimes.get(routeKey);
     if (!runtime) {
-      runtime = { challengeCounter: 0, deliveredOnce: false, currentChallengeIds: [] };
+      runtime = {
+        challengeCounter: 0,
+        deliveredOnce: false,
+        currentChallengeIds: [],
+        settleFailed: false,
+      };
       this.routeRuntimes.set(routeKey, runtime);
     }
     return runtime;

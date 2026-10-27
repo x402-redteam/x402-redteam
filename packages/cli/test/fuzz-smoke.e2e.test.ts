@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,6 +23,13 @@ import { agentCmd } from "./helpers/agent-cmd.js";
  * counts only. `UPDATE_GOLDEN=1` rewrites the golden (after an `@x402/*` bump; see
  * examples/fuzz-sandbox/README.md). It fails closed: if the wrapper finds no sandbox
  * (exit 2) the test fails, it never skips on macOS.
+ *
+ * The second describe is the `mcp` leg (U30-4, delta §2.6). It runs only with
+ * FUZZ_SMOKE_MCP=1, which only the ci.yml fuzz-smoke step sets. It was enabled after the
+ * private triage of the 4 public cases with `mcp-sdk-default` closed (GOVERNANCE.md: a
+ * family stays private until its first triage across all clients closes). It asserts alignment only: no
+ * refusal, and cases run equal the manifest's cases for the mcp shape. A failure prints a
+ * refusal reason and counts, never agent or tool output and never an oracle count.
  */
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -30,6 +45,19 @@ function cli(args: string[]) {
     cwd: REPO,
     timeout: 220_000,
   });
+}
+
+/**
+ * The `@x402/core` an MCP client loads: the one `@x402/mcp` resolves (its sibling in the
+ * package store), not the one `examples/agents` lists. `@x402/mcp>@x402/core` is pinned
+ * exactly by an override, so a lockfile refresh cannot split the two without this changing.
+ */
+function installedMcpCore(): string {
+  const mcp = realpathSync(join(REPO, "examples/agents/node_modules/@x402/mcp"));
+  const pkg = JSON.parse(readFileSync(join(mcp, "..", "core", "package.json"), "utf8")) as {
+    version: string;
+  };
+  return `@x402/core@${pkg.version}`;
 }
 
 /** The installed `@x402/core` version, read from the package `sdk-default` loads. */
@@ -121,3 +149,81 @@ describe.skipIf(process.platform !== "darwin")("fuzz smoke (U29-4, macOS sandbox
     }
   });
 });
+
+/** The first line of a diff refusal, which names reasons and counts and never a case id. */
+function refusalReason(stderr: string): string {
+  return (stderr.split("\n").find((l) => l.trim() !== "") ?? "").slice(0, 200);
+}
+
+describe.skipIf(process.platform !== "darwin" || process.env.FUZZ_SMOKE_MCP !== "1")(
+  "fuzz smoke, mcp leg (U30-4, alignment only)",
+  () => {
+    it("aligns a page run and an mcp run of the public catalogue", () => {
+      const root = join(mkdtempSync(join(tmpdir(), "x402-smoke-mcp-")), "run.fuzz");
+      mkdirSync(root, { recursive: true });
+      try {
+        const pageGen = join(root, "gen-page");
+        const mcpGen = join(root, "gen-mcp");
+        for (const [shape, out] of [
+          ["page", pageGen],
+          ["mcp", mcpGen],
+        ] as const) {
+          const fuzz = cli(["fuzz", "--catalogue", PUBLIC, "--shape", shape, "--out", out]);
+          expect(fuzz.status, `fuzz ${shape} exit ${fuzz.status}`).toBe(0);
+        }
+        const clients = [
+          ["ts-sdk", "sdk-default", join(pageGen, "corpus"), installedCore()],
+          ["mcp-sdk-default", "mcp-sdk-default", join(mcpGen, "corpus-mcp"), installedMcpCore()],
+        ] as const;
+        for (const [id, script, corpus] of clients) {
+          const run = cli([
+            "run",
+            "--agent",
+            `"${process.execPath}" "${SANDBOX}" ${agentCmd(script)}`,
+            "--corpus",
+            corpus,
+            "--chains",
+            "evm",
+            "--out",
+            join(root, `run-${id}`),
+            "--agent-id",
+            script,
+            "--quiet",
+          ]);
+          // Never print the run's stderr or stdout: they hold agent and tool output.
+          expect([0, 1], `run ${id} exit ${run.status}`).toContain(run.status);
+          expect(existsSync(join(root, `run-${id}`, "report.json")), `${id} report`).toBe(true);
+        }
+        const diff = cli([
+          "diff",
+          "--manifest",
+          join(pageGen, "cases.json"),
+          "--out",
+          join(root, "diff"),
+          ...clients.flatMap(([id, script, , core]) => [
+            "--client",
+            `id=${id},core=${core},wrapper=${script}`,
+          ]),
+          ...clients.map(([id]) => join(root, `run-${id}`)),
+        ]);
+        expect(diff.status, `diff refused: ${refusalReason(diff.stderr)}`).toBe(0);
+
+        const manifest = JSON.parse(readFileSync(join(pageGen, "cases.json"), "utf8")) as {
+          cases: { shapes?: string[] }[];
+        };
+        const result = JSON.parse(readFileSync(join(root, "diff", "diff.json"), "utf8")) as {
+          clients: { id: string; shape: string; cases_run: number; missing_cases: number }[];
+        };
+        const mcp = result.clients.find((c) => c.id === "mcp-sdk-default");
+        const expected = manifest.cases.filter((c) => (c.shapes ?? []).includes("mcp")).length;
+        // Counts only: cases run for the mcp shape against the manifest's.
+        expect(
+          { shape: mcp?.shape, cases_run: mcp?.cases_run, missing_cases: mcp?.missing_cases },
+          `mcp cases run (manifest has ${expected})`,
+        ).toEqual({ shape: "mcp", cases_run: expected, missing_cases: 0 });
+      } finally {
+        rmSync(dirname(root), { recursive: true, force: true });
+      }
+    });
+  },
+);

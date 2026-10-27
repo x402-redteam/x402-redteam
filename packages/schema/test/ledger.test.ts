@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assetKnown,
+  IssuedChallengeSchema,
+  MCP_CHANNELS,
   type Payment,
   PaymentSchema,
   ResultIdSchema,
@@ -297,5 +299,30 @@ describe("ResultIdSchema (U27)", () => {
     for (const id of ["", "A", "-a", ".a", "_a", "a|b", "a\\b", "a b", "a\nb", "a".repeat(65)]) {
       expect(ResultIdSchema.safeParse(id).success, JSON.stringify(id)).toBe(false);
     }
+  });
+});
+
+describe("IssuedChallenge.channels (U30-4)", () => {
+  const issued = { challenge_id: "c#1", route_key: "r", accepts: [], seq: 0 };
+
+  it("is optional with no default, so an issuance without it parses to the same JSON", () => {
+    const parsed = IssuedChallengeSchema.parse(issued);
+    expect("channels" in parsed).toBe(false);
+    expect(JSON.stringify(parsed)).toBe(JSON.stringify(issued));
+  });
+
+  it("holds each served channel's accepts, as served (any JSON type, or null)", () => {
+    const channels = {
+      structured: { accepts: [{ amount: "1" }] },
+      text: { accepts: "oops" },
+      error: { accepts: null },
+    };
+    const parsed = IssuedChallengeSchema.parse({ ...issued, channels });
+    expect(parsed.channels).toEqual(channels);
+    expect(IssuedChallengeSchema.parse({ ...issued, channels: {} }).channels).toEqual({});
+  });
+
+  it("names the channels in one place", () => {
+    expect(MCP_CHANNELS).toEqual(["structured", "text", "error"]);
   });
 });

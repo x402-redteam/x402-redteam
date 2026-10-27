@@ -2,6 +2,12 @@ import type { PaymentRequirements } from "@x402/core/types";
 import { z } from "zod";
 import { ChainSchema, RailSchema } from "./scenario.js";
 
+/** One MCP channel's offer: the `accepts` value of the object it carried. */
+export const ChannelOfferSchema = z.object({ accepts: z.unknown() });
+export type ChannelOffer = z.infer<typeof ChannelOfferSchema>;
+export const MCP_CHANNELS = ["structured", "text", "error"] as const;
+export type McpChannel = (typeof MCP_CHANNELS)[number];
+
 export const IssuedChallengeSchema = z.object({
   challenge_id: z.string(),
   route_key: z.string(),
@@ -27,6 +33,8 @@ export const IssuedChallengeSchema = z.object({
   // `invalid_json` or `raw:` header, or a patch that left `accepts` unreadable): `accepts`
   // is then empty and any signature is unmatched. `unreadable_entries` counts patched
   // entries left out of `accepts` because a term the harness reads is not a string.
+  // v7 (U30-4): an MCP issuance under `wire` records `encoding: "standard"` (an MCP object has
+  // no header encoding; the enum is not widened) and `header_sha256` of the object's JSON text.
   wire: z
     .object({
       encoding: z.enum(["standard", "url_safe", "unpadded", "invalid_json", "raw", "raw_json"]),
@@ -37,6 +45,21 @@ export const IssuedChallengeSchema = z.object({
       offered: z.unknown().optional(),
       /** sha256 (hex) of the exact header value served. */
       header_sha256: z.string(),
+    })
+    .optional(),
+  // v7 (U30-4, ADR-032 #5): present only on an MCP issuance whose `wire.channels` is set and is
+  // not `both`. Each key is a channel that carried a JSON object: `structured`
+  // (`structuredContent`), `text` (`content` text) or `error` (the JSON-RPC error's data).
+  // `accepts` is that object's `accepts` value as served (unfiltered, any JSON type; null when
+  // the object has none), so the manifest's per-channel hash derives from it. `accepts` above
+  // is then the union of the channels' readable entries (structured, text, error; identical
+  // entries once), so a client that follows either channel is matched to an offer that was
+  // actually served.
+  channels: z
+    .object({
+      structured: ChannelOfferSchema.optional(),
+      text: ChannelOfferSchema.optional(),
+      error: ChannelOfferSchema.optional(),
     })
     .optional(),
 });
@@ -131,6 +154,9 @@ export const PaymentSchema = z.object({
   // v5 (U29-0, ledger only; scoreSuite strips both from report.json): see DecodedPayment.
   decode_error: z.string().optional(),
   terms_verified: z.enum(["offered", "offered_domain_only", "client_copy", "none"]).optional(),
+  // v6 (U30-0, ADR-034): present only on a payment that arrived over MCP
+  // (`params._meta["x402/payment"]`); absent for HTTP, so existing ledgers are unchanged.
+  transport: z.literal("mcp").optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
 
@@ -147,6 +173,13 @@ export const RequestLogSchema = z.object({
   path: z.string(),
   status: z.number().int(),
   paid: z.boolean(),
+  // v6 (U30-0, ADR-034): the MCP tool name; present only on an MCP exchange's log,
+  // absent for HTTP.
+  tool: z.string().optional(),
+  // v6 (U30 review): set to false only on a paid MCP `tools/call` that returned no result
+  // (a `no_delivery` tool). Absent means nothing: every other exchange omits it, so existing
+  // logs are unchanged.
+  delivered: z.literal(false).optional(),
 });
 export type RequestLog = z.infer<typeof RequestLogSchema>;
 

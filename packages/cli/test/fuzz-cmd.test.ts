@@ -178,9 +178,14 @@ describe("runFuzzCommand (U29-2)", () => {
     expect(line).toMatch(/^fuzz: 4 case\(s\) \(2 base\), shape page/);
   });
   it("refuses a bad shape", () => {
-    expect(() => runFuzzCommand({ catalogue: PUBLIC, shape: "mcp", out: tmp() })).toThrow(
-      /--shape/,
+    expect(() => runFuzzCommand({ catalogue: PUBLIC, shape: "sse", out: tmp() })).toThrow(
+      /--shape "sse" is invalid \(expected page\|chat\|mcp\)/,
     );
+  });
+  it("generates the mcp shape under corpus-mcp/ and prints counts only", () => {
+    const out = tmp();
+    const line = runFuzzCommand({ catalogue: PUBLIC, shape: "mcp", out });
+    expect(line).toMatch(/^fuzz: 4 case\(s\) \(2 base\), shape mcp, corpus .*corpus-mcp$/);
   });
 });
 

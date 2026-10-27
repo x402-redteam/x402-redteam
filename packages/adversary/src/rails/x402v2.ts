@@ -28,6 +28,7 @@ import {
 import type { RenderedAccept, RenderedRoute } from "../render.js";
 import type {
   BindingResult,
+  ChallengeBuild,
   DecodeCtx,
   DecodeResult,
   IssueCtx,
@@ -209,7 +210,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** An entry the harness can read as offered terms: every term that attribution, the binding
  * check and capture compare is a string (`extra`, when present, an object). */
-function readableRequirement(value: unknown): value is PaymentRequirements {
+export function readableRequirement(value: unknown): value is PaymentRequirements {
   if (!isRecord(value)) return false;
   return (
     ["scheme", "network", "asset", "amount", "payTo"].every((k) => typeof value[k] === "string") &&
@@ -365,17 +366,9 @@ function issueWire(
   return { status: 402, headers: { "PAYMENT-REQUIRED": header }, body, issued: [issued] };
 }
 
-function issue(ctx: IssueCtx): IssueResult {
-  const requirementsList = buildRequirementsList(
-    ctx.route,
-    ctx.chain,
-    ctx.seed,
-    ctx.scenarioAssets,
-  );
-  const paymentRequired = buildPaymentRequired(ctx.url, ctx.route, requirementsList);
-  const wire = ctx.route.challenge?.wire;
-  if (wire !== undefined) return issueWire(ctx, wire, requirementsList, paymentRequired);
-  const issued: IssuedChallenge = {
+/** The plain (no `wire` override) issued challenge for `ctx`; shared by HTTP and MCP. */
+function plainIssued(ctx: IssueCtx, requirementsList: PaymentRequirements[]): IssuedChallenge {
+  return {
     challenge_id: ctx.challenge_id,
     route_key: ctx.route.route_key,
     // Kept for v1 readers; the first entry, per application-design.md §4 "v2".
@@ -389,6 +382,43 @@ function issue(ctx: IssueCtx): IssueResult {
     // issued challenge's own id *is* its binding reference.
     challenge_ref: ctx.challenge_id,
   };
+}
+
+/**
+ * U30-1 (m7): the transport-free half of `issue`: the `PaymentRequired` object and its
+ * `IssuedChallenge`. `ctx.url` becomes `resource.url` unless the route's `resource_url`
+ * overrides it. This is the typed, unpatched build: the MCP transport applies a `wire`
+ * override itself (`planChannels`), because where the object is placed is transport-specific.
+ */
+function buildChallenge(ctx: IssueCtx): ChallengeBuild {
+  const { paymentRequired, issued } = buildTyped(ctx);
+  return { paymentRequired, issued };
+}
+
+/** The typed build both transports start from: the requirements list, the `PaymentRequired`
+ * made from it, and the plain issued challenge. `issue` and `buildChallenge` share it. */
+function buildTyped(ctx: IssueCtx): {
+  requirementsList: PaymentRequirements[];
+  paymentRequired: PaymentRequired;
+  issued: IssuedChallenge[];
+} {
+  const requirementsList = buildRequirementsList(
+    ctx.route,
+    ctx.chain,
+    ctx.seed,
+    ctx.scenarioAssets,
+  );
+  return {
+    requirementsList,
+    paymentRequired: buildPaymentRequired(ctx.url, ctx.route, requirementsList),
+    issued: [plainIssued(ctx, requirementsList)],
+  };
+}
+
+function issue(ctx: IssueCtx): IssueResult {
+  const { requirementsList, paymentRequired, issued } = buildTyped(ctx);
+  const wire = ctx.route.challenge?.wire;
+  if (wire !== undefined) return issueWire(ctx, wire, requirementsList, paymentRequired);
   // v2 (challenge_injection): a scenario-supplied body_json replaces the default 402
   // body wholesale and, like any other page-visible text, is searched by prose
   // attribution - routes.ts pushes it into pageBodies when it's actually used.
@@ -399,7 +429,7 @@ function issue(ctx: IssueCtx): IssueResult {
     status: 402,
     headers: { "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired) },
     body,
-    issued: [issued],
+    issued,
   };
 }
 
@@ -419,6 +449,11 @@ async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult>
     // U29-0: a header that isn't a payload at all is still recorded, as a decode_error leg.
     payload = raw.raw;
   }
+  return decodeObject(payload, ctx);
+}
+
+/** U30-1 (m7): the transport-free half of `decode`, for an already-extracted credential. */
+async function decodeObject(payload: unknown, ctx: DecodeCtx): Promise<DecodeResult> {
   const offeredTerms = ctx.challenges
     .filter((c) => ctx.currentChallengeIds.includes(c.challenge_id))
     .flatMap((c) =>
@@ -441,8 +476,9 @@ async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult>
   return { legs: [decoded], binding };
 }
 
-function settle(result: SettleCtx): Record<string, string> {
-  const response: SettleResponse = result.success
+/** U30-1 (m7): the transport-free settlement response object. */
+function settleObject(result: SettleCtx): SettleResponse {
+  return result.success
     ? {
         success: true,
         transaction: result.transaction,
@@ -456,7 +492,10 @@ function settle(result: SettleCtx): Record<string, string> {
         network: result.network as Network,
         payer: result.payer,
       };
-  return { "PAYMENT-RESPONSE": encodePaymentResponseHeader(response) };
+}
+
+function settle(result: SettleCtx): Record<string, string> {
+  return { "PAYMENT-RESPONSE": encodePaymentResponseHeader(settleObject(result)) };
 }
 
 /** The x402 v2 `Rail` implementation (ADR-014). The only rail actually built in Bolt 6. */
@@ -466,4 +505,7 @@ export const x402v2Rail: Rail = {
   extract,
   decode,
   settle,
+  buildChallenge,
+  decodeObject,
+  settleObject,
 };

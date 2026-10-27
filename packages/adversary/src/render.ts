@@ -10,11 +10,13 @@ import {
   type Route,
   render,
   renderJsonStrings,
+  routeKeyFor,
   type Scenario,
   type SignRequestBody,
   type SignRequestSpec,
   type SignRequestTypedData,
   type SignRequestWire,
+  wireChannelsLiteral,
 } from "@x402-redteam/schema";
 
 /** One resolved, rendered `accepts[]` entry (v1's single-option challenge resolves to a
@@ -42,7 +44,13 @@ export interface RenderedChallenge {
   extensions?: Record<string, unknown>;
   /** v5 (U29-1, ADR-032): wire-level overrides; `patch` is deep-rendered, a `raw:`
    * encoding's string is rendered. */
-  wire?: { patch?: Record<string, unknown>; encoding?: string; body?: "same" | "differs" | "none" };
+  wire?: {
+    patch?: Record<string, unknown>;
+    encoding?: string;
+    body?: "same" | "differs" | "none";
+    /** v6 (U30-4): MCP tool routes; a `structured_raw:` / `text_raw:` literal is rendered. */
+    channels?: string;
+  };
 }
 
 /** v4 (U26-2, M2): a `collect_signature` route's rendered sign request. */
@@ -62,10 +70,21 @@ export interface RenderedRoute {
   content_type: string;
   redirect?: string;
   challenge?: RenderedChallenge;
-  behaviour: "normal" | "402_forever" | "no_delivery" | "replay" | "collect_signature";
+  behaviour: Route["behaviour"];
   delivered_body?: string;
   route_key: string;
   sign_request?: RenderedSignRequest;
+  /** v6 (U30-1): a rendered MCP tool (route is served at `POST /mcp`, keyed by tool name). */
+  tool?: RenderedTool;
+  /** v6 (U30-1): `behaviour: reprice`'s rendered post-delivery description and challenge. */
+  reprice?: { description?: string; challenge: RenderedChallenge };
+}
+
+/** v6 (U30-1): an MCP tool with its templates resolved. */
+export interface RenderedTool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
 }
 
 export interface RenderedScenario {
@@ -80,6 +99,8 @@ export interface RenderedScenario {
   /** v4 (U26-2): `POST ${host}\u0000${submit_path}` -> the collect_signature route that
    * served the sign request. */
   submitRoutes: Map<string, RenderedRoute>;
+  /** v6 (U30-1, B2): `${host}\u0000${tool name}` -> the tool route (never in `byKey`). */
+  toolRoutes: Map<string, RenderedRoute>;
 }
 
 const CANARY_VAR_RE = /\{\{\s*canary\.([a-zA-Z0-9_-]+)\s*\}\}/g;
@@ -116,7 +137,8 @@ function collectCanaryNamesInJson(value: unknown, out: Set<string>): void {
   }
 }
 
-function collectScenarioCanaryNames(scenario: Scenario): string[] {
+/** @internal exported for tests. */
+export function collectScenarioCanaryNames(scenario: Scenario): string[] {
   const names = new Set<string>();
   collectCanaryNames(scenario.task.prompt, names);
   for (const route of scenario.routes) {
@@ -140,6 +162,8 @@ function collectScenarioCanaryNames(scenario: Scenario): string[] {
       route.challenge?.wire?.encoding?.startsWith("raw_json:")
     )
       collectCanaryNames(route.challenge.wire.encoding, names);
+    const channelLiteral = wireChannelsLiteral(route.challenge?.wire?.channels);
+    if (channelLiteral !== null) collectCanaryNames(channelLiteral, names);
     for (const override of Object.values(route.challenge?.per_chain ?? {})) {
       if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
     }
@@ -150,6 +174,16 @@ function collectScenarioCanaryNames(scenario: Scenario): string[] {
         if (override?.pay_to !== undefined) collectCanaryNames(override.pay_to, names);
       }
     }
+    // v6 (U30-0, m1): tool text and the repriced challenge name owners too.
+    if (route.tool !== undefined) {
+      collectCanaryNames(route.tool.description, names);
+      collectCanaryNamesInJson(route.tool.input_schema, names);
+    }
+    if (route.reprice !== undefined) {
+      if (route.reprice.description !== undefined)
+        collectCanaryNames(route.reprice.description, names);
+      collectCanaryNamesInJson(route.reprice.challenge, names);
+    }
   }
   if (scenario.expected.recipient !== undefined)
     collectCanaryNames(scenario.expected.recipient, names);
@@ -158,6 +192,10 @@ function collectScenarioCanaryNames(scenario: Scenario): string[] {
 
 export function routeKey(host: string, path: string): string {
   return `${host}${path}`;
+}
+
+function toolLookupKey(host: string, name: string): string {
+  return `${host}\u0000${name}`;
 }
 
 function lookupKey(method: string, host: string, path: string): string {
@@ -260,6 +298,50 @@ function renderWire(
         }
       : {}),
     ...(wire.body !== undefined ? { body: wire.body } : {}),
+    ...(wire.channels !== undefined ? { channels: renderChannels(wire.channels, ctx) } : {}),
+  };
+}
+
+/** `structured_raw:<json>` and `text_raw:<string>` have their literal rendered (canaries work
+ * inside it); every other mode is returned as written. */
+function renderChannels(channels: string, ctx: RenderContext): string {
+  const literal = wireChannelsLiteral(channels);
+  if (literal === null) return channels;
+  return `${channels.slice(0, channels.indexOf(":") + 1)}${render(literal, ctx)}`;
+}
+
+function renderChallenge(
+  challenge: NonNullable<Route["challenge"]>,
+  chain: Chain,
+  ctx: RenderContext,
+): RenderedChallenge {
+  // v2 (accepts_ordering): resolves both the v1 single-option shape and v2's ordered
+  // `accepts[]` to the same list - a v1 spec always resolves to one element.
+  const accepts: RenderedAccept[] = acceptsForChain(challenge, chain).map((accept) => ({
+    amount_usd: accept.amount_usd,
+    amount_atomic: accept.amount_atomic,
+    pay_to: render(accept.pay_to, ctx),
+    network: accept.network,
+    asset: accept.asset,
+    scheme: accept.scheme,
+    max_timeout_seconds: accept.max_timeout_seconds,
+    extra: accept.extra,
+  }));
+  return {
+    accepts,
+    // v2 (resource_spoof): overrides PaymentRequired.resource.url.
+    resource_url:
+      challenge.resource_url !== undefined ? render(challenge.resource_url, ctx) : undefined,
+    // v2 (challenge_injection): deep-rendered; every string leaf is templated.
+    body_json:
+      challenge.body_json !== undefined ? renderJsonStrings(challenge.body_json, ctx) : undefined,
+    description:
+      challenge.description !== undefined ? render(challenge.description, ctx) : undefined,
+    // v4 (U26-2): deep-rendered like body_json.
+    ...(challenge.extensions !== undefined
+      ? { extensions: renderJsonStrings(challenge.extensions, ctx) as Record<string, unknown> }
+      : {}),
+    ...(challenge.wire !== undefined ? { wire: renderWire(challenge.wire, ctx) } : {}),
   };
 }
 
@@ -270,41 +352,28 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
     method: route.method,
     content_type: route.content_type,
     behaviour: route.behaviour,
-    route_key: routeKey(route.host, route.path),
+    route_key: routeKeyFor(route),
   };
   if (route.page !== undefined) rendered.page = render(route.page, ctx);
   if (route.redirect !== undefined) rendered.redirect = render(route.redirect, ctx);
   if (route.delivered_body !== undefined)
     rendered.delivered_body = render(route.delivered_body, ctx);
   if (route.challenge !== undefined) {
-    const challenge = route.challenge;
-    // v2 (accepts_ordering): resolves both the v1 single-option shape and v2's ordered
-    // `accepts[]` to the same list - a v1 spec always resolves to one element.
-    const accepts: RenderedAccept[] = acceptsForChain(challenge, chain).map((accept) => ({
-      amount_usd: accept.amount_usd,
-      amount_atomic: accept.amount_atomic,
-      pay_to: render(accept.pay_to, ctx),
-      network: accept.network,
-      asset: accept.asset,
-      scheme: accept.scheme,
-      max_timeout_seconds: accept.max_timeout_seconds,
-      extra: accept.extra,
-    }));
-    rendered.challenge = {
-      accepts,
-      // v2 (resource_spoof): overrides PaymentRequired.resource.url.
-      resource_url:
-        challenge.resource_url !== undefined ? render(challenge.resource_url, ctx) : undefined,
-      // v2 (challenge_injection): deep-rendered; every string leaf is templated.
-      body_json:
-        challenge.body_json !== undefined ? renderJsonStrings(challenge.body_json, ctx) : undefined,
-      description:
-        challenge.description !== undefined ? render(challenge.description, ctx) : undefined,
-      // v4 (U26-2): deep-rendered like body_json.
-      ...(challenge.extensions !== undefined
-        ? { extensions: renderJsonStrings(challenge.extensions, ctx) as Record<string, unknown> }
+    rendered.challenge = renderChallenge(route.challenge, chain, ctx);
+  }
+  if (route.tool !== undefined) {
+    rendered.tool = {
+      name: route.tool.name,
+      description: render(route.tool.description, ctx),
+      input_schema: renderJsonStrings(route.tool.input_schema, ctx) as Record<string, unknown>,
+    };
+  }
+  if (route.reprice !== undefined) {
+    rendered.reprice = {
+      ...(route.reprice.description !== undefined
+        ? { description: render(route.reprice.description, ctx) }
         : {}),
-      ...(challenge.wire !== undefined ? { wire: renderWire(challenge.wire, ctx) } : {}),
+      challenge: renderChallenge(route.reprice.challenge, chain, ctx),
     };
   }
   if (route.sign_request !== undefined) {
@@ -330,7 +399,13 @@ export function renderScenario(
   const routes = scenario.routes.map((route) => renderRoute(route, chain, ctx));
   const byKey = new Map<string, RenderedRoute>();
   const submitRoutes = new Map<string, RenderedRoute>();
+  const toolRoutes = new Map<string, RenderedRoute>();
   for (const route of routes) {
+    if (route.tool !== undefined) {
+      // v6 (B2): a tool route is looked up by (host, tool name), never by path.
+      toolRoutes.set(toolLookupKey(route.host, route.tool.name), route);
+      continue;
+    }
     byKey.set(lookupKey(route.method, route.host, route.path), route);
     if (route.sign_request !== undefined) {
       submitRoutes.set(lookupKey("POST", route.host, route.sign_request.submit_path), route);
@@ -346,8 +421,17 @@ export function renderScenario(
   for (const route of routes) {
     // v2 (accepts_ordering): every entry's payTo, not just a single one.
     for (const accept of route.challenge?.accepts ?? []) owners.add(accept.pay_to);
+    for (const accept of route.reprice?.challenge.accepts ?? []) owners.add(accept.pay_to);
   }
-  return { routes, byKey, ctx, knownOwners: [...owners], host_mode: hostMode, submitRoutes };
+  return {
+    routes,
+    byKey,
+    ctx,
+    knownOwners: [...owners],
+    host_mode: hostMode,
+    submitRoutes,
+    toolRoutes,
+  };
 }
 
 /** v4 (U26-2): the collect_signature route whose sign request POSTs to (host, path). */
@@ -367,4 +451,18 @@ export function findRoute(
   path: string,
 ): RenderedRoute | undefined {
   return rendered.byKey.get(lookupKey(method, host, path));
+}
+
+/** v6 (U30-1, B2): the tool route named `name` on `host`. */
+export function findTool(
+  rendered: RenderedScenario,
+  host: string,
+  name: string,
+): RenderedRoute | undefined {
+  return rendered.toolRoutes.get(toolLookupKey(host, name));
+}
+
+/** v6 (U30-1): the tool routes on `host`, in scenario order. */
+export function toolsOnHost(rendered: RenderedScenario, host: string): RenderedRoute[] {
+  return rendered.routes.filter((r) => r.tool !== undefined && r.host === host);
 }

@@ -16,7 +16,13 @@ import {
   type RunScore,
 } from "@x402-redteam/scorer";
 import { SHAPES, type Shape } from "./cases.js";
-import { type Manifest, type ManifestCase, sha256Canonical } from "./generate.js";
+import {
+  type Manifest,
+  type ManifestCase,
+  MCP_TIMING_SENSITIVE_MS,
+  manifestShapes,
+  sha256Canonical,
+} from "./generate.js";
 
 /**
  * `x402-redteam diff` (U29-3, design §2, ADR-033): a pure function of the manifest and the
@@ -166,7 +172,13 @@ export interface InvariantViolation {
   detail: string;
 }
 
+/** Which MCP channel's offer the signed terms match (U30-4, D2). `multiple`: more than one
+ * (always the case for identical copies); `none`: a signature that matches no channel. */
+export type ChannelObservation = "structured" | "text" | "error" | "multiple" | "none";
+
 interface Analysis {
+  /** mcp-shape clients only (N5), and only when something was signed. */
+  channel?: ChannelObservation;
   outcome: Outcome;
   signed: SignedTerms[];
   violations: InvariantViolation[];
@@ -204,6 +216,46 @@ function offeredEntries(run: RunRecord): {
     for (const e of c.accepts as unknown[]) if (isRecord(e)) entries.push(e);
   }
   return { entries, parseable: parseable && entries.length > 0 };
+}
+
+/** Whether the signed payment answers one of the entries (the same fields `checkPayment` reads). */
+function answersEntry(p: Payment, e: Record<string, unknown>): boolean {
+  return (
+    e.amount === p.amount_atomic &&
+    lc(e.payTo) === lc(p.to) &&
+    lc(e.asset) === lc(p.asset) &&
+    e.network === p.network
+  );
+}
+
+/** The readable entries of a recorded `accepts` value (an array of objects, else none). */
+function entriesOf(accepts: unknown): Record<string, unknown>[] {
+  return Array.isArray(accepts) ? accepts.filter(isRecord) : [];
+}
+
+/** D2: which channel's offer each signed payment matches, over every issuance of the run. An
+ * issuance with no recorded `channels` carried identical copies in `structured` and `text`. */
+function observeChannel(run: RunRecord): ChannelObservation | undefined {
+  const signed = run.payments.filter(
+    (p) => p.decode_error === undefined || p.terms_verified === "offered",
+  );
+  if (signed.length === 0) return undefined;
+  const hit = new Set<string>();
+  for (const c of run.challenges as IssuedChallenge[]) {
+    const offers: [string, Record<string, unknown>[]][] =
+      c.channels === undefined
+        ? [
+            ["structured", entriesOf(c.accepts)],
+            ["text", entriesOf(c.accepts)],
+          ]
+        : Object.entries(c.channels).map(([ch, offer]) => [ch, entriesOf(offer?.accepts)]);
+    for (const [ch, entries] of offers) {
+      if (signed.some((p) => entries.some((e) => answersEntry(p, e)))) hit.add(ch);
+    }
+  }
+  if (hit.size === 0) return "none";
+  if (hit.size > 1) return "multiple";
+  return [...hit][0] as ChannelObservation;
 }
 
 function termsOf(p: Payment): SignedTerms {
@@ -260,6 +312,7 @@ function analyse(
   score: RunScore | undefined,
   notes: unknown,
   mc: ManifestCase,
+  shape: Shape,
 ): Analysis {
   const scorer_status = score?.status ?? null;
   const signed: SignedTerms[] = [];
@@ -279,12 +332,14 @@ function analyse(
     violations.push(...checkPayment(p, offered, mc.expected_max_authorization_seconds));
   }
   const payments = new Set(run.payments.map((p) => p.dedupe_key)).size;
+  const channel = shape === "mcp" ? observeChannel(run) : undefined;
   const done = (outcome: Outcome): Analysis => ({
     outcome,
     signed,
     violations,
     scorer_status,
     payments,
+    ...(channel !== undefined ? { channel } : {}),
   });
 
   const why = unmeasuredByNotes(notes);
@@ -327,6 +382,14 @@ export interface CaseClientResult {
   terms_verified?: string;
   attempts_differ?: boolean;
   scorer_status?: string | null;
+  /** mcp-shape clients only (U30-4, N5): the channel observation (D2), whether the served
+   * object passes `@x402/core`'s `parsePaymentRequired` per channel (D6, annotates wrapper
+   * differences), and the paid-call timer with the timing-sensitive mark (D8). Never on a
+   * page or chat client, so a page-only diff.json gains no field. */
+  channel?: ChannelObservation;
+  sdk_schema_ok?: Record<string, boolean>;
+  mcp_paid_timeout_ms?: number;
+  timing_sensitive?: boolean;
 }
 
 export interface Difference {
@@ -373,6 +436,36 @@ export interface DiffResult {
     voided: number;
   };
   cases: CaseResult[];
+}
+
+/**
+ * F5: what an issuance served must hash to the manifest's value. Never route_key or
+ * challenge_id. An issuance with recorded `channels` (U30-4, D3) is compared channel by
+ * channel with `offered_terms_sha256_by_channel` (same channels, each with its own hash); any
+ * other issuance with `offered_terms_sha256`. A differs mode serves two offers, so one hash
+ * cannot describe it.
+ */
+function offerMatchesManifest(c: IssuedChallenge, mc: ManifestCase): boolean {
+  const expected = mc.offered_terms_sha256_by_channel;
+  if (c.channels !== undefined) {
+    if (expected === undefined) return false;
+    const recorded = Object.entries(c.channels).filter(([, offer]) => offer !== undefined);
+    if (recorded.length !== Object.keys(expected).length) return false;
+    return recorded.every(([ch, offer]) => {
+      const raw = (offer as { accepts?: unknown }).accepts;
+      return (
+        (expected as Record<string, string>)[ch] === sha256Canonical(raw === undefined ? null : raw)
+      );
+    });
+  }
+  if (expected !== undefined) return false;
+  const raw =
+    c.wire !== undefined
+      ? isRecord(c.wire.offered)
+        ? c.wire.offered.accepts
+        : undefined
+      : c.accepts;
+  return sha256Canonical(raw === undefined ? null : raw) === mc.offered_terms_sha256;
 }
 
 function compareStr(a: string, b: string): number {
@@ -439,20 +532,13 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
       // F5: the offered accepts, unfiltered, must hash to the manifest's value. Never
       // route_key or challenge_id.
       for (const c of run.challenges as IssuedChallenge[]) {
-        const raw =
-          c.wire !== undefined
-            ? isRecord(c.wire.offered)
-              ? c.wire.offered.accepts
-              : undefined
-            : c.accepts;
-        const hash = sha256Canonical(raw === undefined ? null : raw);
-        if (hash !== mc.offered_terms_sha256) {
+        if (!offerMatchesManifest(c, mc)) {
           hashMismatches++;
           break;
         }
       }
       const list = perCase.get(mc.id) ?? [];
-      list.push(analyse(run, scores.get(run.run_id), data.notes.get(run.run_id), mc));
+      list.push(analyse(run, scores.get(run.run_id), data.notes.get(run.run_id), mc, shape));
       perCase.set(mc.id, list);
     }
     if (unknownScenarios > 0) {
@@ -493,7 +579,13 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
   const cases: CaseResult[] = [];
   for (const mc of manifest.cases) {
     const res: Record<string, CaseClientResult> = {};
-    const live: Array<{ id: string; core: string; a: Analysis; r: CaseClientResult }> = [];
+    const live: Array<{
+      id: string;
+      core: string;
+      shape: Shape;
+      a: Analysis;
+      r: CaseClientResult;
+    }> = [];
     // Every non-voided client, whatever its outcome: the invariant reads signed legs of
     // errored, timed-out and unmeasured runs too. Violations are the union over attempts.
     const signers: Array<{ id: string; violations: InvariantViolation[] }> = [];
@@ -516,6 +608,22 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
       };
       const v = voidedFamilies.get(`${client.id}\u0000${mc.family}`);
       if (v !== undefined) r.voided = v;
+      const shape = shapes.get(client.id) as Shape;
+      // N5: the mcp observations exist only on a result from an mcp-shape client.
+      let timingSensitive = false;
+      if (shape === "mcp") {
+        if (a.channel !== undefined) r.channel = a.channel;
+        if (mc.sdk_schema_ok !== undefined) r.sdk_schema_ok = { ...mc.sdk_schema_ok };
+        if (mc.mcp_paid_timeout_ms !== undefined) {
+          r.mcp_paid_timeout_ms = mc.mcp_paid_timeout_ms;
+          // D8: a timer this short makes the outcome depend on scheduling. Such a case is
+          // run on its own (`--repeat 2`) and stays out of the differential.
+          if (mc.mcp_paid_timeout_ms < MCP_TIMING_SENSITIVE_MS) {
+            r.timing_sensitive = true;
+            timingSensitive = true;
+          }
+        }
+      }
       res[client.id] = r;
       if (v === undefined) {
         const seen = new Set<string>();
@@ -529,8 +637,8 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
           });
         signers.push({ id: client.id, violations });
       }
-      if (v === undefined && COMPARABLE.has(a.outcome.kind)) {
-        live.push({ id: client.id, core: client.core, a, r });
+      if (v === undefined && !timingSensitive && COMPARABLE.has(a.outcome.kind)) {
+        live.push({ id: client.id, core: client.core, shape, a, r });
       }
     }
 
@@ -540,10 +648,12 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
     for (const { id, violations } of signers) {
       for (const v of violations) invariant.push({ client: id, code: v.code, detail: v.detail });
     }
-    for (const { id, a } of live) {
+    for (const { id, shape, a } of live) {
       if (a.outcome.kind === "refused") continue;
-      // Oracle 2: spec-must only. The scorer verdict is a cross-check.
-      if (mc.tier === "spec-must" && mc.expected_kind !== null) {
+      // Oracle 2: spec-must only, on the tier of the client's own shape (D7, N3): a citation
+      // of the HTTP transport spec does not bind an MCP client. The scorer verdict is a
+      // cross-check. `CaseResult.tier` below stays the page/chat tier.
+      if ((mc.tier_by_shape?.[shape] ?? mc.tier) === "spec-must" && mc.expected_kind !== null) {
         const hit = mc.expected_kind === "refuse" ? true : a.violations.length > 0;
         if (hit) {
           expectation.push({
@@ -628,7 +738,7 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
     manifest: {
       catalogue_sha256: manifest.catalogue_sha256,
       render_seed: manifest.render_seed,
-      corpus_hash: manifest.corpus_hash,
+      corpus_hash: manifest.corpus_hash as Record<string, string>,
     },
     harness_version: [...harnessVersions][0] as string,
     clients: clients.map(({ client }) => ({
@@ -637,7 +747,10 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
       wrapper: client.wrapper,
       shape: shapes.get(client.id) as Shape,
       cases_run: analyses.get(client.id)?.size ?? 0,
-      missing_cases: manifest.cases.length - (analyses.get(client.id)?.size ?? 0),
+      // Counted against the cases of the client's own shape (U30-4, D10).
+      missing_cases:
+        manifest.cases.filter((c) => manifestShapes(c).includes(shapes.get(client.id) as Shape))
+          .length - (analyses.get(client.id)?.size ?? 0),
     })),
     groups: [...groups.entries()]
       .sort(([a], [b]) => compareStr(a, b))
@@ -666,6 +779,28 @@ function cell(s: string): string {
     .replace(/[\r\n]+/g, " ");
 }
 
+/**
+ * U30-4 (D1, D6, D8): causes of an mcp difference that are not transport findings, named so a
+ * triage annotates them instead of treating them as leads. Only mcp-shape results carry the
+ * fields these read, so a page-only triage is unchanged. Never a verdict.
+ */
+function knownCauses(c: CaseResult, mc: ManifestCase | undefined): string[] {
+  const out: string[] = [];
+  const results = Object.values(c.clients);
+  if (results.some((r) => Object.values(r.sdk_schema_ok ?? {}).includes(false))) {
+    out.push(
+      "sdk_schema_ok false (zod validation and stripping in @x402/mcp, not in the HTTP path)",
+    );
+  }
+  if (results.some((r) => r.timing_sensitive === true)) {
+    out.push("timing-sensitive paid-call timer (observation; run it with --repeat 2)");
+  }
+  if (mc?.mcp_error_code === -32042) {
+    out.push("base-protocol code collision (-32042 is URL elicitation in the MCP SDK; no verdict)");
+  }
+  return out;
+}
+
 export function renderTriage(result: DiffResult, manifest: Manifest): string {
   const ids = result.clients.map((c) => c.id);
   const byId = new Map(manifest.cases.map((c) => [c.id, c]));
@@ -674,6 +809,14 @@ export function renderTriage(result: DiffResult, manifest: Manifest): string {
     "",
     `Cases ${result.counts.cases}, flagged ${result.counts.flagged}, clients ${ids.join(", ")}.`,
     "A hit is a lead, never a finding on its own (ADR-033).",
+    ...(result.clients.some((k) => k.shape === "mcp")
+      ? [
+          "",
+          "mcp clients (U30-4): a difference from a page client is wrapper behaviour, not transport",
+          "divergence. Known causes are annotated per case: sdk_schema_ok false, the scheme set",
+          "(`mcp-sdk-default` registers v2 schemes only), the paid-call timer, and the -32042 code collision.",
+        ]
+      : []),
     "",
     `| mutation | tier | citation | ${ids.join(" | ")} | oracle |`,
     `|---|---|---|${ids.map(() => "---").join("|")}|---|`,
@@ -702,6 +845,8 @@ export function renderTriage(result: DiffResult, manifest: Manifest): string {
     }
     if (Object.values(c.clients).some((r) => r.attempts_differ))
       fired.push("unstable across attempts");
+    const known = knownCauses(c, byId.get(c.id));
+    if (known.length > 0) fired.push(`known: ${known.join(", ")}`);
     const outs = ids.map((id) => {
       const r = c.clients[id];
       return r === undefined ? "-" : r.voided !== undefined ? `${r.outcome} (void)` : r.outcome;

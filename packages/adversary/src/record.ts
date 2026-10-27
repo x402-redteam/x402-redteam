@@ -33,6 +33,8 @@ export interface RecordDecodedOptions {
   bindingMismatch?: boolean;
   /** Header path only: the challenge ids of the latest issuance on this route. */
   currentChallengeIds?: string[];
+  /** U30-1 (ADR-034): set on a payment that arrived over MCP. Absent for HTTP. */
+  transport?: "mcp";
 }
 
 /**
@@ -131,6 +133,7 @@ export function recordDecoded(
     ...(decoded.revocation ? { revocation: true } : {}),
     ...(decoded.decode_error !== undefined ? { decode_error: decoded.decode_error } : {}),
     ...(decoded.terms_verified !== undefined ? { terms_verified: decoded.terms_verified } : {}),
+    ...(opts.transport !== undefined ? { transport: opts.transport } : {}),
   };
 
   state.payments = captureApi.merge(state.payments, payment);

@@ -27,18 +27,24 @@ function buildRule(scenario: ScenarioReport) {
   };
 }
 
+function sourceLabel(payment: Pick<Payment, "instruction_source" | "transport">): string {
+  return payment.transport === "mcp" && payment.instruction_source === "header"
+    ? "header (mcp)"
+    : payment.instruction_source;
+}
+
 /** How a result names its leg: a payment "paid $X to Y"; an approval or delegation, or a
  * signature that moves nothing by itself, by its scheme, since it paid nobody. */
 function legSummary(
-  payment: Pick<Payment, "scheme" | "to" | "amount_usd" | "instruction_source">,
+  payment: Pick<Payment, "scheme" | "to" | "amount_usd" | "instruction_source" | "transport">,
 ): string {
   switch (legKind(payment.scheme)) {
     case "grant":
-      return `signed ${payment.scheme} to ${payment.to} valued at ${formatUsd(payment.amount_usd)} (${payment.instruction_source})`;
+      return `signed ${payment.scheme} to ${payment.to} valued at ${formatUsd(payment.amount_usd)} (${sourceLabel(payment)})`;
     case "message":
       return `signed ${payment.scheme} (no payment)`;
     default:
-      return `paid ${formatUsd(payment.amount_usd)} to ${payment.to} (${payment.instruction_source})`;
+      return `paid ${formatUsd(payment.amount_usd)} to ${payment.to} (${sourceLabel(payment)})`;
   }
 }
 

@@ -1,6 +1,6 @@
 import { payToFields, wireDecodedFields } from "./load.js";
 import type { Scenario } from "./scenario.js";
-import { WIRE_RAW_JSON_PREFIX } from "./wire.js";
+import { WIRE_RAW_JSON_PREFIX, wireChannelsLiteral } from "./wire.js";
 
 /**
  * Generator lint (U29-00, functional-design §8 condition 3; rules only, no I/O). The fuzz
@@ -95,19 +95,39 @@ export function lintGeneratedScenario(
       }
     }
     // A raw_json: or base64 raw: header is parsed, and its payTo values follow the same rule.
-    const embedded: unknown[] = [];
+    const embedded: { obj: unknown; at: string }[] = [];
     if (wire?.encoding?.startsWith(WIRE_RAW_JSON_PREFIX)) {
       try {
-        embedded.push(JSON.parse(wire.encoding.slice(WIRE_RAW_JSON_PREFIX.length)));
+        embedded.push({
+          obj: JSON.parse(wire.encoding.slice(WIRE_RAW_JSON_PREFIX.length)),
+          at: "encoding",
+        });
       } catch {
         // not JSON: load lint reports it
       }
     }
     for (const { value } of wireDecodedFields(`routes[${i}].challenge`, route.challenge)) {
-      embedded.push(JSON.parse(value));
+      embedded.push({ obj: JSON.parse(value), at: "encoding" });
     }
-    for (const obj of embedded) {
-      for (const { path, value } of patchPayTos(obj, `routes[${i}].challenge.wire.encoding`)) {
+    // U30-4: a `structured_raw:` / `text_raw:` literal that is JSON follows the same rule, and
+    // neither embeds a literal address.
+    const channelLiteral = wireChannelsLiteral(wire?.channels);
+    if (channelLiteral !== null) {
+      try {
+        embedded.push({ obj: JSON.parse(channelLiteral), at: "channels" });
+      } catch {
+        // not JSON: structured_raw is checked by load lint, text_raw is free text
+      }
+      if (LITERAL_EVM_ADDRESS_RE.test(channelLiteral)) {
+        out.push({
+          rule: "pay-to",
+          path: `routes[${i}].challenge.wire.channels`,
+          message: "a raw channel value must not embed a literal address; use a canary template",
+        });
+      }
+    }
+    for (const { obj, at } of embedded) {
+      for (const { path, value } of patchPayTos(obj, `routes[${i}].challenge.wire.${at}`)) {
         if (!PAY_TO_TEMPLATE_RE.test(value.trim())) {
           out.push({
             rule: "pay-to",

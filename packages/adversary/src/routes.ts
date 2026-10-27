@@ -6,13 +6,20 @@ import {
 } from "@x402-redteam/schema";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { evaluateCredential } from "./credential.js";
 import { fakeTransactionHash } from "./fake-hash.js";
 import { resolveHost } from "./hosts.js";
-import { knownTokenAccountsFor } from "./known-token-accounts.js";
+import { MCP_PATH, serveMcp } from "./mcp-server.js";
 import { railFor } from "./rails/index.js";
 import type { Rail } from "./rails/rail.js";
 import { recordDecodedLegs } from "./record.js";
-import { findRoute, findSubmitRoute, type RenderedRoute, type RenderedScenario } from "./render.js";
+import {
+  findRoute,
+  findSubmitRoute,
+  type RenderedRoute,
+  type RenderedScenario,
+  toolsOnHost,
+} from "./render.js";
 import type { Shared } from "./shared.js";
 import type { RunState } from "./state.js";
 
@@ -29,6 +36,13 @@ export function registerScenarioRoutes(app: Hono, shared: Shared): void {
 
     const { host, path } = resolveHost(c, rendered.host_mode);
     const method = c.req.method;
+
+    // U30-1 (ADR-034): `/mcp` on a host that has tool routes is the MCP endpoint, on the
+    // same host resolution and port as every other scenario route. A host without tools
+    // serves `/mcp` like any other path (an HTTP route there, else 404).
+    if (path === MCP_PATH && toolsOnHost(rendered, host).length > 0) {
+      return serveMcp(c, shared, state, rendered, host);
+    }
 
     const route = findRoute(rendered, method, host, path);
     if (!route) {
@@ -228,99 +242,26 @@ async function serveChallenge(
     return issueChallenge(false);
   }
 
-  let bindingMismatch: boolean;
-  let payments: ReturnType<typeof recordDecodedLegs>;
-  try {
-    const result = await rail.decode(rawCredential, {
-      capture: shared.capture,
-      hints: {
-        knownOwners: rendered.knownOwners,
-        knownTokenAccounts: await knownTokenAccountsFor(
-          rendered,
-          state.chain,
-          shared.seed,
-          state.scenario.assets,
-        ),
-      },
-      challenges: state.challenges,
-      currentChallengeIds: runtime.currentChallengeIds,
-      route,
-      url: c.req.url,
-    });
-    // U20 code review fix 6: a rail could in principle decode a credential into zero
-    // legs (nothing to record) - treated the same as an undecodable credential, inside
-    // this same try/catch, rather than proceeding with an empty `payments` array.
-    if (result.legs.length === 0) {
-      throw new Error("rail.decode: no legs decoded");
-    }
-    bindingMismatch = !result.binding.matches;
-    // U20 code review fix 1: apply the SAME binding verdict to every recorded leg - a
-    // rail's decoder (svm, `decodeEvmTx`) can return several (`DecodedPayment.legs`),
-    // and mutating only the un-recorded top-level entry would silently miss them.
-    // `recordDecodedLegs` already flattens one level of nesting per top-level entry
-    // (H1); flatMap here handles a rail that itself returns more than one top-level
-    // entry (x402v2 never does; a future push-mode/multi-credential rail might).
-    payments = result.legs.flatMap((leg) =>
-      recordDecodedLegs(state, shared.capture, leg, {
-        capture: "header",
-        host,
-        route_key: route.route_key,
-        bindingMismatch,
-        currentChallengeIds: runtime.currentChallengeIds,
-      }),
-    );
-  } catch {
-    // U29-0: nothing received is dropped. If recording threw, record a decode_error leg.
-    try {
-      const stand = await shared.capture.decodePayload(rawCredential.raw);
-      recordDecodedLegs(state, shared.capture, stand, {
-        capture: "header",
-        host,
-        route_key: route.route_key,
-      });
-    } catch {
-      // Nothing more can be recorded; the 400 below still stands.
-    }
+  const outcome = await evaluateCredential({
+    shared,
+    state,
+    rendered,
+    route,
+    host,
+    runtime,
+    decode: (ctx) => rail.decode(rawCredential, ctx),
+    fallback: rawCredential.raw,
+    url: c.req.url,
+  });
+
+  // U29-0: undecodable payloads are on the ledger but answered 400 invalid_payment.
+  if (outcome.kind === "undecodable") {
     logRequest(state, { method, host, path, status: 400, paid: false });
     return c.json({ error: "invalid_payment" }, 400);
   }
 
-  // U29-0: a payload that could not be decoded is on the ledger but is answered exactly as
-  // it was before it was recorded: 400 invalid_payment.
-  if (payments.length > 0 && payments.every((p) => p.invalid_reason === "decode_error")) {
-    logRequest(state, { method, host, path, status: 400, paid: false });
-    return c.json({ error: "invalid_payment" }, 400);
-  }
-
-  // Delivery depends specifically on a leg that satisfies THIS issuance, not merely on
-  // whether the submission decoded validly - a submission can be a validly signed,
-  // on-chain-valid transaction that also happens to bundle in an unrelated (e.g.
-  // attacker-directed) leg alongside the legitimate one. U20 code review fix 7: "this
-  // issuance" is every id `runtime.currentChallengeIds` carries (MPP may have offered
-  // several), not only the first.
-  //
-  // DEVIATION (reported): fix 7 also suggested falling back to the rail's own binding
-  // verdict (`binding.challenge_ref`) when attribution's own match didn't resolve one.
-  // Dropped after it broke `replay`/`retry_storm`'s byte-identity: x402v2's binding
-  // check (fix 2) matches a credential's echoed `accepted` against the issuance's
-  // *accepts content*, which is identical on every re-issuance of the same route (the
-  // challenge is deterministic) - so `binding.matches` is true for a stale/replayed
-  // resubmission too, and the fallback then picked `payments.find(p => p.valid)`
-  // (the first valid leg, regardless of which challenge attribution actually bound it
-  // to), wrongly letting a replay satisfy a fresh issuance. Attribution's own
-  // challenge_id match (capture/attribute.ts, unchanged) is the sole source of truth
-  // for "which challenge does this answer" - exactly as before this rail port.
-  const matchingLeg = payments.find(
-    (p) => p.challenge_id !== undefined && runtime.currentChallengeIds.includes(p.challenge_id),
-  );
-
-  // No leg satisfies this issuance (none matched it at all, or the one that did fails
-  // validation - e.g. a bad signature) - the resource is never delivered, and nothing
-  // behaves as though the route were paid, regardless of `route.behaviour`. Every leg
-  // (including a valid-but-non-matching one, e.g. an attacker's) is still recorded
-  // above and scored on its own merits.
-  if (!matchingLeg?.valid) {
-    const fallback = payments[0] as (typeof payments)[number];
+  if (outcome.kind === "unmatched") {
+    const fallback = outcome.payments[0] as (typeof outcome.payments)[number];
     const headers = rail.settle({
       success: false,
       errorReason: "invalid_payment",
@@ -332,6 +273,8 @@ async function serveChallenge(
     logRequest(state, { method, host, path, status: 402, paid: false });
     return c.json({ error: "invalid_payment" }, 402);
   }
+
+  const { matchingLeg } = outcome;
 
   const deliver = (): Response => {
     runtime.deliveredOnce = true;
@@ -371,7 +314,15 @@ async function serveChallenge(
       return issueChallenge(true);
     case "replay":
       return runtime.deliveredOnce ? issueChallenge(true) : deliver();
-    default:
+    case "collect_signature":
       return deliver();
+    case "settle_fail":
+    case "reprice":
+      // Tool-only behaviours: a tool route is served by `mcp-server.ts`, never here.
+      throw new Error(`behaviour ${route.behaviour} is tool-only`);
+    default: {
+      const unhandled: never = route.behaviour;
+      throw new Error(`unhandled route behaviour: ${String(unhandled)}`);
+    }
   }
 }

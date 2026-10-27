@@ -1226,3 +1226,216 @@ export function buildLeaderboard(
     markdown: renderMarkdown(ranked, guardrails, agents, reference, stale, rejected),
   };
 }
+
+// ---------------------------------------------------------------------------------------
+// MCP section (U30-3, ADR-035 #3): `corpus-mcp/` has its own corpus hash, its own committed
+// results (`results/mcp/`) and its own section of LEADERBOARD.md. Its numbers never mix into
+// the HTTP tables above; `buildLeaderboard` is untouched, so the HTTP output is byte-for-byte
+// what it was. Only harness reference oracles are accepted here: there is no ranked MCP track
+// yet, and results of other clients are triaged privately first (ADR-028).
+// ---------------------------------------------------------------------------------------
+
+/** The ids the MCP section accepts (with `kind: "reference"` in `results/mcp/_meta.json`). */
+export const MCP_REFERENCE_IDS: ReadonlySet<string> = new Set(["mcp-guarded", "mcp-naive"]);
+
+/** One row of the MCP section's summary table. */
+export interface McpRow {
+  id: string;
+  safetyScore: number;
+  attacksPassed: number;
+  attacksTotal: number;
+  controlsPassed: number;
+  controlsTotal: number;
+  byReachClass: Record<ReachClass, { passed: number; runs: number }>;
+  unauthorizedUsd: number;
+  harnessCommit: string;
+}
+
+export interface McpSectionResult {
+  rows: McpRow[];
+  stale: StaleRow[];
+  rejected: RejectedRow[];
+  /**
+   * Files in `results/mcp/` that are not a marked harness reference result. They are never
+   * named or rendered in the document; the caller must fail the build and name them on stderr.
+   */
+  refused: string[];
+  /** The section, ending in a newline; appended after the HTTP document. */
+  markdown: string;
+}
+
+/** The MCP half of the canonical config: EVM only, the public seed, the full corpus. */
+function checkMcpConfig(report: Report): void {
+  const config = report.config;
+  if (!isRecord(config)) throw new RejectedError("non-canonical config: report.config is missing");
+  checkCanonicalSeed(config);
+  const chains = Array.isArray(config.chains) ? config.chains.join(",") : undefined;
+  if (chains !== "evm") {
+    throw new RejectedError(
+      `non-canonical config: chains ${JSON.stringify(config.chains)} is not [evm] (MCP is EVM only)`,
+    );
+  }
+  if (config.scenario_filter !== null) {
+    throw new RejectedError("non-canonical config: scenario_filter is not null");
+  }
+  if (config.controls_included !== true) {
+    throw new RejectedError("non-canonical config: controls_included is not true");
+  }
+  if (config.track !== "agent") {
+    throw new RejectedError(`non-canonical config: track "${String(config.track)}" is not "agent"`);
+  }
+  if (typeof config.repeat !== "number" || config.repeat < 1) {
+    throw new RejectedError(`non-canonical config: repeat ${String(config.repeat)} is not >= 1`);
+  }
+  checkHostAndTiming(report);
+  // The harness commit only has to be a 40-hex SHA ("unknown" is refused): there is no
+  // release allowlist until the MCP harness ships in a release.
+  const commit = config.harness_commit;
+  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/.test(commit)) {
+    throw new RejectedError(
+      `non-canonical config: harness_commit ${JSON.stringify(commit)} is not a 40-hex-char SHA`,
+    );
+  }
+}
+
+function renderMcpSection(
+  rows: McpRow[],
+  scenarios: Scenario[],
+  reports: Map<string, Report>,
+  stale: StaleRow[],
+  rejected: RejectedRow[],
+  hash: string,
+): string {
+  const attacks = scenarios.filter((s) => s.category !== "control");
+  const controls = scenarios.filter((s) => s.category === "control");
+  const lines: string[] = [
+    "## MCP (corpus-mcp, EVM)",
+    "",
+    `The MCP family (ADR-035): ${attacks.length} attack scenarios and ${controls.length} controls ` +
+      `served as paywalled MCP tools, corpus \`${shortHash(hash)}\`. It has its own corpus hash and its ` +
+      "own results (`results/mcp/`); its numbers never mix into the HTTP tables above. " +
+      "Only harness reference oracles are listed: `mcp-guarded` shows each scenario can be " +
+      "passed and `mcp-naive` that every attack can be failed " +
+      "(ADR-008 amendment); neither is evidence that any real agent is safe.",
+    "",
+    "| # | agent | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | harness |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
+  ];
+  if (rows.length === 0) {
+    lines.push("| _no MCP reference result yet_ | | | | | | | | | | |");
+  } else {
+    rows.forEach((r, i) => {
+      const rc = r.byReachClass;
+      lines.push(
+        `| ${i + 1} | ${escapeCell(`${r.id} (reference)`)} | ${r.safetyScore.toFixed(1)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`,
+      );
+    });
+  }
+  lines.push("", "### MCP scenarios", "");
+  const ids = rows.map((r) => r.id);
+  const idCells = ids.map((id) => ` ${escapeCell(id)} |`).join("");
+  lines.push(
+    `| scenario | reach class | technique |${idCells}`,
+    `|---|---|---|${ids.map(() => "---|").join("")}`,
+  );
+  const statusOf = (id: string, scenarioId: string): string => {
+    const s = reports.get(id)?.scenarios.find((x) => x.id === scenarioId);
+    const attempts = s?.results.flatMap((r) => r.attempts) ?? [];
+    if (attempts.length === 0) return "—";
+    return attempts.every((a) => a.status === "pass") ? "pass" : "fail";
+  };
+  const ordered = [...controls, ...attacks].sort((a, b) => compareCodeUnits(a.id, b.id));
+  for (const s of ordered) {
+    const cells = ids.map((id) => ` ${statusOf(id, s.id)} |`).join("");
+    lines.push(
+      `| ${escapeCell(s.id)} | ${s.reach_class ?? "control"} | ${escapeCell(s.technique ?? "—")} |${cells}`,
+    );
+  }
+  lines.push("", ...renderStaleSection(stale).map((l) => l.replace(/^## /, "### MCP ")));
+  lines.push("", ...renderRejectedSection(rejected).map((l) => l.replace(/^## /, "### MCP ")));
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The MCP section of LEADERBOARD.md from `results/mcp/*.json` and `corpus-mcp/`. Pure and
+ * deterministic. An entry is accepted only when it is a harness reference oracle
+ * (`MCP_REFERENCE_IDS` and `kind: "reference"` in `results/mcp/_meta.json`), its corpus
+ * hash is the current `corpus-mcp/` hash (else it is stale), its config is the MCP
+ * canonical one, its `runs[]` cover exactly the corpus, and it re-scores to its own summary.
+ */
+export function buildMcpSection(
+  entries: LeaderboardEntry[],
+  scenarios: Scenario[],
+  meta: ResultsMeta,
+): McpSectionResult {
+  const hash = corpusHash(scenarios);
+  const staleEntries: StaleRow[] = [];
+  const rejected: RejectedRow[] = [];
+  const accepted: Array<{ id: string; report: Report }> = [];
+  const refused: string[] = [];
+
+  for (const entry of entries) {
+    // First of all, before anything is parsed or can be called stale: only the two
+    // reference ids, marked as such, ever appear in the document.
+    if (kindOf(meta, entry.id) !== "reference" || !MCP_REFERENCE_IDS.has(entry.id)) {
+      refused.push(entry.id);
+      continue;
+    }
+    try {
+      checkNotFuzz(entry.data);
+      requireReportAtV3(entry.data);
+      const report = entry.data;
+      checkResultIds(report);
+      if (report.corpus_hash !== hash) {
+        staleEntries.push({
+          id: entry.id,
+          corpusHashShort: shortHash(report.corpus_hash),
+          harnessCommit:
+            typeof report.config?.harness_commit === "string"
+              ? report.config.harness_commit
+              : "unknown",
+        });
+        continue;
+      }
+      checkMcpConfig(report);
+      checkValid(report);
+      checkHasAttackWeight(report);
+      checkRunCoverage(report, scenarios);
+      checkRescore(report, scenarios);
+      checkFilenameMatchesId(entry.id, report);
+      accepted.push({ id: entry.id, report });
+    } catch (err) {
+      const reason =
+        err instanceof RejectedError
+          ? err.message
+          : `malformed report: ${err instanceof Error ? err.message : String(err)}`;
+      rejected.push({ id: entry.id, reason });
+    }
+  }
+
+  const rows: McpRow[] = accepted
+    .map(({ id, report }) => ({
+      id,
+      // biome-ignore lint/style/noNonNullAssertion: checkHasAttackWeight already rejected a null safety_score.
+      safetyScore: report.summary.safety_score!,
+      attacksPassed: report.summary.scenarios_passed,
+      attacksTotal: report.summary.scenarios,
+      controlsPassed: report.summary.controls.passed,
+      controlsTotal: report.summary.controls.runs,
+      byReachClass: emptyReachClassByReach(report),
+      unauthorizedUsd: report.summary.unauthorized_usd,
+      harnessCommit: report.config.harness_commit,
+    }))
+    .sort((a, b) => compareCodeUnits(a.id, b.id));
+  staleEntries.sort((a, b) => compareCodeUnits(a.id, b.id));
+  rejected.sort((a, b) => compareCodeUnits(a.id, b.id));
+
+  const reports = new Map(accepted.map((a) => [a.id, a.report]));
+  return {
+    rows,
+    stale: staleEntries,
+    rejected,
+    refused: refused.sort(compareCodeUnits),
+    markdown: renderMcpSection(rows, scenarios, reports, staleEntries, rejected, hash),
+  };
+}

@@ -14,6 +14,7 @@ import {
   type RunRecord,
   type Severity,
   SeveritySchema,
+  scenarioTransport,
 } from "@x402-redteam/schema";
 import {
   type Report,
@@ -321,6 +322,17 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
       return scenarioFilter.has(s.id);
     })
     .sort((a, b) => compareCodeUnits(a.id, b.id));
+
+  // ADR-035 #4: the guardrail driver (GDP) speaks HTTP hooks only; an MCP scenario would
+  // measure nothing, so the guardrail track refuses it until an MCP driver exists.
+  if ((opts.track ?? "agent") === "guardrail") {
+    const mcp = scenarios.find((s) => scenarioTransport(s) === "mcp");
+    if (mcp !== undefined) {
+      throw new Error(
+        `scenario "${mcp.id}" is transport: mcp; the guardrail track does not support MCP scenarios yet (ADR-035). Use --agent with corpus-mcp/.`,
+      );
+    }
+  }
 
   const outDir = resolve(opts.outDir);
   mkdirSync(outDir, { recursive: true });

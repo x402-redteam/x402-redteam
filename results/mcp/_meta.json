@@ -1,0 +1,4 @@
+{
+  "mcp-guarded": { "kind": "reference" },
+  "mcp-naive": { "kind": "reference" }
+}

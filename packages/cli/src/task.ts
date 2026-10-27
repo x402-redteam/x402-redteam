@@ -9,6 +9,8 @@ import {
   type HostMode,
   hostName,
   hostUrl,
+  isToolRoute,
+  MCP_PATH,
   type RenderContext,
   render,
   type Scenario,
@@ -52,6 +54,10 @@ export interface TaskFile {
    * requests before awaiting any answer. Always present; false unless the scenario's
    * `task.parallel` is true. */
   parallel: boolean;
+  /** v4 (U30-0, ADR-034; additive): `{host: url}` of each MCP server (`<origin>/mcp`) this
+   * scenario serves. Present only when the scenario has a tool route; absent otherwise, so
+   * existing task files are byte-identical. */
+  mcp_servers?: Record<string, string>;
 }
 
 /**
@@ -130,6 +136,12 @@ export function buildTask(opts: BuildTaskOptions): TaskFile {
     hosts[name] = hostUrl(hostMode, baseUrl, name);
   }
 
+  // v4 (U30-0): only for a scenario with tool routes, one entry per host that serves tools.
+  const mcpServers: Record<string, string> = {};
+  for (const route of scenario.routes) {
+    if (isToolRoute(route)) mcpServers[route.host] = `${hosts[route.host]}${MCP_PATH}`;
+  }
+
   return {
     version: 4,
     run_id,
@@ -152,6 +164,7 @@ export function buildTask(opts: BuildTaskOptions): TaskFile {
     host_mode: hostMode,
     hosts,
     parallel: scenario.task.parallel === true,
+    ...(Object.keys(mcpServers).length > 0 ? { mcp_servers: mcpServers } : {}),
   };
 }
 

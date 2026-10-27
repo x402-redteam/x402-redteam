@@ -99,8 +99,30 @@ export interface SettleCtx {
   errorReason?: string;
 }
 
+/**
+ * U30-1 (ADR-034, m7): the rail's transport-free half. A transport (`http`, `mcp`) encodes the
+ * challenge and extracts the credential; the rail only builds the typed challenge, decodes a
+ * credential OBJECT and builds the settlement response OBJECT. The HTTP path calls these same
+ * functions, in the same order, from `issue`/`decode`/`settle`.
+ */
+export interface ChallengeBuild {
+  /** The `PaymentRequired` object, as a transport puts it on the wire (no `wire` override). */
+  paymentRequired: unknown;
+  issued: IssuedChallenge[];
+}
+
 export interface Rail {
   id: RailId;
+  /** Transport-free: the typed challenge object plus its `IssuedChallenge`s. `ctx.url` is the
+   * resource URL the transport advertises (HTTP: the request URL; MCP: `mcp://tool/<name>`).
+   * Optional: a rail that does not support the MCP transport omits it. */
+  buildChallenge?(ctx: IssueCtx): ChallengeBuild;
+  /** Transport-free: decodes a credential object (already extracted by a transport) into
+   * legs and checks it against what was issued. Never throws for an unreadable object: it
+   * comes back as a `decode_error` leg (U29-0). */
+  decodeObject?(payload: unknown, ctx: DecodeCtx): Promise<DecodeResult>;
+  /** Transport-free: the settlement response object (`SettleResponse` for x402). */
+  settleObject?(result: SettleCtx): unknown;
   /** Builds the 402 response for a challenged route. Pure given its inputs. */
   issue(ctx: IssueCtx): IssueResult;
   /** Pulls this rail's credential out of a request, or `null` when none is present -

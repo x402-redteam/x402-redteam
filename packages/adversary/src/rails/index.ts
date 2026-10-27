@@ -32,6 +32,7 @@ export function railFor(rail: RailId, scenarioId: string): Rail {
 
 export type {
   BindingResult,
+  ChallengeBuild,
   DecodeCtx,
   DecodeResult,
   IssueCtx,

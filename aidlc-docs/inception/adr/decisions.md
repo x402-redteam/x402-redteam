@@ -42,6 +42,8 @@
 ## ADR-008 Reference agents are deterministic and LLM-free
 > **Amended by ADR-009 and U12 (Bolt 5):** the deterministic agents stay as CI oracles, but they are *harness oracles*, not evidence that the corpus is valid. `guarded` is written knowing the attacks (Review 1, lead 1). Before any public score is published: (a) at least one LLM agent and one third-party SDK-default agent must have been run outside CI; (b) reference entries are marked `reference` on the leaderboard and are never the only "passing" evidence; (c) every reference agent must pass all controls.
 
+> **Amended in Bolt 10 (U30, owner approval 2026-10-22):** `mcp-guarded` is an oracle in the same sense (each MCP scenario can be passed), and `mcp-naive` is an internal probe that shows each prose or repeat scenario can be failed. Neither is evidence that the MCP family is valid.
+
 **Decision:** `naive` and `guarded` are scripted. The LLM example is optional and never runs in CI.
 **Why:** They make NFR1 (determinism) and the "fail everything / pass everything" E2E oracle possible.
 
@@ -574,6 +576,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 5. Public artifacts (audit.md, PRs, reviews) carry totals only until the owner closes disclosure.
 6. A third-party result that depends on a harness scoring rule the third party could reasonably dispute (for example, how a pre-signed payment is attributed) is not confirmed until the rule is stated in the private write-up and checked against the source. *(Added Bolt 10, U28, owner approval 2026-10-14.)*
 7. Fuzz families, catalogue entries, seeds and triage outputs stay private (`~/x402-redteam-private/fuzz/`) until their first triage across all clients closes; the public CI smoke run prints counts only; spec-repository issues wait until disclosure closes and name no client. *(Added Bolt 10, U29, owner approval 2026-10-18.)*
+8. Results of the `@x402/mcp` reference agent (`mcp-sdk-default`) measure a third-party library as shipped. Its first results are triaged privately before any is published; only documented defaults are stated publicly. *(Added Bolt 10, U30, owner approval 2026-10-22.)*
 
 **Consequences:** No third-party score appears publicly during this bolt. The leaderboard is unaffected.
 
@@ -603,6 +606,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 2. The patched challenge is the offered terms for attribution, the binding check and `diff`.
 3. Patch and raw strings are in scope for lint rules 3 and 6. `corpusHash` is unchanged for any scenario without `wire`.
 4. Only generated and private corpora use `wire` until the owner approves public use.
+5. On MCP tool routes, `wire.patch` and a new optional `wire.channels` (where the `PaymentRequired` is placed: `structuredContent`, `content` text, or a JSON-RPC error) are allowed in generated scenarios only (`fuzz-` id with a `fuzz:` technique); the loader refuses `wire` on tool routes everywhere else, and `encoding`/`body` stay HTTP-only. `channels` has no schema default, so HTTP corpus hashes do not move. *(Added Bolt 10, U30-4, owner approval 2026-10-26.)*
 
 **Consequences:** Structural fuzz families become reachable. The public corpus is unaffected.
 
@@ -616,6 +620,37 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 2. Primary oracle: the signed terms equal the offered terms, and the validity window is no longer than `maxTimeoutSeconds`.
 3. Client identity is (implementation, core provenance, wrapper). There is no majority vote. Differences within a shared core are wrapper behaviour; across cores, implementation behaviour.
 4. A finding needs the invariant oracle or a `spec-must` hit, plus ADR-028 #3 (and #6 for third parties).
+5. Disagreement between the MCP challenge channels (`structuredContent` and `content[0].text`) is `undefined` tier: the spec requires servers to send identical copies and says nothing about which a client should follow. *(Added Bolt 10, U30, owner approval 2026-10-22.)*
+6. Every MCP channel mode other than identical copies is `undefined` tier. A `PaymentRequired` carried in a JSON-RPC error (codes 402 and -32042) is permanently `undefined`: the MCP SDK assigns -32042 to URL elicitation, so neither paying nor refusing is a defect. *(Added Bolt 10, U30-4, owner approval 2026-10-26.)*
 
 **Consequences:** Fewer, more defensible findings. Fuzz `report.json` summaries are meaningless and never ranked; the leaderboard refuses them.
+
+## ADR-034 MCP seller endpoint
+**Status:** Accepted (Bolt 10, U30, owner approval 2026-10-22).
+
+**Context:** Agents pay for MCP tools over the x402 MCP transport, where the challenge is a tool result and the payment sits in `params._meta["x402/payment"]`. The adversary served only HTTP, and ADR-029 3a/3b allow only the harness port.
+
+**Decision:**
+1. The adversary serves `POST /mcp` on every scenario host, on the existing harness port. No second listener.
+2. The server is hand-rolled Streamable HTTP with JSON responses only (`initialize`, notifications, `ping`, `tools/list`, `tools/call`), so scenarios can serve results an SDK server would normalise. Interop rules: protocol-version echo from a fixed supported set, 202 for notifications, `listChanged: false`, no `outputSchema`, a session id derived from (seed, run_id), 405 for GET and DELETE, 403 for a non-loopback `Origin`.
+3. GET, DELETE, notifications and refused requests are never logged and take no `seq`, so the official client's un-awaited stream request cannot change `report.json`.
+4. The rail stays transport-free (builds `PaymentRequired`, records the issuance, decodes a payment object, settles); a transport layer (`http`, `mcp`) encodes and extracts.
+5. A tool route's identity is `<host>/mcp#<name>`. MCP payment legs keep `capture: "header"` (server-observed payload, any transport) and add an optional `transport: "mcp"`; `summary.transports` and the `tool` field on request logs appear only when non-zero or present. Reports print `header (mcp)` for MCP legs.
+6. The MCP SDK and its tree enter only `examples/agents`, pinned exactly through overrides.
+
+**Consequences:** HTTP output is byte-identical. The Cloudflare and mcpc adapters can target the same endpoint. SSE and server notifications are not served.
+
+## ADR-035 Transport is a corpus dimension
+**Status:** Accepted (Bolt 10, U30, owner approval 2026-10-22).
+
+**Context:** The loader reads every scenario under `corpus/`, and every agent and the guardrail track run it. HTTP-only agents would fail MCP controls and "pass" MCP attacks they never reach, and a corpus hash change would mark every leaderboard entry stale.
+
+**Decision:**
+1. A scenario-level `transport` (`http` or `mcp`) is optional with no default; absent means `http`, so `corpus/`'s hash does not move.
+2. MCP scenarios live only in `corpus-mcp/`. The loader refuses `transport: mcp` under `corpus/`, and a `corpus-mcp/` scenario without a tool route.
+3. `corpus-mcp/` has its own `corpus_hash`, reference results under `results/mcp/`, and its own leaderboard section; its numbers never mix into the HTTP aggregate.
+4. The guardrail track refuses MCP scenarios until it has an MCP driver.
+5. Every MCP scenario states its `reach_class` and the client that fails it. `mcp-guarded` is an oracle that each scenario can be passed (ADR-008) and `mcp-naive` an internal probe that each can be failed.
+
+**Consequences:** Default `run` and `validate` are unchanged. A new transport adds a corpus, not a column in the existing one.
 

@@ -11,7 +11,7 @@ import {
 } from "@x402-redteam/schema";
 import { corpusHash } from "@x402-redteam/scorer";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RENDER_SEED, generate, SHAPES, TASK_HOSTS } from "../src/index.js";
+import { DEFAULT_RENDER_SEED, generate, SHAPES, type Shape, TASK_HOSTS } from "../src/index.js";
 import { BASE, CITE, PUBLIC_CATALOGUE, readTree, tmp, writeCatalogue } from "./helpers.js";
 
 /** A small catalogue with wire cases, for mapping and F8 checks. */
@@ -51,7 +51,7 @@ const PAIRS = {
   ),
 };
 
-function gen(catalogueDir: string, shape: "page" | "chat", extra: { pairwiseSeed?: string } = {}) {
+function gen(catalogueDir: string, shape: Shape, extra: { pairwiseSeed?: string } = {}) {
   const outDir = tmp("x402-fuzz-out-");
   return { outDir, ...generate({ catalogueDir, shape, outDir, ...extra }) };
 }
@@ -102,7 +102,7 @@ describe("generated corpus", () => {
           "cases.json",
           ...scenarios.map((s) =>
             join(
-              "corpus",
+              shape === "mcp" ? "corpus-mcp" : "corpus",
               s.id.includes("amount") ? "amount-format" : "extra-fields",
               `${s.id}.yaml`,
             ),
@@ -119,6 +119,7 @@ describe("generated corpus", () => {
     expect(strip(chat)).toEqual(strip(page));
     expect(chat.corpus_hash).toEqual(page.corpus_hash);
     expect(page.corpus_hash.page).not.toBe(page.corpus_hash.chat);
+    expect(page.corpus_hash.mcp).not.toBe(page.corpus_hash.page);
   });
 
   it("page shape is a GET route with a prompt URL; chat shape is a POST chat route with the plan line", () => {
@@ -170,6 +171,7 @@ describe("generated corpus", () => {
       cases: 4,
       bases: 2,
       by_tier: { base: 2, "spec-type": 1, undefined: 1 },
+      skipped: { page: 0, chat: 0, mcp: 0 },
     });
   });
 

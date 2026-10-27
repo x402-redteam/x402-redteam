@@ -74,6 +74,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # U30-4 (N2): a generated fuzz scenario (a fuzz- id, a fuzz: technique, or the private
+      # marker) must not sit in the committed corpora or anywhere else. The hooks run on a
+      # contributor's machine only; this runs the same rules over every tracked file. It prints
+      # paths, never contents.
+      - name: Fuzz privacy guard over the tracked tree
+        run: node scripts/fuzz-guard.mjs --tree
       - run: pnpm lint
       - run: pnpm typecheck
       - name: Unit tests with coverage thresholds
@@ -205,6 +211,7 @@ jobs:
         # if this list and that glob ever diverge, so a new e2e file can't go silently
         # un-sharded, and a removed one can't leave a dangling, always-skipped shard).
         shard:
+          - corpus-mcp
           - corpus-v2
           - driver-calibration
           # macOS-only: the test needs sandbox-exec and skips itself on Linux. The diff logic
@@ -214,6 +221,7 @@ jobs:
           - fuzz-smoke
           - guardrail-integrity
           - hosts
+          - mcp-interop
           - rpc-capture
           - run-suite
           - u26-capabilities
@@ -255,6 +263,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run the fuzz e2e files on macOS
         run: pnpm vitest run --project cli fuzz-smoke.e2e fuzz-diff.e2e
+      # The `mcp` leg (U30-4): enabled after the private triage of the 4 public cases closed
+      # (2026-10-26, owner decision 3; GOVERNANCE.md "Private by design"). It asserts alignment
+      # only: no refusal, and cases run equal the manifest's mcp cases. It prints only a refusal
+      # reason and that count, never agent or tool output and never flagged, invariant or voided
+      # counts; the run uses --quiet and nothing is uploaded.
+      - name: Run the fuzz-smoke mcp leg (alignment only)
+        env:
+          FUZZ_SMOKE_MCP: "1"
+        run: pnpm vitest run --project cli fuzz-smoke.e2e -t "mcp leg"
 
   # The composite action's exact-exit-code matrix (self-test.yml), called here so it
   # reports under `ci-ok` and runs once per commit.

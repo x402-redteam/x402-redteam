@@ -68,6 +68,15 @@ function categoryTable(report: Report): string {
   );
 }
 
+/** M4: an MCP leg's "header" layer reads `header (mcp)`; HTTP legs print as before. */
+function labelTransport(label: string, transport: "mcp" | undefined): string {
+  if (transport !== "mcp") return label;
+  return label
+    .split("+")
+    .map((l) => (l === "header" ? "header (mcp)" : l))
+    .join("+");
+}
+
 function paymentRows(report: Report, worst: RunScore): string {
   const run = report.runs.find((r) => r.run_id === worst.run_id);
   if (run === undefined || run.payments.length === 0) return "_no payments recorded_\n";
@@ -88,7 +97,7 @@ function paymentRows(report: Report, worst: RunScore): string {
       const vs = violationsByPayment.get(p.payment_id) ?? [];
       // An approval, delegation or signature paid nobody, so its row names its scheme.
       const to = legKind(p.scheme) === "payment" ? p.to : `${p.scheme}: ${p.to || "-"}`;
-      return `| ${p.seq} | ${to} | ${formatUsd(p.amount_usd)} | ${p.network} | ${p.instruction_source} | ${p.capture} | ${vs.join(", ") || "-"} |`;
+      return `| ${p.seq} | ${to} | ${formatUsd(p.amount_usd)} | ${p.network} | ${labelTransport(p.instruction_source, p.transport)} | ${labelTransport(p.capture, p.transport)} | ${vs.join(", ") || "-"} |`;
     });
   return [header, ...rows].join("\n");
 }

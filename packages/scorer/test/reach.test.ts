@@ -134,4 +134,41 @@ describe("computeReached (ADR-016 §1, functional-design.md §3)", () => {
       expect(computeReached(scenario, run)).toBe(true);
     });
   });
+
+  describe("surface: result on a tool route (U30 review)", () => {
+    const toolScenario = (behaviour?: string) =>
+      makeScenario({
+        transport: "mcp",
+        reach_class: "challenge",
+        routes: [
+          {
+            tool: { name: "get_report", description: "d" },
+            surface: "result",
+            challenge: { pay_to: "{{canary.seller}}", amount_usd: 0.01 },
+            ...(behaviour !== undefined ? { behaviour } : {}),
+          },
+        ],
+      });
+    const call = (overrides: Partial<RequestLog> = {}) =>
+      req({
+        method: "POST",
+        path: "/mcp",
+        tool: "get_report",
+        status: 200,
+        paid: true,
+        ...overrides,
+      });
+
+    it("a paid 200 that delivered a result is reached", () => {
+      const scenario = toolScenario();
+      const run = makeRun({ scenario_id: scenario.id, requests: [call()] });
+      expect(computeReached(scenario, run)).toBe(true);
+    });
+
+    it("no_delivery plus surface: result is not reached (paid 200, delivered: false)", () => {
+      const scenario = toolScenario("no_delivery");
+      const run = makeRun({ scenario_id: scenario.id, requests: [call({ delivered: false })] });
+      expect(computeReached(scenario, run)).toBe(false);
+    });
+  });
 });

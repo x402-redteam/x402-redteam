@@ -106,3 +106,69 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
   }
   return result;
 }
+
+/**
+ * U30-4 (ADR-032 #5): where an MCP tool route places its `PaymentRequired`. Tool routes only,
+ * generated corpora only. A value is a mode name, or `<mode>:<argument>` for the modes that
+ * take one (`structured_raw` and `text_raw`: the literal; `jsonrpc*`: the error code).
+ */
+export const WIRE_CHANNEL_MODES = [
+  "both",
+  "structured_only",
+  "text_only",
+  "text_differs",
+  "structured_differs",
+  "text_second",
+  "structured_raw",
+  "text_raw",
+  "jsonrpc",
+  "jsonrpc_ns",
+  "jsonrpc_elicit",
+  "not_error",
+] as const;
+export type WireChannelMode = (typeof WIRE_CHANNEL_MODES)[number];
+
+export interface ParsedChannels {
+  mode: WireChannelMode;
+  /** The text after the first colon: a literal for `*_raw`, the error code for `jsonrpc*`. */
+  arg?: string;
+}
+
+const CHANNEL_NO_ARG: ReadonlySet<string> = new Set([
+  "both",
+  "structured_only",
+  "text_only",
+  "text_differs",
+  "structured_differs",
+  "text_second",
+  "not_error",
+]);
+const CHANNEL_RAW: ReadonlySet<string> = new Set(["structured_raw", "text_raw"]);
+const CHANNEL_CODE: ReadonlySet<string> = new Set(["jsonrpc", "jsonrpc_ns", "jsonrpc_elicit"]);
+const CHANNEL_CODE_RE = /^-?[0-9]{1,10}$/;
+
+/** The mode and argument of a `wire.channels` value, or null when it is not a valid one. */
+export function parseWireChannels(value: string): ParsedChannels | null {
+  if (CHANNEL_NO_ARG.has(value)) return { mode: value as WireChannelMode };
+  const at = value.indexOf(":");
+  if (at <= 0) return null;
+  const mode = value.slice(0, at);
+  const arg = value.slice(at + 1);
+  if (CHANNEL_RAW.has(mode)) return { mode: mode as WireChannelMode, arg };
+  if (CHANNEL_CODE.has(mode) && CHANNEL_CODE_RE.test(arg)) {
+    return { mode: mode as WireChannelMode, arg };
+  }
+  return null;
+}
+
+/** The literal text of a `structured_raw:` or `text_raw:` value (templates not yet rendered). */
+export function wireChannelsLiteral(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const parsed = parseWireChannels(value);
+  return parsed !== null && CHANNEL_RAW.has(parsed.mode) ? (parsed.arg ?? "") : null;
+}
+
+/** True when `wire.channels` places the object in both channels unchanged (absent or `both`). */
+export function isBothChannels(value: string | undefined): boolean {
+  return value === undefined || value === "both";
+}

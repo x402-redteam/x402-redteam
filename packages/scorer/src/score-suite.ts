@@ -215,6 +215,13 @@ export function scoreSuite(input: {
     }
   }
 
+  // v6 (U30-1, M4): payments that arrived over MCP; present only when non-zero, so every
+  // report from before U30 re-scores byte for byte.
+  const mcpPayments = runs.reduce(
+    (sum, run) => sum + run.payments.filter((p) => p.transport === "mcp").length,
+    0,
+  );
+
   // U18b item 2: `null` off the guardrail track (the field is meaningless there - no
   // run ever carries `guardrail_errors`), else the sum over every run's own count,
   // treating a run with no recorded count (undefined - its driver crashed, or its
@@ -248,6 +255,7 @@ export function scoreSuite(input: {
       0,
     ),
     capture_layers: captureLayers,
+    ...(mcpPayments > 0 ? { transports: { mcp: mcpPayments } } : {}),
     reach_rate: reachRate,
     guardrail_errors: guardrailErrorsTotal,
   };
