@@ -525,7 +525,7 @@ describe("the MCP transport's fetch", () => {
       await new Promise((resolve) => server.close(resolve));
     }
     expect(urls.length).toBeGreaterThan(0);
-    expect(urls.some((u) => u.includes("example.com"))).toBe(false);
+    expect(urls.some((u) => new URL(u).hostname === "example.com")).toBe(false);
   });
 });
 
