@@ -13,9 +13,10 @@ overrides:
   # U30-2 (m5): @x402/mcp declares ^1.12.1, which floats. 1.32.1 is what it resolved to at design time;
   # 1.32.2 was published 2026-10-23, inside the minimumReleaseAge window. examples/agents only.
   "@modelcontextprotocol/sdk": 1.32.1
-  # U30-2 (build condition 6): zod 3, pinned exactly, scoped to the MCP packages (the workspace packages use zod 4.6.5).
-  "@x402/mcp>zod": 3.25.76
-  "@modelcontextprotocol/sdk>zod": 3.25.76
+  # U30-2 (build condition 6): zod pinned exactly for the MCP packages. 4.6.7, not zod 3: the MCP SDK
+  # imports `zod/v4`, which in zod 3.25.76 is the code GHSA-mrhx-c7xc-m3w5 affects (see auditConfig).
+  "@x402/mcp>zod": 4.6.7
+  "@modelcontextprotocol/sdk>zod": 4.6.7
   # GHSA-w74x-v6f9-j3xg and 3 more: reached through @modelcontextprotocol/sdk>ajv, fixed in 3.1.9.
   fast-uri: 3.1.9
   # GHSA-27r3-jxmh-p828: reached through @modelcontextprotocol/sdk>express, fixed in 2.4.0.
@@ -23,3 +24,15 @@ overrides:
   # U30-4 (D6): @x402/mcp declares @x402/core ~2.28.0, a range. Pinned exactly so the core the mcp client
   # loads cannot drift from the one the page client loads (the diff reads its provenance from here).
   "@x402/mcp>@x402/core": 2.28.0
+  # GHSA-mrhx-c7xc-m3w5: zod 4 below 4.6.6 (memory exhaustion on oversized arrays); zod 3: see auditConfig below.
+  "zod@>=4.0.0 <4.6.6": 4.6.7
+
+auditConfig:
+  ignoreGhsas:
+    # GHSA-mrhx-c7xc-m3w5 lists zod <4.6.6, which also matches zod 3.25.76 (the latest
+    # zod 3, required by @x402/core 2.28.0 as ^3.24.2). The affected code ($ZodArray
+    # handleArrayResult) is only in zod 3's bundled `zod/v4` subpath; @x402/core and abitype
+    # import plain `zod` (the v3 API), checked 2026-10-25 and 2026-10-28; the MCP SDK, which imports `zod/v4`,
+    # is overridden to zod 4.6.7 above (2026-10-28). Real zod 4 is overridden to 4.6.7
+    # above. Remove this entry when @x402/core moves to zod 4.
+    - GHSA-mrhx-c7xc-m3w5
