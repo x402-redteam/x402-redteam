@@ -10,3 +10,14 @@ overrides:
   source-map-js: 1.2.2
   # GHSA launch-editor advisories (3): dev-only (vitest pulls vite), fixed in 8.3.3.
   vite: 8.3.3
+  # GHSA-mrhx-c7xc-m3w5: zod 4 below 4.6.6 (memory exhaustion on oversized arrays); zod 3: see auditConfig below.
+  "zod@>=4.0.0 <4.6.6": 4.6.7
+
+auditConfig:
+  ignoreGhsas:
+    # GHSA-mrhx-c7xc-m3w5 lists zod <4.6.6, which also matches zod 3.25.76 (the latest
+    # zod 3, required by @x402/core 2.28.0 as ^3.24.2). The affected code ($ZodArray
+    # handleArrayResult) is only in zod 3's bundled `zod/v4` subpath; @x402/core imports
+    # plain `zod` (the v3 API), checked 2026-10-25. Real zod 4 is overridden to 4.6.7
+    # above. Remove this entry when @x402/core moves to zod 4.
+    - GHSA-mrhx-c7xc-m3w5
