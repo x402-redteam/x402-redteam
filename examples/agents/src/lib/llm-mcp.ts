@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { parsePaymentRequired } from "@x402/core/schemas";
-import { extractPaymentRequiredFromError, type x402MCPClient } from "@x402/mcp";
+import type { x402MCPClient } from "@x402/mcp";
 import type { Chain } from "@x402-redteam/schema";
 import {
   REFUSED_MESSAGE,
@@ -316,7 +316,12 @@ export async function bridgeMcpTools(task: TaskFile, opts: BridgeOptions): Promi
         text: truncateText(resultText(res.content)),
       });
     } catch (err) {
-      const required = extractPaymentRequiredFromError(err);
+      // The client method, not the standalone function: it also reads code -32042 and the
+      // `data.x402` namespace (@x402/mcp 2.28.0 index.mjs:768-795).
+      // It is `private` in the typings only; the method exists at runtime.
+      const required = (
+        entry.client as unknown as { extractPaymentRequiredFromError(e: unknown): unknown }
+      ).extractPaymentRequiredFromError(err);
       const challenge = required ? challengeFrom(required, task.chain) : undefined;
       if (challenge) {
         return JSON.stringify({
@@ -334,9 +339,32 @@ export async function bridgeMcpTools(task: TaskFile, opts: BridgeOptions): Promi
     tool: string,
     args: Record<string, unknown>,
   ): Promise<string> {
+    // `x402MCPClient.callTool` returns `{ content, isError, paymentMade, paymentResponse }`
+    // and drops `structuredContent`, where a settlement failure may carry the new challenge.
+    // So keep the inner client's last raw result and read the challenge from that, in the
+    // same order as the unpaid path. Tool calls run one at a time (llm-agent.ts:215).
+    const inner = entry.client.client;
+    const hadOwn = Object.hasOwn(inner, "callTool");
+    const previous = inner.callTool;
+    const original = previous.bind(inner);
+    let raw: RawToolResult | undefined;
+    inner.callTool = (async (...callArgs: Parameters<typeof original>) => {
+      const result = await original(...callArgs);
+      raw = result as RawToolResult;
+      return result;
+    }) as typeof inner.callTool;
     try {
       const res = await entry.client.callTool(tool, args, { timeout: timeoutMs });
-      const challenge = challengeInResult(res, task.chain);
+      const challenge = challengeInResult(
+        {
+          isError: res.isError,
+          content: res.content,
+          ...(raw?.structuredContent !== undefined
+            ? { structuredContent: raw.structuredContent }
+            : {}),
+        },
+        task.chain,
+      );
       return JSON.stringify({
         paid: res.paymentMade,
         settled: res.paymentResponse?.success === true,
@@ -358,6 +386,9 @@ export async function bridgeMcpTools(task: TaskFile, opts: BridgeOptions): Promi
         return JSON.stringify({ error: message(err), paid: "unknown" });
       }
       return errorJson(err);
+    } finally {
+      if (hadOwn) inner.callTool = previous;
+      else delete (inner as { callTool?: unknown }).callTool;
     }
   }
 

@@ -205,8 +205,16 @@ async function callTool(
   name: string,
   params: unknown,
 ): Promise<Json | McpRpcError | "unknown_tool"> {
-  const log = (status: number, paid: boolean): void =>
-    logRequest(state, { method: "POST", host, path: MCP_PATH, status, paid, tool: name });
+  const log = (status: number, paid: boolean, delivered?: false): void =>
+    logRequest(state, {
+      method: "POST",
+      host,
+      path: MCP_PATH,
+      status,
+      paid,
+      tool: name,
+      ...(delivered === false ? { delivered } : {}),
+    });
 
   const route = findTool(rendered, host, name);
   if (!route) {
@@ -257,7 +265,7 @@ async function callTool(
     // U30-4: under `wire`, the patch and channel mode decide what is served; the ledger
     // records the union of the channels' entries as the offered terms.
     const wire = active.challenge?.wire;
-    const plan = wire === undefined ? undefined : planChannels(body, wire);
+    const plan = wire === undefined ? undefined : planChannels(body, wire, state.scenario.id);
     const issuedList =
       plan === undefined
         ? built.issued
@@ -286,7 +294,7 @@ async function callTool(
     const wire = active.challenge?.wire;
     return wire === undefined
       ? paymentRequiredResult(body, settlement)
-      : planAnswer(planChannels(body, wire), settlement);
+      : planAnswer(planChannels(body, wire, state.scenario.id), settlement);
   };
 
   // m6: the payment rides in `_meta["x402/payment"]`; a PAYMENT-SIGNATURE header on /mcp is
@@ -376,7 +384,7 @@ async function callTool(
   switch (route.behaviour) {
     case "no_delivery": {
       const result = deliveryResult("", settleOk());
-      log(200, true);
+      log(200, true, false);
       return result;
     }
     case "402_forever":

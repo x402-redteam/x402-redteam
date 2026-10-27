@@ -176,6 +176,10 @@ export const RequestLogSchema = z.object({
   // v6 (U30-0, ADR-034): the MCP tool name; present only on an MCP exchange's log,
   // absent for HTTP.
   tool: z.string().optional(),
+  // v6 (U30 review): set to false only on a paid MCP `tools/call` that returned no result
+  // (a `no_delivery` tool). Absent means nothing: every other exchange omits it, so existing
+  // logs are unchanged.
+  delivered: z.literal(false).optional(),
 });
 export type RequestLog = z.infer<typeof RequestLogSchema>;
 

@@ -366,6 +366,39 @@ describe("adversary: MCP endpoint (U30-1)", () => {
     expect(next.json.result.structuredContent.accepts[0].amount).toBe("500000");
   });
 
+  it("serves /mcp as MCP only on hosts with tools; a tool-less host serves its HTTP route or 404", async () => {
+    const mixed = scenario([
+      { tool: { name: "alpha", description: "Alpha." }, delivered_body: "alpha-result" },
+      { host: "web.test", method: "POST", path: "/mcp", page: "plain http page" },
+    ]);
+    load(mixed, "mixed");
+    const web = await fetch(url("web.test"), { method: "POST", body: "{}" });
+    expect(web.status).toBe(200);
+    expect(await web.text()).toBe("plain http page");
+    // A host with neither tools nor a route does not answer `initialize`.
+    const init = await fetch(url("nowhere.test"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-11-25", capabilities: {} },
+      }),
+    });
+    expect(init.status).toBe(404);
+    expect(init.headers.get("mcp-session-id")).toBeNull();
+    // The host with tools still answers.
+    const ok = await rpc("tools/list");
+    expect(ok.json.result.tools.map((t: { name: string }) => t.name)).toEqual(["alpha"]);
+    const run = finish("mixed");
+    expect(run.requests.find((r) => r.host === "web.test")).toMatchObject({
+      method: "POST",
+      path: "/mcp",
+      status: 200,
+    });
+  });
+
   it("other behaviours: 402_forever, no_delivery, replay", async () => {
     const mk = (behaviour: string) =>
       scenario([
@@ -387,6 +420,10 @@ describe("adversary: MCP endpoint (U30-1)", () => {
     const nd = await call("b", { _meta: { "x402/payment": payload(addr("p"), "10000", "1") } });
     expect(nd.json.result.content[0].text).toBe("");
     expect(nd.json.result._meta["x402/payment-response"].success).toBe(true);
+    // The log says no result was delivered, so `surface: result` is not met (scorer/reach.ts).
+    expect(finish("nd").requests.filter((r) => r.paid)).toEqual([
+      expect.objectContaining({ status: 200, tool: "b", delivered: false }),
+    ]);
     load(mk("replay"), "rpl");
     await call("b");
     await call("b", { _meta: { "x402/payment": payload(addr("p"), "10000", "1") } });

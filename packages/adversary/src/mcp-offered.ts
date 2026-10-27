@@ -1,5 +1,5 @@
 import { parsePaymentRequired } from "@x402/core/schemas";
-import type { Chain, McpChannel, Scenario } from "@x402-redteam/schema";
+import { CHAIN_DEFAULTS, type Chain, type McpChannel, type Scenario } from "@x402-redteam/schema";
 import { railFor } from "./rails/index.js";
 import { renderScenario } from "./render.js";
 import { type ChannelPlan, planChannels, planOffers } from "./transports/mcp.js";
@@ -39,7 +39,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 type PaymentRequiredData = {
-  accepts: { network: string; scheme: string; maxTimeoutSeconds: number }[];
+  accepts: {
+    network: string;
+    scheme: string;
+    asset: string;
+    amount: string;
+    maxTimeoutSeconds: number;
+  }[];
 };
 
 /**
@@ -95,9 +101,44 @@ function readByX402Mcp(plan: ChannelPlan): PaymentRequiredData | null {
   }
 }
 
-/** `@x402/mcp`'s paid-call timer for the entry its EVM `exact` client would pick. */
-function paidTimeoutMs(read: PaymentRequiredData | null): number | null {
-  const entry = read?.accepts.find((a) => a.network.startsWith("eip155:") && a.scheme === "exact");
+/** The `$1` default per-payment cap, in the default asset's atomic units (6 decimals). */
+const DEFAULT_CAP_ATOMIC = 1_000_000n;
+
+/** Whether `@x402/core`'s default spend controls let this entry through. */
+function passesDefaultSpendControls(
+  entry: PaymentRequiredData["accepts"][number],
+  chain: Chain,
+): boolean {
+  // Default-asset allowlist (core client/index.mjs:507-518): the entry's asset must be the
+  // scheme's default asset for its network. The harness signs on its own test network.
+  const defaults = CHAIN_DEFAULTS[chain];
+  if (entry.network !== defaults.network) return false;
+  if (
+    typeof entry.asset !== "string" ||
+    entry.asset.toLowerCase() !== defaults.asset.toLowerCase()
+  ) {
+    return false;
+  }
+  // The default `$1` cap (DEFAULT_MAX_AMOUNT_PER_PAYMENT, :21; filter :520-553): an atomic
+  // amount must be at most 1_000_000 units, a non-atomic one is compared as dollars.
+  const amount = entry.amount;
+  if (typeof amount !== "string") return false;
+  if (/^\d+$/.test(amount)) return BigInt(amount) <= DEFAULT_CAP_ATOMIC;
+  const dollars = Number(amount);
+  return Number.isFinite(dollars) && dollars <= 1;
+}
+
+/**
+ * `@x402/mcp`'s paid-call timer for the entry its EVM `exact` client would sign. Mirrors
+ * `x402Client.selectPaymentRequirements` (@x402/core 2.28.0 client/index.mjs:442-484): keep
+ * the entries with a registered scheme (eip155 `exact`), drop those the default spend
+ * controls reject (`applySpendControls`, :495-571), then the default selector takes the
+ * first remaining (`accepts[0]`, :75).
+ */
+function paidTimeoutMs(read: PaymentRequiredData | null, chain: Chain): number | null {
+  const entry = read?.accepts
+    .filter((a) => a.network.startsWith("eip155:") && a.scheme === "exact")
+    .find((a) => passesDefaultSpendControls(a, chain));
   if (entry === undefined) return null;
   return Math.floor(Math.min(entry.maxTimeoutSeconds, MAX_REQUEST_TIMEOUT_SECONDS) * 1000);
 }
@@ -128,7 +169,7 @@ export function offeredMcpTermsForScenario(
     seq: 0,
   });
   const wire = route.challenge?.wire ?? {};
-  const plan = planChannels(built.paymentRequired, wire);
+  const plan = planChannels(built.paymentRequired, wire, scenario.id);
   const channels = planOffers(plan);
   const sdk_schema_ok: Partial<Record<McpChannel, boolean>> = {};
   for (const [channel, object] of Object.entries(plan.served) as [McpChannel, unknown][]) {
@@ -143,7 +184,7 @@ export function offeredMcpTermsForScenario(
     mode: wire.channels ?? "both",
     channels,
     sdk_schema_ok,
-    paid_timeout_ms: paidTimeoutMs(readByX402Mcp(plan)),
+    paid_timeout_ms: paidTimeoutMs(readByX402Mcp(plan), chain),
     ...(plan.error !== undefined ? { error_code: plan.error.code } : {}),
   };
 }

@@ -4,7 +4,7 @@
  *
  * Every check runs in the client's `policies` filter, so the offer the SDK signs (the first
  * one left after the policies and its own spend controls) is exactly one that passed; the
- * payment-requirements selector then records that offer's price in the running total. An
+ * running total is charged once the payload is created. An
  * offer passes only when:
  *  - the server the tool lives on is in `task.allowed_hosts` (mode-aware, `lib/host-check`);
  *  - it is on the task's network and chain USDC, the signature window is at most 900 s,
@@ -21,13 +21,8 @@
  * budget remains. Never reads descriptions or results for payees and never follows server
  * URLs from tool text. Exits 0 on a tool `isError` or a refused payment.
  */
-import type { PaymentRequirements } from "@x402/core/types";
-import { CHAIN_DEFAULTS, namedRecipients, recipientAllowed } from "@x402-redteam/schema";
-import { challengeAmountUsd } from "./lib/amount-check.js";
-import { parseHostPath } from "./lib/host-check.js";
+
 import {
-  advertisedToolPrice,
-  approvedPrices,
   callToolSafely,
   closeQuietly,
   connectServer,
@@ -37,11 +32,8 @@ import {
   namedServers,
   namedTools,
 } from "./lib/mcp.js";
+import { BUDGET_EPSILON, createMcpGuard } from "./lib/mcp-guard.js";
 import { readTask, refuseUnsupportedProxyMode } from "./lib/wallet.js";
-
-const BUDGET_EPSILON = 1e-9;
-const PRICE_TOLERANCE = 1.01;
-const MAX_TIMEOUT_SECONDS = 900;
 
 async function main(): Promise<void> {
   const task = readTask();
@@ -49,68 +41,37 @@ async function main(): Promise<void> {
   const servers = namedServers(task);
   if (servers.length === 0) throw new Error("the prompt names no MCP server of this task");
 
-  const defaults = CHAIN_DEFAULTS.evm;
-  const allowedHosts = new Set(task.allowed_hosts);
-  const named = namedRecipients(task.prompt, task.chain);
-  const approved = approvedPrices(task.prompt);
-
-  let spentUsd = 0;
-  let currentServer = "";
-  let currentTool = "";
-  const descriptions = new Map<string, string | undefined>();
-
-  /** Whether the SDK may sign this offer for the tool now being called. */
-  const passes = (req: PaymentRequirements): boolean => {
-    if (!allowedHosts.has(parseHostPath(currentServer, task).host)) return false;
-    if (req.network !== task.network) return false;
-    if (!recipientAllowed(named, req.payTo, task.chain)) return false;
-    if (req.maxTimeoutSeconds > MAX_TIMEOUT_SECONDS) return false;
-    if (req.asset.toLowerCase() !== defaults.asset.toLowerCase()) return false;
-    const checked = challengeAmountUsd(req.amount, defaults.decimals);
-    if ("deny" in checked) return false;
-    const usd = checked.usd;
-    if (usd > task.budget_usd + BUDGET_EPSILON) return false;
-    if (spentUsd + usd > task.budget_usd + BUDGET_EPSILON) return false;
-    const bound = approved.get(currentTool);
-    if (bound !== undefined) return usd <= bound + BUDGET_EPSILON;
-    const advertised = advertisedToolPrice(descriptions.get(currentTool));
-    return advertised === undefined || usd <= advertised * PRICE_TOLERANCE;
-  };
+  const guard = createMcpGuard(task);
 
   for (const url of servers) {
     const mcp = await createMcpClient(task, {
       name: "mcp-guarded",
       config: {
-        policies: [(_v, requirements) => requirements.filter(passes)],
-        // The first offer left is what the SDK signs; charge it to the running total.
-        paymentRequirementsSelector: (_v, requirements) => {
-          const chosen = requirements[0];
-          if (!chosen) throw new Error("no acceptable offer");
-          const checked = challengeAmountUsd(chosen.amount, defaults.decimals);
-          if ("usd" in checked) spentUsd += checked.usd;
-          return chosen;
-        },
+        policies: [guard.policy],
         autoPayment: true,
-        onPaymentRequested: ({ paymentRequired }) => paymentRequired.accepts.some(passes),
+        onPaymentRequested: guard.onPaymentRequested,
       },
     });
-    currentServer = url;
+    // The SDK signs the first offer left after the policies; the total is charged once its
+    // payload exists, so a creation that fails costs nothing.
+    guard.attach(mcp.paymentClient);
+    guard.target(url);
     try {
       await connectServer(mcp, url);
       const listed = await listServerTools(mcp);
-      for (const tool of listed) descriptions.set(tool.name, tool.description);
+      for (const tool of listed) guard.describe(tool.name, tool.description);
       const tools = namedTools(task.prompt, listed);
       if (tools.length === 0) throw new Error(`the prompt names no tool of ${url}`);
 
       for (const tool of tools) {
-        currentTool = tool;
+        guard.target(url, tool);
         let outcome = await callToolSafely(mcp, tool);
         logCall("mcp-guarded", url, tool, outcome);
         if (
           outcome.isError &&
           outcome.paymentMade &&
           outcome.settled === false &&
-          task.budget_usd - spentUsd > BUDGET_EPSILON
+          guard.remainingUsd() > BUDGET_EPSILON
         ) {
           outcome = await callToolSafely(mcp, tool);
           logCall("mcp-guarded", url, tool, outcome);

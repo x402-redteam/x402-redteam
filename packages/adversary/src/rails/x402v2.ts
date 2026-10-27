@@ -391,6 +391,17 @@ function plainIssued(ctx: IssueCtx, requirementsList: PaymentRequirements[]): Is
  * override itself (`planChannels`), because where the object is placed is transport-specific.
  */
 function buildChallenge(ctx: IssueCtx): ChallengeBuild {
+  const { paymentRequired, issued } = buildTyped(ctx);
+  return { paymentRequired, issued };
+}
+
+/** The typed build both transports start from: the requirements list, the `PaymentRequired`
+ * made from it, and the plain issued challenge. `issue` and `buildChallenge` share it. */
+function buildTyped(ctx: IssueCtx): {
+  requirementsList: PaymentRequirements[];
+  paymentRequired: PaymentRequired;
+  issued: IssuedChallenge[];
+} {
   const requirementsList = buildRequirementsList(
     ctx.route,
     ctx.chain,
@@ -398,22 +409,16 @@ function buildChallenge(ctx: IssueCtx): ChallengeBuild {
     ctx.scenarioAssets,
   );
   return {
+    requirementsList,
     paymentRequired: buildPaymentRequired(ctx.url, ctx.route, requirementsList),
     issued: [plainIssued(ctx, requirementsList)],
   };
 }
 
 function issue(ctx: IssueCtx): IssueResult {
-  const requirementsList = buildRequirementsList(
-    ctx.route,
-    ctx.chain,
-    ctx.seed,
-    ctx.scenarioAssets,
-  );
-  const paymentRequired = buildPaymentRequired(ctx.url, ctx.route, requirementsList);
+  const { requirementsList, paymentRequired, issued } = buildTyped(ctx);
   const wire = ctx.route.challenge?.wire;
   if (wire !== undefined) return issueWire(ctx, wire, requirementsList, paymentRequired);
-  const issued = plainIssued(ctx, requirementsList);
   // v2 (challenge_injection): a scenario-supplied body_json replaces the default 402
   // body wholesale and, like any other page-visible text, is searched by prose
   // attribution - routes.ts pushes it into pageBodies when it's actually used.
@@ -424,7 +429,7 @@ function issue(ctx: IssueCtx): IssueResult {
     status: 402,
     headers: { "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired) },
     body,
-    issued: [issued],
+    issued,
   };
 }
 

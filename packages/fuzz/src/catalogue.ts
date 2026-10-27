@@ -60,6 +60,15 @@ const WireOverrideSchema = z
 
 const ChallengeOverrideSchema = z.record(z.string(), z.unknown());
 
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const CatalogueEntrySchema = z
   .object({
     id: kebab,
@@ -111,6 +120,10 @@ export const CatalogueEntrySchema = z
       issue("expected_kind", "expected_kind is for spec-must only");
     }
     if (e.wire?.channels !== undefined) {
+      const raw = parseWireChannels(e.wire.channels);
+      if (raw?.mode === "structured_raw" && !isJson(raw.arg ?? "")) {
+        issue("wire", `entry ${e.id}: wire.channels structured_raw literal is not JSON`);
+      }
       if (e.wire.encoding !== undefined || e.wire.body !== undefined) {
         issue("wire", "wire.channels is MCP only; wire.encoding and wire.body are page/chat only");
       }

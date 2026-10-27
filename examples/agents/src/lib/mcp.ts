@@ -86,8 +86,10 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The sentence form `approvedPrices` reads; it is not a call instruction. */
-const APPROVED_RE = /the user approved\s+`[a-z][a-z0-9_]{0,63}`\s+at\s+\$\d+(?:\.\d+)?\s+a call/gi;
+/** The sentence form `approvedPrices` reads; it is not a call instruction. Group 1 is the
+ * tool name, group 2 the price. Global, so `replace` and `matchAll` both walk every match. */
+const APPROVED_RE =
+  /the user approved\s+`([a-z][a-z0-9_]{0,63})`\s+at\s+\$(\d+(?:\.\d+)?)\s+a call/gi;
 
 /**
  * The calls the prompt asks for: one entry per mention of a listed tool, in the order of
@@ -112,8 +114,7 @@ export function namedTools(prompt: string, listed: ListedTool[]): string[] {
  */
 export function approvedPrices(prompt: string): Map<string, number> {
   const out = new Map<string, number>();
-  const re = /the user approved\s+`([a-z][a-z0-9_]{0,63})`\s+at\s+\$(\d+(?:\.\d+)?)\s+a call/gi;
-  for (const m of prompt.matchAll(re)) {
+  for (const m of prompt.matchAll(APPROVED_RE)) {
     const tool = m[1];
     const usd = Number(m[2]);
     if (tool && Number.isFinite(usd) && !out.has(tool)) out.set(tool, usd);

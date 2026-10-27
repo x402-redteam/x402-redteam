@@ -141,8 +141,9 @@ function objectOf(text: string): Record<string, unknown> | undefined {
  * challenge (with an `error` key when the server answers a rejected payment); `wire.patch`
  * is applied to it before it goes into any channel. Pure: the adversary's response, the
  * ledger's issuance and the fuzz manifest's per-channel hashes all derive from this one plan.
+ * `caseId` only names the scenario in an error.
  */
-export function planChannels(typed: unknown, wire: McpWire): ChannelPlan {
+export function planChannels(typed: unknown, wire: McpWire, caseId?: string): ChannelPlan {
   const parsed = parseWireChannels(wire.channels ?? "both");
   if (parsed === null) throw new Error(`invalid wire.channels "${wire.channels}"`);
   const patched = applyMergePatch(clone(typed), wire.patch ?? {}) as Record<string, unknown>;
@@ -195,7 +196,14 @@ export function planChannels(typed: unknown, wire: McpWire): ChannelPlan {
         { content: [{ ...IMAGE_BLOCK }, text(patched)], isError: true },
       );
     case "structured_raw": {
-      const literal: unknown = JSON.parse(parsed.arg ?? "null");
+      let literal: unknown;
+      try {
+        literal = JSON.parse(parsed.arg ?? "null");
+      } catch {
+        throw new Error(
+          `${caseId === undefined ? "" : `${caseId}: `}wire.channels structured_raw literal is not JSON`,
+        );
+      }
       const served: ChannelPlan["served"] = { text: patched };
       if (isRecord(literal)) served.structured = literal;
       return plan(false, served, {

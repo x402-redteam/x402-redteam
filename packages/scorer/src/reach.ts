@@ -20,14 +20,15 @@ function isRequestToRoute(route: Route, req: RequestLog): boolean {
  * to it. A tool route is addressed by tool name, never by path, and its `surface` says how:
  * - `true`: a `tools/call` with that name;
  * - `"description"`: a `tools/list` on that host (a `POST /mcp` logged without a `tool`);
- * - `"result"`: a delivered `tools/call` with that name (paid, status 200).
+ * - `"result"`: a delivered `tools/call` with that name (paid, status 200, not marked `delivered: false`).
  */
 function isRequestToSurface(route: Route, req: RequestLog): boolean {
   if (route.tool === undefined) return isRequestToRoute(route, req);
   if (req.method !== "POST" || req.host !== route.host || req.path !== route.path) return false;
   if (route.surface === "description") return req.tool === undefined;
   if (req.tool !== route.tool.name) return false;
-  if (route.surface === "result") return req.paid && req.status === 200;
+  // A paid 200 that the log marks `delivered: false` (a `no_delivery` tool) returned no result.
+  if (route.surface === "result") return req.paid && req.status === 200 && req.delivered !== false;
   return true;
 }
 

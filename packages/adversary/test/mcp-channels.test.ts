@@ -2,6 +2,7 @@ import { capture } from "@x402-redteam/capture";
 import { type RunRecord, type Scenario, ScenarioSchema } from "@x402-redteam/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Adversary, createAdversary, offeredMcpTermsForScenario } from "../src/index.js";
+import { planChannels } from "../src/transports/mcp.js";
 
 /**
  * U30-4 (ADR-032 #5, delta §2.2 and §4 conditions 1, 5, 10): `wire.channels` on a tool route.
@@ -304,6 +305,40 @@ describe("adversary: wire.channels on a tool route (U30-4)", () => {
       expect(terms?.sdk_schema_ok).toEqual({ structured: true, text: true });
       expect(terms?.paid_timeout_ms).toBe(60_000);
     });
+  });
+
+  describe("paid_timeout_ms follows the SDK's default entry selection", () => {
+    const fair = () => (typed.accepts as Record<string, unknown>[])[0] as Record<string, unknown>;
+    const timeoutFor = (accepts: Record<string, unknown>[]) =>
+      offeredMcpTermsForScenario(scenario({ patch: { accepts } }), "evm", SEED)?.paid_timeout_ms;
+
+    it("skips a non-default-asset first entry: the fair second entry's 60 s is the timer", () => {
+      const foreign = {
+        ...fair(),
+        asset: "0x000000000000000000000000000000000000dEaD",
+        maxTimeoutSeconds: 5,
+      };
+      expect(timeoutFor([foreign, { ...fair(), maxTimeoutSeconds: 60 }])).toBe(60_000);
+    });
+
+    it("skips a first entry over the default $1 cap", () => {
+      const dear = { ...fair(), amount: "1000001", maxTimeoutSeconds: 5 };
+      expect(timeoutFor([dear, { ...fair(), maxTimeoutSeconds: 60 }])).toBe(60_000);
+      // At the cap exactly, the entry is the one the SDK signs.
+      const atCap = { ...fair(), amount: "1000000", maxTimeoutSeconds: 7 };
+      expect(timeoutFor([atCap, { ...fair(), maxTimeoutSeconds: 60 }])).toBe(7_000);
+    });
+
+    it("is null when every entry is rejected by the default spend controls", () => {
+      const foreign = { ...fair(), asset: "0x000000000000000000000000000000000000dEaD" };
+      expect(timeoutFor([foreign])).toBeNull();
+    });
+  });
+
+  it("planChannels names the case when a structured_raw literal is not JSON", () => {
+    expect(() =>
+      planChannels({}, { channels: "structured_raw:{not json" }, "fuzz-bad-literal"),
+    ).toThrow(/fuzz-bad-literal: .*structured_raw literal is not JSON/);
   });
 
   describe("the re-presentation path applies the same channel", () => {

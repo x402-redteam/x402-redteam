@@ -128,6 +128,22 @@ describe("catalogue: wire.channels (U30-4)", () => {
       ),
     ).toThrow(/wire.channels/);
   });
+
+  it("refuses a structured_raw literal that is not JSON with a CatalogueError naming the entry", () => {
+    const load = () =>
+      loadCatalogue(
+        writeCatalogue({
+          "b.yaml": BASE("fam"),
+          "x.yaml": entry(
+            "raw-not-json",
+            "undefined",
+            "wire:\n  channels: structured_raw:{not json\n",
+          ),
+        }),
+      );
+    expect(load).toThrow(CatalogueError);
+    expect(load).toThrow(/x\.yaml.*entry raw-not-json.*structured_raw literal is not JSON/);
+  });
 });
 
 describe("shapes per case (D4)", () => {

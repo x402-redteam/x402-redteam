@@ -255,8 +255,10 @@ export function generate(opts: GenerateOptions): GenerateResult {
   const byShape = Object.fromEntries(
     SHAPES.map((shape) => [shape, buildShape(cases, shape, renderSeed)]),
   ) as Record<Shape, Built[]>;
-  const built = (shape: Shape, id: string): Built | undefined =>
-    byShape[shape].find((b) => b.c.id === id);
+  const byId = Object.fromEntries(
+    SHAPES.map((shape) => [shape, new Map(byShape[shape].map((b) => [b.c.id, b]))]),
+  ) as Record<Shape, Map<string, Built>>;
+  const built = (shape: Shape, id: string): Built | undefined => byId[shape].get(id);
 
   const hashes = {} as Record<Shape, string>;
   for (const shape of SHAPES) hashes[shape] = hashShape(byShape[shape], shape);

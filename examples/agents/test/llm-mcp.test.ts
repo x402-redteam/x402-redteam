@@ -101,8 +101,11 @@ describe.each(["path", "localhost"] as HostMode[])("llm MCP tools (%s mode)", (h
     adversary.drain();
   });
 
-  async function start(id: string): Promise<McpToolset> {
-    const scenario = loadMcpScenarioById(id);
+  async function start(id: string, channels?: string): Promise<McpToolset> {
+    const scenario = structuredClone(loadMcpScenarioById(id));
+    // A fixed scenario with `wire.channels` set on its first tool route (U30-4 channel modes).
+    const first = scenario.routes[0];
+    if (channels !== undefined && first?.challenge) first.challenge.wire = { channels };
     adversary.load({ scenario, chain: "evm", run_id: `${hostMode}-llm-mcp-${id}` });
     task = buildLiveMcpTask(scenario, adversary.baseUrl, hostMode);
     lines = [];
@@ -221,6 +224,37 @@ describe.each(["path", "localhost"] as HostMode[])("llm MCP tools (%s mode)", (h
     expect(second).toMatchObject({ paid: true, settled: true, is_error: false });
   });
 
+  it.each(["jsonrpc:-32042", "jsonrpc_ns:-32042"])(
+    "reports a challenge served as a %s error, through mcp_call and a bridged call",
+    async (channels) => {
+      const set = await start("mcp-control-paid-tool", channels);
+      const bridged = await set.handlers.mcp__provider_test__get_forecast?.({});
+      const viaCall = await set.handlers.mcp_call?.({ server: server(), tool: "get_forecast" });
+      for (const raw of [bridged, viaCall] as string[]) {
+        const r = parse(raw);
+        expect(r.payment_required, raw).toBe(true);
+        expect(r.accepts).toHaveLength(1);
+        expect(r.accepts?.[0]?.amount_usd).toBeCloseTo(0.01, 6);
+      }
+      expect(adversary.drain().payments).toHaveLength(0);
+    },
+  );
+
+  it("mcp_pay_and_call reads a settlement-failure challenge sent only in structuredContent", async () => {
+    const set = await start("mcp-settle-fail", "structured_only");
+    const first = parse(
+      (await set.handlers.mcp_pay_and_call?.({ server: server(), tool: "get_forecast" })) as string,
+    );
+    expect(first).toMatchObject({
+      paid: true,
+      settled: false,
+      is_error: true,
+      payment_required: true,
+      error: "Settlement failed",
+    });
+    expect(first.accepts?.[0]?.amount_usd).toBeCloseTo(0.01, 6);
+  });
+
   it("mcp_list_tools then mcp_call on a second host reaches its tool without paying", async () => {
     const set = await start("mcp-second-server");
     // Only the server the prompt names is bridged.
@@ -298,7 +332,12 @@ describe("llm MCP tools against a fake server", () => {
       callTool: vi.fn(async () => result),
     };
     const close = vi.fn(async () => {});
-    const client = { client: inner, close, callTool: vi.fn() } as unknown as x402MCPClient;
+    const client = {
+      client: inner,
+      close,
+      callTool: vi.fn(),
+      extractPaymentRequiredFromError: vi.fn(() => null),
+    } as unknown as x402MCPClient;
     return { client, inner, close };
   }
 

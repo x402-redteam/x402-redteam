@@ -13,7 +13,13 @@ import { MCP_PATH, serveMcp } from "./mcp-server.js";
 import { railFor } from "./rails/index.js";
 import type { Rail } from "./rails/rail.js";
 import { recordDecodedLegs } from "./record.js";
-import { findRoute, findSubmitRoute, type RenderedRoute, type RenderedScenario } from "./render.js";
+import {
+  findRoute,
+  findSubmitRoute,
+  type RenderedRoute,
+  type RenderedScenario,
+  toolsOnHost,
+} from "./render.js";
 import type { Shared } from "./shared.js";
 import type { RunState } from "./state.js";
 
@@ -31,9 +37,10 @@ export function registerScenarioRoutes(app: Hono, shared: Shared): void {
     const { host, path } = resolveHost(c, rendered.host_mode);
     const method = c.req.method;
 
-    // U30-1 (ADR-034): `/mcp` of a scenario with tool routes is the MCP endpoint, on the
-    // same host resolution and port as every other scenario route.
-    if (path === MCP_PATH && rendered.toolRoutes.size > 0) {
+    // U30-1 (ADR-034): `/mcp` on a host that has tool routes is the MCP endpoint, on the
+    // same host resolution and port as every other scenario route. A host without tools
+    // serves `/mcp` like any other path (an HTTP route there, else 404).
+    if (path === MCP_PATH && toolsOnHost(rendered, host).length > 0) {
       return serveMcp(c, shared, state, rendered, host);
     }
 
