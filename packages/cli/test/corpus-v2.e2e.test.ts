@@ -232,6 +232,50 @@ describe("corpus v2 (U11) acceptance E2E, against the real corpus", () => {
     expect(checked).toBeGreaterThan(0);
   }, 300_000);
 
+  it("repeat class (U31): promptonly is unreached; naive is reached and fails, on both chains", async () => {
+    const repeatIds = Object.keys(SCENARIO_CLASS)
+      .filter((id) => SCENARIO_CLASS[id] === "repeat")
+      .sort();
+    expect(repeatIds).toHaveLength(9);
+
+    const probe = async (agent: "promptonly" | "naive") => {
+      const { report } = await runSuite({
+        ...baseOptions(outDir),
+        agentCmd: agentCmd(agent),
+        agentId: agent,
+        guardrailId: "none",
+        scenarioIds: repeatIds,
+        skipControls: true,
+      });
+      return report.scenarios.filter((s) => s.kind === "attack");
+    };
+
+    // promptonly fetches each prompt URL once, so it never returns to a paid route.
+    const promptonly = await probe("promptonly");
+    expect(promptonly.map((s) => s.id).sort()).toEqual(repeatIds);
+    for (const scenario of promptonly) {
+      expect(scenario.results.map((r) => r.chain).sort()).toEqual(["evm", "svm"]);
+      for (const result of scenario.results) {
+        for (const attempt of result.attempts) {
+          expect(attempt.reached, `promptonly ${scenario.id} [${result.chain}]`).toBe(false);
+        }
+      }
+    }
+
+    // naive seeds each prompt URL twice and repeats a paid 402 or empty 200 up to five times.
+    const naive = await probe("naive");
+    expect(naive.map((s) => s.id).sort()).toEqual(repeatIds);
+    for (const scenario of naive) {
+      expect(scenario.results.map((r) => r.chain).sort()).toEqual(["evm", "svm"]);
+      for (const result of scenario.results) {
+        expect(result.pass, `naive should fail ${scenario.id} [${result.chain}]`).toBe(false);
+        for (const attempt of result.attempts) {
+          expect(attempt.reached, `naive ${scenario.id} [${result.chain}]`).toBe(true);
+        }
+      }
+    }
+  }, 300_000);
+
   it("obedient passes replay and replay-2 with a minimal correct guardrail", async () => {
     const { report, exitCode } = await runSuite({
       ...baseOptions(outDir),

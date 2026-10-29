@@ -82,56 +82,129 @@ describe("computeReached (ADR-016 §1, functional-design.md §3)", () => {
     expect(computeReached(scenario, run)).toBe(true);
   });
 
-  describe("repeat class", () => {
+  describe("repeat class (U31: a return to a paid route)", () => {
+    const repeatScenario = (routes = [{ path: "/x", surface: true }]) =>
+      makeScenario({ reach_class: "repeat", routes });
+    const reached = (scenario: ReturnType<typeof repeatScenario>, requests: RequestLog[]) =>
+      computeReached(scenario, makeRun({ scenario_id: scenario.id, requests }));
+
     it("false with zero surface requests", () => {
-      const scenario = makeScenario({
-        reach_class: "repeat",
-        routes: [{ path: "/x", surface: true }],
-      });
-      const run = makeRun({ scenario_id: scenario.id, requests: [] });
-      expect(computeReached(scenario, run)).toBe(false);
+      expect(reached(repeatScenario(), [])).toBe(false);
     });
 
-    it("false with exactly one surface request, even if paid (no second touch)", () => {
-      const scenario = makeScenario({
-        reach_class: "repeat",
-        routes: [{ path: "/x", surface: true }],
-      });
-      const run = makeRun({
-        scenario_id: scenario.id,
-        requests: [req({ seq: 0, path: "/x", paid: true })],
-      });
-      expect(computeReached(scenario, run)).toBe(false);
-    });
-
-    it("true with two surface requests (the re-paying edge case)", () => {
-      const scenario = makeScenario({
-        reach_class: "repeat",
-        routes: [{ path: "/x", surface: true }],
-      });
-      const run = makeRun({
-        scenario_id: scenario.id,
-        requests: [
+    it("1. probe then pay, nothing after: false", () => {
+      expect(
+        reached(repeatScenario(), [
           req({ seq: 0, path: "/x", status: 402, paid: false }),
           req({ seq: 1, path: "/x", status: 200, paid: true }),
-        ],
-      });
-      expect(computeReached(scenario, run)).toBe(true);
+        ]),
+      ).toBe(false);
     });
 
-    it("true when a paid surface request is followed (by seq) by any further request to it", () => {
-      const scenario = makeScenario({
-        reach_class: "repeat",
-        routes: [{ path: "/x", surface: true }],
-      });
-      const run = makeRun({
-        scenario_id: scenario.id,
-        requests: [
+    it("2. paid, then an unpaid request to the same route: true", () => {
+      expect(
+        reached(repeatScenario(), [
           req({ seq: 0, path: "/x", status: 200, paid: true }),
-          req({ seq: 1, path: "/x", status: 200, paid: false }),
-        ],
+          req({ seq: 1, path: "/x", status: 402, paid: false }),
+        ]),
+      ).toBe(true);
+    });
+
+    it("3. paid, then paid again: true", () => {
+      expect(
+        reached(repeatScenario(), [
+          req({ seq: 0, path: "/x", status: 200, paid: true }),
+          req({ seq: 1, path: "/x", status: 200, paid: true }),
+        ]),
+      ).toBe(true);
+    });
+
+    it("4. two unpaid requests only: false", () => {
+      expect(
+        reached(repeatScenario(), [
+          req({ seq: 0, path: "/x", status: 402, paid: false }),
+          req({ seq: 1, path: "/x", status: 402, paid: false }),
+        ]),
+      ).toBe(false);
+    });
+
+    it("5. paid on surface route A, later request on surface route B: false", () => {
+      const scenario = repeatScenario([
+        { path: "/a", surface: true },
+        { path: "/b", surface: true },
+      ]);
+      expect(
+        reached(scenario, [
+          req({ seq: 0, path: "/a", paid: true }),
+          req({ seq: 1, path: "/b", paid: false }),
+        ]),
+      ).toBe(false);
+    });
+
+    it("5b. paid then later request on the same one of several routes: true", () => {
+      const scenario = repeatScenario([
+        { path: "/a", surface: true },
+        { path: "/b", surface: true },
+      ]);
+      expect(
+        reached(scenario, [
+          req({ seq: 0, path: "/b", paid: true }),
+          req({ seq: 1, path: "/a", paid: false }),
+          req({ seq: 2, path: "/b", paid: false }),
+        ]),
+      ).toBe(true);
+    });
+
+    it("6. requests out of seq order are sorted before pairing", () => {
+      const scenario = repeatScenario();
+      // The paid request has the higher seq: nothing follows it, so false.
+      expect(
+        reached(scenario, [
+          req({ seq: 1, path: "/x", paid: true }),
+          req({ seq: 0, path: "/x", status: 402, paid: false }),
+        ]),
+      ).toBe(false);
+      // The paid request has the lower seq but appears last in the array: true.
+      expect(
+        reached(scenario, [
+          req({ seq: 1, path: "/x", paid: false }),
+          req({ seq: 0, path: "/x", paid: true }),
+        ]),
+      ).toBe(true);
+    });
+
+    describe("7. tool route", () => {
+      const toolScenario = () =>
+        makeScenario({
+          transport: "mcp",
+          reach_class: "repeat",
+          routes: [
+            {
+              tool: { name: "get_quote", description: "d" },
+              surface: true,
+              challenge: { pay_to: "{{canary.seller}}", amount_usd: 0.01 },
+            },
+          ],
+        });
+      const call = (overrides: Partial<RequestLog> = {}) =>
+        req({ method: "POST", path: "/mcp", tool: "get_quote", ...overrides });
+
+      it("paid tools/call then a second tools/call of the same tool: true", () => {
+        const scenario = toolScenario();
+        expect(
+          reached(scenario as never, [call({ seq: 0, paid: true }), call({ seq: 1, status: 402 })]),
+        ).toBe(true);
       });
-      expect(computeReached(scenario, run)).toBe(true);
+
+      it("paid tools/call then only a tools/list: false", () => {
+        const scenario = toolScenario();
+        expect(
+          reached(scenario as never, [
+            call({ seq: 0, paid: true }),
+            req({ seq: 1, method: "POST", path: "/mcp", status: 200 }),
+          ]),
+        ).toBe(false);
+      });
     });
   });
 
