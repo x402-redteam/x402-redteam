@@ -8,6 +8,8 @@ overrides:
   '@x402-redteam/schema': file:../../../packages/schema
   axios@<0.34.0: 1.20.0
   ws@>=8.0.0 <8.21.0: 8.22.0
+  undici@>=8.0.0 <8.12.2: 8.12.3
+  zod@>=4.0.0 <4.6.6: 4.6.7
 
 importers:
 
@@ -15,7 +17,7 @@ importers:
     dependencies:
       '@blockrun/clawrouter':
         specifier: 0.12.282
-        version: 0.12.282(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.5)
+        version: 0.12.282(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.7)
       '@x402-redteam/schema':
         specifier: file:../../../packages/schema
         version: file:../../../packages/schema(typescript@6.0.3)
@@ -39,7 +41,7 @@ packages:
     resolution: {integrity: sha512-Y9oX9mPNGZClHQOFqrWRk43Srcu/UHuPq3rfxxOq7JgW0gi+lJA2MAOK4Ul3k/+AUrwRWFJvd0tK3oC0Pw25dw==}
     hasBin: true
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: 4.6.7
     peerDependenciesMeta:
       zod:
         optional: true
@@ -1075,7 +1077,7 @@ packages:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
     peerDependencies:
       typescript: '>=5.0.4'
-      zod: ^3.22.0 || ^4.0.0
+      zod: 4.6.7
     peerDependenciesMeta:
       typescript:
         optional: true
@@ -1376,8 +1378,8 @@ packages:
   undici-types@8.11.2:
     resolution: {integrity: sha512-iMVNmWZ0leK/goS6eXMizSzmm9CDWtyphwbaCms3DNLqRxDL+mMoNVcZMTyyVgXP0N+Z8neAMzDoUOUJL8veKg==}
 
-  undici@8.11.2:
-    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
+  undici@8.12.3:
+    resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
 
   viem@2.57.1:
@@ -1432,29 +1434,29 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
 
-  '@anthropic-ai/sdk@0.123.0(zod@4.6.5)':
+  '@anthropic-ai/sdk@0.123.0(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@babel/runtime@7.29.10': {}
 
-  '@blockrun/clawrouter@0.12.282(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.5)':
+  '@blockrun/clawrouter@0.12.282(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.7)':
     dependencies:
-      '@blockrun/llm': 3.20.1(@solana/kit@8.4.0(typescript@6.0.3))(@x402/core@2.28.0)(@x402/svm@2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.5)
+      '@blockrun/llm': 3.20.1(@solana/kit@8.4.0(typescript@6.0.3))(@x402/core@2.28.0)(@x402/svm@2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.7)
       '@noble/hashes': 2.4.0
-      '@polymarket/builder-relayer-client': 0.0.10(zod@4.6.5)
+      '@polymarket/builder-relayer-client': 0.0.10(zod@4.6.7)
       '@polymarket/builder-signing-sdk': 0.0.8
-      '@polymarket/clob-client-v2': 1.0.8(typescript@6.0.3)(zod@4.6.5)
+      '@polymarket/clob-client-v2': 1.0.8(typescript@6.0.3)(zod@4.6.7)
       '@scure/bip32': 2.4.0
       '@scure/bip39': 1.6.0
       '@solana/kit': 8.4.0(typescript@6.0.3)
@@ -1465,8 +1467,8 @@ snapshots:
       axios: 1.20.0
       bs58: 6.0.0
       https-proxy-agent: 9.1.0
-      undici: 8.11.2
-      viem: 2.57.4(typescript@6.0.3)(zod@4.6.5)
+      undici: 8.12.3
+      viem: 2.57.4(typescript@6.0.3)(zod@4.6.7)
     transitivePeerDependencies:
       - '@solana/spl-token'
       - '@solana/sysvars'
@@ -1480,11 +1482,11 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@blockrun/llm@3.20.1(@solana/kit@8.4.0(typescript@6.0.3))(@x402/core@2.28.0)(@x402/svm@2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.5)':
+  '@blockrun/llm@3.20.1(@solana/kit@8.4.0(typescript@6.0.3))(@x402/core@2.28.0)(@x402/svm@2.28.0(@solana/kit@8.4.0(typescript@6.0.3))(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 0.123.0(zod@4.6.5)
+      '@anthropic-ai/sdk': 0.123.0(zod@4.6.7)
       bs58: 6.0.0
-      viem: 2.57.4(typescript@6.0.3)(zod@4.6.5)
+      viem: 2.57.4(typescript@6.0.3)(zod@4.6.7)
     optionalDependencies:
       '@solana/kit': 8.4.0(typescript@6.0.3)
       '@x402/core': 2.28.0
@@ -1842,29 +1844,29 @@ snapshots:
 
   '@noble/hashes@2.4.0': {}
 
-  '@polymarket/builder-abstract-signer@0.0.1(zod@4.6.5)':
+  '@polymarket/builder-abstract-signer@0.0.1(zod@4.6.7)':
     dependencies:
       ethers: 5.8.0
       ts-node: 9.1.1(typescript@5.9.3)
       typescript: 5.9.3
-      viem: 2.57.4(typescript@5.9.3)(zod@4.6.5)
+      viem: 2.57.4(typescript@5.9.3)(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
       - zod
 
-  '@polymarket/builder-relayer-client@0.0.10(zod@4.6.5)':
+  '@polymarket/builder-relayer-client@0.0.10(zod@4.6.7)':
     dependencies:
       '@ethersproject/providers': 5.8.0
       '@ethersproject/wallet': 5.8.0
-      '@polymarket/builder-abstract-signer': 0.0.1(zod@4.6.5)
+      '@polymarket/builder-abstract-signer': 0.0.1(zod@4.6.7)
       '@polymarket/builder-signing-sdk': 0.0.8
       axios: 1.20.0
       browser-or-node: 3.0.0
       ethers: 5.8.0
       tsx: 4.23.15
       typescript: 5.9.3
-      viem: 2.57.4(typescript@5.9.3)(zod@4.6.5)
+      viem: 2.57.4(typescript@5.9.3)(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -1881,14 +1883,14 @@ snapshots:
       - debug
       - supports-color
 
-  '@polymarket/clob-client-v2@1.0.8(typescript@6.0.3)(zod@4.6.5)':
+  '@polymarket/clob-client-v2@1.0.8(typescript@6.0.3)(zod@4.6.7)':
     dependencies:
       '@ethersproject/providers': 5.8.0
       '@ethersproject/wallet': 5.8.0
       axios: 1.20.0
       browser-or-node: 3.0.0
       tslib: 2.8.1
-      viem: 2.57.4(typescript@6.0.3)(zod@4.6.5)
+      viem: 2.57.4(typescript@6.0.3)(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -2728,9 +2730,9 @@ snapshots:
     dependencies:
       '@solana/kit': 8.4.0(typescript@6.0.3)
       '@x402/core': 2.28.0
-      viem: 2.57.1(typescript@6.0.3)(zod@4.6.5)
+      viem: 2.57.1(typescript@6.0.3)(zod@4.6.7)
       yaml: 2.9.1
-      zod: 4.6.5
+      zod: 4.6.7
     transitivePeerDependencies:
       - bufferutil
       - fastestsmallesttextencoderdecoder
@@ -2769,20 +2771,20 @@ snapshots:
       - fastestsmallesttextencoderdecoder
       - typescript
 
-  abitype@1.2.3(typescript@5.9.3)(zod@4.6.5):
+  abitype@1.2.3(typescript@5.9.3)(zod@4.6.7):
     optionalDependencies:
       typescript: 5.9.3
-      zod: 4.6.5
+      zod: 4.6.7
 
   abitype@1.2.3(typescript@6.0.3)(zod@3.25.76):
     optionalDependencies:
       typescript: 6.0.3
       zod: 3.25.76
 
-  abitype@1.2.3(typescript@6.0.3)(zod@4.6.5):
+  abitype@1.2.3(typescript@6.0.3)(zod@4.6.7):
     optionalDependencies:
       typescript: 6.0.3
-      zod: 4.6.5
+      zod: 4.6.7
 
   aes-js@3.0.0: {}
 
@@ -3050,7 +3052,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  ox@0.14.45(typescript@6.0.3)(zod@4.6.5):
+  ox@0.14.45(typescript@6.0.3)(zod@4.6.7):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -3058,14 +3060,14 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.5)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.7)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 6.0.3
     transitivePeerDependencies:
       - zod
 
-  ox@0.14.54(typescript@5.9.3)(zod@4.6.5):
+  ox@0.14.54(typescript@5.9.3)(zod@4.6.7):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -3073,7 +3075,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.5)
+      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.7)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -3095,7 +3097,7 @@ snapshots:
     transitivePeerDependencies:
       - zod
 
-  ox@0.14.54(typescript@6.0.3)(zod@4.6.5):
+  ox@0.14.54(typescript@6.0.3)(zod@4.6.7):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -3103,7 +3105,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.5)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.7)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 6.0.3
@@ -3158,17 +3160,17 @@ snapshots:
 
   undici-types@8.11.2: {}
 
-  undici@8.11.2: {}
+  undici@8.12.3: {}
 
-  viem@2.57.1(typescript@6.0.3)(zod@4.6.5):
+  viem@2.57.1(typescript@6.0.3)(zod@4.6.7):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.5)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.7)
       isows: 1.0.7(ws@8.21.0)
-      ox: 0.14.45(typescript@6.0.3)(zod@4.6.5)
+      ox: 0.14.45(typescript@6.0.3)(zod@4.6.7)
       ws: 8.21.0
     optionalDependencies:
       typescript: 6.0.3
@@ -3177,15 +3179,15 @@ snapshots:
       - utf-8-validate
       - zod
 
-  viem@2.57.4(typescript@5.9.3)(zod@4.6.5):
+  viem@2.57.4(typescript@5.9.3)(zod@4.6.7):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.5)
+      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.7)
       isows: 1.0.7(ws@8.21.0)
-      ox: 0.14.54(typescript@5.9.3)(zod@4.6.5)
+      ox: 0.14.54(typescript@5.9.3)(zod@4.6.7)
       ws: 8.21.0
     optionalDependencies:
       typescript: 5.9.3
@@ -3211,15 +3213,15 @@ snapshots:
       - utf-8-validate
       - zod
 
-  viem@2.57.4(typescript@6.0.3)(zod@4.6.5):
+  viem@2.57.4(typescript@6.0.3)(zod@4.6.7):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.5)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.6.7)
       isows: 1.0.7(ws@8.21.0)
-      ox: 0.14.54(typescript@6.0.3)(zod@4.6.5)
+      ox: 0.14.54(typescript@6.0.3)(zod@4.6.7)
       ws: 8.21.0
     optionalDependencies:
       typescript: 6.0.3
@@ -3238,4 +3240,4 @@ snapshots:
 
   zod@3.25.76: {}
 
-  zod@4.6.5: {}
+  zod@4.6.7: {}

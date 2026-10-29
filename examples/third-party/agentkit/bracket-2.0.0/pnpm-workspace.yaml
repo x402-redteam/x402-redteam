@@ -9,3 +9,5 @@ overrides:
   "@x402/svm": 2.0.0
   # The capture shim's own workspace:* dependency, resolved from the same checkout.
   "@x402-redteam/schema": file:../../../../packages/schema
+  # zod: GHSA-mrhx-c7xc-m3w5 (fixed in 4.6.6). The 3.x copies are the v3 API, as at the repo root.
+  "zod@>=4.0.0 <4.6.6": 4.6.7
