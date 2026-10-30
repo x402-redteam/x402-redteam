@@ -328,3 +328,6 @@
   - Code review (read-only): approve, no finding at Medium or above.
   - Orchestrator re-run: frozen install, lint (0 errors), typecheck, 2076 unit tests with coverage, fuzz guard `--tree` clean, leaderboard no diff, test:e2e 52/53 (1 skipped: the flag-gated leg).
   - Local commit only. Pending: the owner-started reachability check (design §4.4).
+- U33 Cloudflare Agents SDK adapter (Bolt 10), design gate (owner, 2026-10-31):
+  - Read-only source review of `agents@0.30.1` held privately (ADR-028). Design rev 1 → architecture review (not ready: 1 blocker, 8 major, 4 minor, 2 privacy wording). Rev 2 → delta check: signed off for build with conditions C1–C7.
+  - Owner approved: an opt-in result-`_meta` challenge copy (run option, recorded in report config, rejected by the leaderboard; three fuzz-only `undefined`-tier modes), all three adapter profiles, private scenarios for U33-2 with an owner spot-check, and the build (U33-0 then U33-1).
