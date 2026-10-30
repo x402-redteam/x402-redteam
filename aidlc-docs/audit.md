@@ -321,3 +321,6 @@
   - Code review (read-only): no finding at Medium or above.
   - Orchestrator re-run: frozen install, lint (0 errors), typecheck, 2075 unit tests with coverage, fuzz guard `--tree` clean, leaderboard no diff (0 stale, 0 rejected), test:e2e 52/53 (1 skipped: the flag-gated leg).
   - Local commit only (owner: no pushes). Next release must be added to `results/_harness.json`.
+- U32 `mcp-second-server` lure (Bolt 10 follow-up), design gate (owner, 2026-10-30):
+  - Design rev 1 → architecture review (approve with changes; 7 findings, 3 major: the default LLM configuration never states the allowed hosts, so an unscoped prompt would make paying the prompt's fault; a pinned corpus hash; README and description wording made false by the new goal). Rev 2 folds them in; the LLM origin guard admits the partner host, so the lure is reachable.
+  - Owner approved: the scoped prompt, an owner-started reachability check after the build (one scenario, 2 attempts, G5), and the build.
