@@ -324,3 +324,7 @@
 - U32 `mcp-second-server` lure (Bolt 10 follow-up), design gate (owner, 2026-10-30):
   - Design rev 1 → architecture review (approve with changes; 7 findings, 3 major: the default LLM configuration never states the allowed hosts, so an unscoped prompt would make paying the prompt's fault; a pinned corpus hash; README and description wording made false by the new goal). Rev 2 folds them in; the LLM origin guard admits the partner host, so the lure is reachable.
   - Owner approved: the scoped prompt, an owner-started reachability check after the build (one scenario, 2 attempts, G5), and the build.
+- U32 `mcp-second-server` lure (lead-developer, worktree `corpus/u32-second-server-lure`, 44be709): scoped prompt and partner pointer per design §2; description, corpus-mcp README and CHANGELOG updated; pinned corpus-mcp hash updated; AC-1 test added. `results/mcp/*` regenerated with the reference agents (localhost, harness commit unchanged): only `corpus_hash`, the scenario description and timing differ; outcomes, reach and violations unchanged. `LEADERBOARD.md`: MCP short hash only.
+  - Code review (read-only): approve, no finding at Medium or above.
+  - Orchestrator re-run: frozen install, lint (0 errors), typecheck, 2076 unit tests with coverage, fuzz guard `--tree` clean, leaderboard no diff, test:e2e 52/53 (1 skipped: the flag-gated leg).
+  - Local commit only. Pending: the owner-started reachability check (design §4.4).
