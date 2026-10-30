@@ -317,3 +317,7 @@
 - U31 repeat-class `reached` (Bolt 10 follow-up, U30 review L11), design gate (owner, 2026-10-30):
   - Design rev 1 → architecture review (sound with required changes; 10 findings, 4 major: an e2e assertion on `mcp-guarded` the design missed, the expected reach deltas unstated, the invariant keyed on a non-existent violation code, the v0.1.0 allowlist consequence). Rev 2 folds them in.
   - Owner approved: the strict rule (a paid request then a later request to the same surface route; paid once and stopped is unreached), accepting the re-score break for v0.1.0 reports (CHANGELOG, allowlist the next release), and the build.
+- U31 repeat-class `reached` (lead-developer, worktree `feat/u31-repeat-reach`, f88e332): strict rule in `reach.ts`, grouped per surface route; acceptance tests 1–9; the three affected committed results re-scored in place from stored `runs[]` (agents not re-run; only reach fields change). Deltas match design §3: guarded-reference repeat reached 18→6, sdk-default-baseline 18→6 (passed while reached 12→0), mcp-guarded 2→1; the other four results byte-identical. ADR-016 amendment, CHANGELOG (v0.1.0 re-score break), corpus and agents READMEs.
+  - Code review (read-only): no finding at Medium or above.
+  - Orchestrator re-run: frozen install, lint (0 errors), typecheck, 2075 unit tests with coverage, fuzz guard `--tree` clean, leaderboard no diff (0 stale, 0 rejected), test:e2e 52/53 (1 skipped: the flag-gated leg).
+  - Local commit only (owner: no pushes). Next release must be added to `results/_harness.json`.
