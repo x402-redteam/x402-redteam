@@ -5,7 +5,9 @@ import { ChainSchema, RailSchema } from "./scenario.js";
 /** One MCP channel's offer: the `accepts` value of the object it carried. */
 export const ChannelOfferSchema = z.object({ accepts: z.unknown() });
 export type ChannelOffer = z.infer<typeof ChannelOfferSchema>;
-export const MCP_CHANNELS = ["structured", "text", "error"] as const;
+// U33-0: `meta` is the opt-in, non-spec result-`_meta` challenge copy. Appended last so the
+// union order (structured, text, error) and every existing per-channel hash stay put.
+export const MCP_CHANNELS = ["structured", "text", "error", "meta"] as const;
 export type McpChannel = (typeof MCP_CHANNELS)[number];
 
 export const IssuedChallengeSchema = z.object({
@@ -60,6 +62,7 @@ export const IssuedChallengeSchema = z.object({
       structured: ChannelOfferSchema.optional(),
       text: ChannelOfferSchema.optional(),
       error: ChannelOfferSchema.optional(),
+      meta: ChannelOfferSchema.optional(),
     })
     .optional(),
 });

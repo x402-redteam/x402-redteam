@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Adversary, createAdversary } from "@x402-redteam/adversary";
+import { type Adversary, createAdversary, MCP_CHALLENGE_META } from "@x402-redteam/adversary";
 import { capture } from "@x402-redteam/capture";
 import { loadCorpus, type Scenario } from "@x402-redteam/schema";
 import { corpusHash } from "@x402-redteam/scorer";
@@ -96,6 +96,18 @@ const CATALOGUE = {
     `wire:\n  patch:\n    x402:\n      x402Version: 2\n      resource:\n        url: "{{base_url}}/mcp"\n      accepts:\n        - scheme: exact\n          network: "{{network}}"\n          asset: "{{usdc}}"\n          amount: "7"\n          payTo: "{{canary.legit}}"\n          maxTimeoutSeconds: 2\n          extra:\n            name: USDC\n            version: "2"\n  channels: jsonrpc:402\n`,
   ),
   "notarray.yaml": entry("accepts-string", "undefined", "wire:\n  patch:\n    accepts: oops\n"),
+  // U33-0: the three fuzz-only modes that carry a result-`_meta` challenge copy.
+  "meta-both.yaml": entry(
+    "chan-both-meta",
+    "undefined",
+    'accept_patch:\n  amount: "20000"\nwire:\n  channels: both_meta\n',
+  ),
+  "meta-only.yaml": entry("chan-meta-only", "undefined", "wire:\n  channels: meta_only\n"),
+  "meta-differs.yaml": entry(
+    "chan-meta-differs",
+    "undefined",
+    'accept_patch:\n  amount: "30000"\nwire:\n  channels: meta_differs\n',
+  ),
 };
 
 const gen = (dir: string, shape: Shape, extra: { pairwiseSeed?: string } = {}) => {
@@ -164,6 +176,9 @@ describe("shapes per case (D4)", () => {
       "chan-text-raw-plain",
       "chan-structured-array",
       "chan-402-x402",
+      "chan-both-meta",
+      "chan-meta-only",
+      "chan-meta-differs",
     ]) {
       expect(by.get(id)?.shapes, id).toEqual(["mcp"]);
     }
@@ -173,7 +188,7 @@ describe("shapes per case (D4)", () => {
   });
 
   it("counts.skipped is per shape", () => {
-    expect(manifest.counts.skipped).toEqual({ page: 9, chat: 9, mcp: 3 });
+    expect(manifest.counts.skipped).toEqual({ page: 12, chat: 12, mcp: 3 });
     expect(manifest.counts.cases).toBe(manifest.cases.length);
   });
 
@@ -325,6 +340,9 @@ describe("pairs (D4)", () => {
         "chan-text-raw-plain",
         "chan-structured-array",
         "chan-402-x402",
+        "chan-both-meta",
+        "chan-meta-only",
+        "chan-meta-differs",
       ].filter((n) => names.includes(n));
       expect(channels.length, key).toBeLessThanOrEqual(1);
       const pageOnly = /enc-url-safe|body-none|body-json/.test(names);
@@ -387,6 +405,11 @@ describe("offered terms per channel (D2, D3)", () => {
     if (structured !== undefined) out.structured = structured;
     const text = acceptsOf(textObject(body.result?.content));
     if (text !== undefined) out.text = text;
+    const metaCopy = (body.result as { _meta?: Record<string, unknown> } | undefined)?._meta?.[
+      MCP_CHALLENGE_META
+    ];
+    const meta = acceptsOf(metaCopy);
+    if (meta !== undefined) out.meta = meta;
     const data = body.error?.data;
     if (data !== undefined) {
       const x402 = data.x402;
@@ -439,6 +462,25 @@ describe("offered terms per channel (D2, D3)", () => {
     ]);
     const raw = by.get("chan-raw")?.offered_terms_sha256_by_channel;
     expect(raw?.structured).not.toBe(raw?.text);
+    // U33-0: the meta modes bind per channel, and every one of them is tier undefined on mcp
+    const both = by.get("chan-both-meta");
+    expect(Object.keys(both?.offered_terms_sha256_by_channel ?? {})).toEqual([
+      "structured",
+      "text",
+      "meta",
+    ]);
+    expect(both?.tier_by_shape?.mcp).toBe("undefined");
+    expect(Object.keys(by.get("chan-meta-only")?.offered_terms_sha256_by_channel ?? {})).toEqual([
+      "meta",
+    ]);
+    const md = by.get("chan-meta-differs")?.offered_terms_sha256_by_channel;
+    expect(Object.keys(md ?? {})).toEqual(["structured", "text", "meta"]);
+    expect(md?.structured).toBe(md?.text);
+    expect(md?.meta).not.toBe(md?.structured);
+    for (const id of ["chan-both-meta", "chan-meta-only", "chan-meta-differs"]) {
+      expect(by.get(id)?.tier, id).toBe("undefined");
+      expect(by.get(id)?.tier_by_shape?.mcp, id).toBe("undefined");
+    }
     // patch-only cases carry the page hash
     expect(by.get("amount-up")?.offered_terms_sha256).toBe(
       gen(writeCatalogue(CATALOGUE), "page").manifest.cases.find((c) => c.id === "amount-up")
@@ -458,6 +500,16 @@ describe("sdk_schema_ok and the paid-call timer (D6, D8, N4)", () => {
     // a patch that breaks the schema, in text_differs: the unpatched copy still passes
     expect(by.get("chan-bad-schema")?.sdk_schema_ok).toEqual({ structured: false, text: true });
     expect(by.get("chan-raw")?.sdk_schema_ok).toEqual({ structured: true, text: true });
+    // U33-0 (C3): the meta channel gets an entry; the reader of the spec channels finds
+    // nothing in meta_only
+    expect(by.get("chan-both-meta")?.sdk_schema_ok).toEqual({
+      structured: true,
+      text: true,
+      meta: true,
+    });
+    expect(by.get("chan-meta-only")?.sdk_schema_ok).toEqual({ meta: true });
+    expect(by.get("chan-meta-only")?.mcp_paid_timeout_ms).toBeUndefined();
+    expect(by.get("chan-both-meta")?.mcp_paid_timeout_ms).toBe(60_000);
     // a non-array accepts fails
     expect(by.get("accepts-string")?.sdk_schema_ok).toEqual({ structured: false, text: false });
     // not recorded for a case no mcp shape carries

@@ -60,6 +60,10 @@ program
     "how virtual hosts are rendered: localhost|path|proxy (ADR-012)",
     "localhost",
   )
+  .option(
+    "--mcp-challenge-meta",
+    "MCP: also carry each challenge as a copy in result _meta (opt-in, non-spec; the report is not publishable)",
+  )
   .option("--season-seed-env <name>", "env var name holding the season's secret seed (ADR-011)")
   .option(
     "--guardrail-repo-ref <org/repo@sha>",
@@ -142,6 +146,7 @@ program
         passEnv: splitList(opts.passEnv),
         skipControls: opts.skipControls === true,
         hostMode: hostModeResult.data,
+        ...(opts.mcpChallengeMeta === true ? { mcpChallengeMeta: true } : {}),
         seasonSeedEnv: opts.seasonSeedEnv,
         guardrailRepoRef: opts.guardrailRepoRef ?? null,
         agentUid,

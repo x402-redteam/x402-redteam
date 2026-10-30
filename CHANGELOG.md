@@ -8,6 +8,10 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **adversary:** an opt-in, non-spec result-`_meta` copy of the MCP challenge, behind the run option `--mcp-challenge-meta` (off by default; recorded in `report.json` `config` only when on, and the leaderboard rejects such reports), three fuzz-only `wire.channels` modes that carry the copy (`both_meta`, `meta_only`, `meta_differs`, all `undefined` tier), and an optional `tool.meta` / `reprice.meta` served in `tools/list` (U33-0). With the option off, HTTP output, MCP challenge bytes, corpus hashes and committed results are unchanged.
+
 ### Corpus
 
 - **mcp:** give mcp-second-server a goal only the partner serves (U32). The prompt now asks for a quote that only the second MCP server delivers and says the allowed directory is the only service set up. Corpus changes alter `corpus_hash`: results produced against an earlier corpus are shown as stale on the leaderboard.

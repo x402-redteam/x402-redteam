@@ -17,6 +17,7 @@ import {
   plainResult,
   planAnswer,
   planChannels,
+  planOffers,
 } from "./transports/mcp.js";
 
 export { MCP_PATH };
@@ -180,7 +181,18 @@ function listTools(state: RunState, rendered: RenderedScenario, host: string): J
     if (JSON.stringify(tool.input_schema) !== '{"type":"object"}') {
       state.pageBodies.push(JSON.stringify(tool.input_schema));
     }
-    return { name: tool.name, description, inputSchema: tool.input_schema };
+    // U33-0: `_meta` is served as rendered; after a `reprice` delivery `reprice.meta` replaces it.
+    const meta =
+      route.behaviour === "reprice" && runtime.deliveredOnce && route.reprice?.meta !== undefined
+        ? route.reprice.meta
+        : tool.meta;
+    if (meta !== undefined) state.pageBodies.push(JSON.stringify(meta));
+    return {
+      name: tool.name,
+      description,
+      inputSchema: tool.input_schema,
+      ...(meta !== undefined ? { _meta: meta } : {}),
+    };
   });
   logRequest(state, { method: "POST", host, path: MCP_PATH, status: 200, paid: false });
   return { tools };
@@ -232,6 +244,8 @@ async function callTool(
   const rail = mcpRail(state);
   const runtime = state.runtimeFor(route.route_key);
   const resourceUrl = `mcp://tool/${name}`;
+  // U33-0: the opt-in, non-spec result-`_meta` challenge copy (the `--mcp-challenge-meta` run option).
+  const metaCopy = shared.mcpChallengeMeta === true;
   // `reprice`: once the tool has delivered, the next challenge is the repriced one.
   const active: RenderedRoute =
     route.behaviour === "reprice" && runtime.deliveredOnce && route.reprice !== undefined
@@ -264,12 +278,21 @@ async function callTool(
       error === undefined ? built.paymentRequired : withError(built.paymentRequired, error);
     // U30-4: under `wire`, the patch and channel mode decide what is served; the ledger
     // records the union of the channels' entries as the offered terms.
+    // U33-0 (C2): under the run option a non-wire issuance also goes through the plan, so its
+    // `channels` (structured, text, meta) are recorded; it keeps no `wire` record.
     const wire = active.challenge?.wire;
-    const plan = wire === undefined ? undefined : planChannels(body, wire, state.scenario.id);
+    const plan =
+      wire === undefined && !metaCopy
+        ? undefined
+        : planChannels(body, wire ?? {}, state.scenario.id, { metaCopy });
     const issuedList =
       plan === undefined
         ? built.issued
-        : built.issued.map((issued) => issuedUnderWire(issued, plan));
+        : built.issued.map((issued) =>
+            wire === undefined
+              ? { ...issued, channels: planOffers(plan) }
+              : issuedUnderWire(issued, plan),
+          );
     for (const issued of issuedList) state.challenges.push(issued);
     runtime.currentChallengeIds = issuedList.map((issued) => issued.challenge_id);
     log(status, paid);
@@ -292,9 +315,9 @@ async function callTool(
     });
     const body = withError(built.paymentRequired, error);
     const wire = active.challenge?.wire;
-    return wire === undefined
+    return wire === undefined && !metaCopy
       ? paymentRequiredResult(body, settlement)
-      : planAnswer(planChannels(body, wire, state.scenario.id), settlement);
+      : planAnswer(planChannels(body, wire ?? {}, state.scenario.id, { metaCopy }), settlement);
   };
 
   // m6: the payment rides in `_meta["x402/payment"]`; a PAYMENT-SIGNATURE header on /mcp is

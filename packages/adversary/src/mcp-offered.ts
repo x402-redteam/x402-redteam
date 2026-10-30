@@ -54,7 +54,9 @@ type PaymentRequiredData = {
  * else `content[0]` if it is a text item holding a JSON object that validates; on a
  * JSON-RPC error with code 402 or -32042, `data.x402` when the key exists (both codes),
  * else `data`. The MCP SDK rewrites a -32042 error that carries `elicitations`, so none is
- * read from it. Returns the schema-parsed (stripped) object, or null.
+ * read from it. Returns the schema-parsed (stripped) object, or null. It never reads
+ * `result._meta` (U33-0), so it returns null for `meta_only`; `sdk_schema_ok` iterates
+ * `plan.served` and so gains a `meta` entry for the modes that serve one.
  */
 function readByX402Mcp(plan: ChannelPlan): PaymentRequiredData | null {
   const parse = (value: unknown): PaymentRequiredData | null => {

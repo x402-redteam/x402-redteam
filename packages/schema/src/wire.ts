@@ -125,6 +125,12 @@ export const WIRE_CHANNEL_MODES = [
   "jsonrpc_ns",
   "jsonrpc_elicit",
   "not_error",
+  // U33-0 (ADR-032 #5 amendment): fuzz-only, `undefined` tier. The result `_meta` carries a
+  // challenge copy: `both_meta` beside identical structured and text copies, `meta_only`
+  // alone, `meta_differs` with the mutated terms there and the base terms in the other two.
+  "both_meta",
+  "meta_only",
+  "meta_differs",
 ] as const;
 export type WireChannelMode = (typeof WIRE_CHANNEL_MODES)[number];
 
@@ -142,6 +148,9 @@ const CHANNEL_NO_ARG: ReadonlySet<string> = new Set([
   "structured_differs",
   "text_second",
   "not_error",
+  "both_meta",
+  "meta_only",
+  "meta_differs",
 ]);
 const CHANNEL_RAW: ReadonlySet<string> = new Set(["structured_raw", "text_raw"]);
 const CHANNEL_CODE: ReadonlySet<string> = new Set(["jsonrpc", "jsonrpc_ns", "jsonrpc_elicit"]);

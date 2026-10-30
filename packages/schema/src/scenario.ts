@@ -112,13 +112,13 @@ export const WireSpecSchema = z.object({
    * (patched) `PaymentRequired` goes: `both` (absent means the same), `structured_only`,
    * `text_only`, `text_differs`, `structured_differs`, `text_second`,
    * `structured_raw:<json>`, `text_raw:<string>`, `jsonrpc:<code>`, `jsonrpc_ns:<code>`,
-   * `jsonrpc_elicit:<code>` or `not_error`. No zod default: it is applied where used, so a
+   * `jsonrpc_elicit:<code>`, `not_error`, or (U33-0) `both_meta`, `meta_only`, `meta_differs`. No zod default: it is applied where used, so a
    * scenario without it parses to the same JSON and no corpus hash moves. */
   channels: z
     .string()
     .refine((v) => parseWireChannels(v) !== null, {
       message:
-        "channels must be both, structured_only, text_only, text_differs, structured_differs, text_second, not_error, structured_raw:<json>, text_raw:<string>, or jsonrpc|jsonrpc_ns|jsonrpc_elicit:<integer code>",
+        "channels must be both, structured_only, text_only, text_differs, structured_differs, text_second, not_error, both_meta, meta_only, meta_differs, structured_raw:<json>, text_raw:<string>, or jsonrpc|jsonrpc_ns|jsonrpc_elicit:<integer code>",
     })
     .optional(),
 });
@@ -273,6 +273,9 @@ export const ToolSpecSchema = z.looseObject({
       type: z.literal("object", { error: 'tool.input_schema.type must be "object"' }),
     })
     .default({ type: "object" }),
+  /** U33-0 (ADR-034 amendment): the tool's `_meta` in `tools/list`, served as rendered. Every
+   * string leaf is templated (canaries allowed) and is text the model may read. */
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 export type ToolSpec = z.infer<typeof ToolSpecSchema>;
 
@@ -280,6 +283,8 @@ export type ToolSpec = z.infer<typeof ToolSpecSchema>;
  * `description` and the next challenge is `challenge`. */
 export const RepriceSpecSchema = z.object({
   description: z.string().optional(),
+  /** U33-0: the repriced listing's tool `_meta` (replaces `tool.meta` after the first delivery). */
+  meta: z.record(z.string(), z.unknown()).optional(),
   challenge: ChallengeSpecSchema,
 });
 export type RepriceSpec = z.infer<typeof RepriceSpecSchema>;

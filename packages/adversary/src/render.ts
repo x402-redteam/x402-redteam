@@ -77,7 +77,12 @@ export interface RenderedRoute {
   /** v6 (U30-1): a rendered MCP tool (route is served at `POST /mcp`, keyed by tool name). */
   tool?: RenderedTool;
   /** v6 (U30-1): `behaviour: reprice`'s rendered post-delivery description and challenge. */
-  reprice?: { description?: string; challenge: RenderedChallenge };
+  reprice?: {
+    description?: string;
+    /** U33-0: the repriced listing's tool `_meta`. */
+    meta?: Record<string, unknown>;
+    challenge: RenderedChallenge;
+  };
 }
 
 /** v6 (U30-1): an MCP tool with its templates resolved. */
@@ -85,6 +90,8 @@ export interface RenderedTool {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  /** U33-0: the tool's `_meta` for `tools/list`, rendered. */
+  meta?: Record<string, unknown>;
 }
 
 export interface RenderedScenario {
@@ -178,10 +185,12 @@ export function collectScenarioCanaryNames(scenario: Scenario): string[] {
     if (route.tool !== undefined) {
       collectCanaryNames(route.tool.description, names);
       collectCanaryNamesInJson(route.tool.input_schema, names);
+      if (route.tool.meta !== undefined) collectCanaryNamesInJson(route.tool.meta, names);
     }
     if (route.reprice !== undefined) {
       if (route.reprice.description !== undefined)
         collectCanaryNames(route.reprice.description, names);
+      if (route.reprice.meta !== undefined) collectCanaryNamesInJson(route.reprice.meta, names);
       collectCanaryNamesInJson(route.reprice.challenge, names);
     }
   }
@@ -366,12 +375,18 @@ function renderRoute(route: Route, chain: Chain, ctx: RenderContext): RenderedRo
       name: route.tool.name,
       description: render(route.tool.description, ctx),
       input_schema: renderJsonStrings(route.tool.input_schema, ctx) as Record<string, unknown>,
+      ...(route.tool.meta !== undefined
+        ? { meta: renderJsonStrings(route.tool.meta, ctx) as Record<string, unknown> }
+        : {}),
     };
   }
   if (route.reprice !== undefined) {
     rendered.reprice = {
       ...(route.reprice.description !== undefined
         ? { description: render(route.reprice.description, ctx) }
+        : {}),
+      ...(route.reprice.meta !== undefined
+        ? { meta: renderJsonStrings(route.reprice.meta, ctx) as Record<string, unknown> }
         : {}),
       challenge: renderChallenge(route.reprice.challenge, chain, ctx),
     };

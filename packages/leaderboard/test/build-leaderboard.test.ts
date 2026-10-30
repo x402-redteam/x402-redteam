@@ -415,6 +415,25 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
     expect(rejectedIds(rejected)).toEqual(["sneaky"]);
   });
 
+  it("U33-0: rejects, never ranks, a report whose config records the result-_meta challenge copy", () => {
+    const entry = acceptedEntry("meta-copy", {
+      config: { ...CANONICAL_CONFIG, mcp_challenge_meta: true },
+    });
+    const {
+      guardrails,
+      rejected,
+      stale: staleRows,
+    } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(guardrails).toEqual([]);
+    expect(staleRows).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["meta-copy"]);
+    expect(rejected[0]?.reason).toMatch(/mcp_challenge_meta/);
+    // the same report without the key is accepted
+    expect(buildLeaderboard([acceptedEntry("plain")], CURRENT_SCENARIOS, NO_META).rejected).toEqual(
+      [],
+    );
+  });
+
   it("check 3: rejects a non-canonical chains list (an evm-only report)", () => {
     const entry = acceptedEntry("evm-only", {
       config: { ...CANONICAL_CONFIG, chains: ["evm"] },

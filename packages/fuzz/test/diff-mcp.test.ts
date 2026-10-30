@@ -453,3 +453,53 @@ describe("triage annotations (D1, D6, D8)", () => {
     expect(renderTriage(r, m)).not.toMatch(/mcp|known:/);
   });
 });
+
+describe("the result-_meta challenge copy run option and the fuzz runner (U33-0, C2)", () => {
+  const WITH_COPY = {
+    structured: { accepts: [E1] },
+    text: { accepts: [E1] },
+    meta: { accepts: [E1] },
+  };
+
+  it("a plain case whose run recorded channels (option on) fails the F5 binding", () => {
+    // With the option on, a `both` case's issuance records `channels` but its manifest entry
+    // has no per-channel hashes, so it cannot bind. This is why the fuzz runner never passes it.
+    const m = manifest([BASE, PLAIN]);
+    expect(() =>
+      diffRuns(m, [
+        mcpClient({
+          "fam-base": { challenges: [issued({ channels: WITH_COPY })] },
+          "fam-plain": { challenges: [issued({ channels: WITH_COPY })] },
+        }),
+      ]),
+    ).toThrow(/do not match the manifest hash/);
+  });
+
+  it("refuses a report whose config records the option, before binding anything", () => {
+    const m = manifest([BASE, PLAIN]);
+    const c = mcpClient({ "fam-base": PAID, "fam-plain": PAID });
+    (c.data.report as unknown as { config: unknown }).config = { mcp_challenge_meta: true };
+    expect(() => diffRuns(m, [c])).toThrow(DiffRefusal);
+    expect(() => diffRuns(m, [c])).toThrow(/--mcp-challenge-meta/);
+    // the same runs without the key diff normally
+    expect(() => diffRuns(m, [mcpClient({ "fam-base": PAID, "fam-plain": PAID })])).not.toThrow();
+  });
+
+  it("a meta mode binds per channel, including the meta channel", () => {
+    const META = mcase("fam-meta", {
+      shapes: ["mcp"],
+      offered_terms_sha256: H1,
+      offered_terms_sha256_by_channel: { structured: H1, text: H1, meta: H1 },
+      sdk_schema_ok: { structured: true, text: true, meta: true },
+    });
+    const m = manifest([BASE, META]);
+    expect(() =>
+      diffRuns(m, [
+        mcpClient({
+          "fam-base": PAID,
+          "fam-meta": { challenges: [issued({ channels: WITH_COPY })], payments: [payment()] },
+        }),
+      ]),
+    ).not.toThrow();
+  });
+});

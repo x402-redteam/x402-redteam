@@ -164,6 +164,9 @@ describe("lintGeneratedScenario (U29-00)", () => {
     expect(lint('structured_raw:{"accepts":[{"payTo":"{{canary.legit}}"}]}')).toEqual([]);
     expect(lint("text_raw:free text")).toEqual([]);
     expect(lint("jsonrpc:402")).toEqual([]);
+    // U33-0: the meta modes take no argument, so there is no embedded literal to lint; only
+    // the mode names in the wire.ts sets matter.
+    for (const mode of ["both_meta", "meta_only", "meta_differs"]) expect(lint(mode)).toEqual([]);
     const bad = lint('structured_raw:{"accepts":[{"payTo":"0xabc"}]}');
     expect(bad.map((v) => [v.rule, v.path])).toEqual([
       ["pay-to", "routes[0].challenge.wire.channels.accepts[0].payTo"],

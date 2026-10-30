@@ -492,6 +492,15 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
     if (report.schema !== "x402-redteam/report@3") {
       throw new DiffRefusal(`${client.id}: not a report@3 report.json`);
     }
+    // U33-0 (C2): a run with the result-`_meta` challenge copy on records `channels` for
+    // issuances the manifest hashes as plain, so it cannot be diffed. The fuzz runner never
+    // passes the option; a report that carries it is refused rather than mis-bound.
+    if (
+      (report.config as { mcp_challenge_meta?: unknown } | undefined)?.mcp_challenge_meta !==
+      undefined
+    ) {
+      throw new DiffRefusal(`${client.id}: run with --mcp-challenge-meta cannot be diffed`);
+    }
     const shape = SHAPES.find((s) => manifest.corpus_hash[s] === report.corpus_hash);
     if (shape === undefined) {
       throw new DiffRefusal(`${client.id}: corpus_hash matches no shape in the manifest`);

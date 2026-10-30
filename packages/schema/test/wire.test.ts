@@ -10,6 +10,7 @@ import {
   isBothChannels,
   isWireEncoding,
   parseWireChannels,
+  WIRE_CHANNEL_MODES,
   wireChannelsLiteral,
   wireEncodingKind,
 } from "../src/wire.js";
@@ -321,6 +322,15 @@ describe("parseWireChannels (U30-4)", () => {
       arg: '{"a":":"}',
     });
     expect(parseWireChannels("text_raw:")).toEqual({ mode: "text_raw", arg: "" });
+  });
+
+  it("parses the three meta modes (U33-0), which take no argument and are not both", () => {
+    for (const mode of ["both_meta", "meta_only", "meta_differs"]) {
+      expect(parseWireChannels(mode), mode).toEqual({ mode });
+      expect(parseWireChannels(`${mode}:1`), mode).toBeNull();
+      expect(isBothChannels(mode), mode).toBe(false);
+      expect(WIRE_CHANNEL_MODES).toContain(mode);
+    }
   });
 
   it("rejects what is not a mode", () => {

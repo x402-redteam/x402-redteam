@@ -609,6 +609,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 3. Patch and raw strings are in scope for lint rules 3 and 6. `corpusHash` is unchanged for any scenario without `wire`.
 4. Only generated and private corpora use `wire` until the owner approves public use.
 5. On MCP tool routes, `wire.patch` and a new optional `wire.channels` (where the `PaymentRequired` is placed: `structuredContent`, `content` text, or a JSON-RPC error) are allowed in generated scenarios only (`fuzz-` id with a `fuzz:` technique); the loader refuses `wire` on tool routes everywhere else, and `encoding`/`body` stay HTTP-only. `channels` has no schema default, so HTTP corpus hashes do not move. *(Added Bolt 10, U30-4, owner approval 2026-10-26.)*
+5a. `wire.channels` gains three fuzz-only modes that also place a copy of the `PaymentRequired` in the result's `_meta`: `both_meta` (structured, text and meta identical), `meta_only`, and `meta_differs` (structured and text carry the base terms, meta the mutated ones). They take no argument, are generated scenarios only, and are `undefined` tier. `McpChannel` gains `meta`, appended last, so the existing union order and every existing per-channel hash stay put; the fuzz binding reads the `meta` channel only when an issuance recorded it. *(Added Bolt 10, U33-0, owner approval 2026-10-31.)*
 
 **Consequences:** Structural fuzz families become reachable. The public corpus is unaffected.
 
@@ -624,6 +625,7 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 4. A finding needs the invariant oracle or a `spec-must` hit, plus ADR-028 #3 (and #6 for third parties).
 5. Disagreement between the MCP challenge channels (`structuredContent` and `content[0].text`) is `undefined` tier: the spec requires servers to send identical copies and says nothing about which a client should follow. *(Added Bolt 10, U30, owner approval 2026-10-22.)*
 6. Every MCP channel mode other than identical copies is `undefined` tier. A `PaymentRequired` carried in a JSON-RPC error (codes 402 and -32042) is permanently `undefined`: the MCP SDK assigns -32042 to URL elicitation, so neither paying nor refusing is a defect. *(Added Bolt 10, U30-4, owner approval 2026-10-26.)*
+6a. The result-`_meta` challenge copy is a non-spec extension (the recorded transport spec places the challenge only in `structuredContent` and `content[0].text`). Every mode that carries it (`both_meta`, `meta_only`, `meta_differs`) is `undefined` tier and can never support a `spec-must` result. *(Added Bolt 10, U33-0, owner approval 2026-10-31.)*
 
 **Consequences:** Fewer, more defensible findings. Fuzz `report.json` summaries are meaningless and never ranked; the leaderboard refuses them.
 
@@ -639,6 +641,9 @@ Sources were read on 2026-10-07. Action tags and SHAs were checked against the G
 4. The rail stays transport-free (builds `PaymentRequired`, records the issuance, decodes a payment object, settles); a transport layer (`http`, `mcp`) encodes and extracts.
 5. A tool route's identity is `<host>/mcp#<name>`. MCP payment legs keep `capture: "header"` (server-observed payload, any transport) and add an optional `transport: "mcp"`; `summary.transports` and the `tool` field on request logs appear only when non-zero or present. Reports print `header (mcp)` for MCP legs.
 6. The MCP SDK and its tree enter only `examples/agents`, pinned exactly through overrides.
+
+7. *Amendment (Bolt 10, U33-0, owner approval 2026-10-31).* An opt-in, non-spec result-`_meta` challenge copy. The run option `--mcp-challenge-meta` (adversary, `runSuite` and CLI) makes every MCP tool-result challenge also carry an identical copy of the `PaymentRequired` in `result._meta["x402/error"]`. It is off by default; with it off, HTTP output, MCP challenge bytes, corpus hashes and `results/**` do not change. It is recorded in `report.json` `config.mcp_challenge_meta` as an optional key written only when on (so reports with it off are byte-identical) and in each issuance's `channels`; a non-wire issuance goes through the channel plan under the option so `channels` is always recorded. The leaderboard rejects any report whose config carries the key, and `diff` refuses one. The fuzz runner never passes the option.
+8. *Amendment (U33-0).* `_meta` is merged, never replaced, wherever a result is built (`paymentRequiredResult`, `planAnswer`, the re-presented terms after a rejected payment, the settlement path), so the settlement response and the challenge copy coexist. A tool spec gains an explicit optional `meta` (and `reprice.meta`), served as rendered in that tool's `tools/list` entry as `_meta`, templated like `description`, covered by lint rules 3 and 6 and counted as prose for attribution.
 
 **Consequences:** HTTP output is byte-identical. The Cloudflare and mcpc adapters can target the same endpoint. SSE and server notifications are not served.
 

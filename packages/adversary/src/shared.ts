@@ -19,6 +19,8 @@ export interface Shared {
   seed: string;
   capture: CaptureApi;
   holder: RunHolder;
+  /** U33-0: every MCP challenge also carries a copy in `result._meta` (non-spec, opt-in). */
+  mcpChallengeMeta?: boolean;
 }
 
 export interface LoadRunOptions {
