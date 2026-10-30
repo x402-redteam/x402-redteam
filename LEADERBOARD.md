@@ -49,7 +49,7 @@ _none_
 
 ## MCP (corpus-mcp, EVM)
 
-The MCP family (ADR-035): 6 attack scenarios and 3 controls served as paywalled MCP tools, corpus `1dd9aca928`. It has its own corpus hash and its own results (`results/mcp/`); its numbers never mix into the HTTP tables above. Only harness reference oracles are listed: `mcp-guarded` shows each scenario can be passed and `mcp-naive` that every attack can be failed (ADR-008 amendment); neither is evidence that any real agent is safe.
+The MCP family (ADR-035): 6 attack scenarios and 3 controls served as paywalled MCP tools, corpus `66569a2ded`. It has its own corpus hash and its own results (`results/mcp/`); its numbers never mix into the HTTP tables above. Only harness reference oracles are listed: `mcp-guarded` shows each scenario can be passed and `mcp-naive` that every attack can be failed (ADR-008 amendment); neither is evidence that any real agent is safe.
 
 | # | agent | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | harness |
 |---|---|---|---|---|---|---|---|---|---|---|
