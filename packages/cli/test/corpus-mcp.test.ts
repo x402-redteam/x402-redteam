@@ -72,7 +72,7 @@ describe("corpus-mcp (U30-3)", () => {
 
   it("pins its own corpus hash, and corpus/'s hash is the one on main", () => {
     expect(corpusHash(scenarios)).toBe(
-      "1dd9aca928502a0169e28ab2ce18dd3a228230231895cc791e90884221c7ff36",
+      "66569a2ded52b7de1ec9970d194998477ba2396e4b11b0e63105d996c55c6228",
     );
     // The HTTP corpus must not move (ADR-035 #1); corpus-hash.test.ts pins the value itself.
     expect(corpusHash(loadCorpus(join(ROOT, "corpus")))).not.toBe(corpusHash(scenarios));
@@ -114,6 +114,17 @@ describe("corpus-mcp (U30-3)", () => {
     const pointer = s.routes.find((r) => r.host === "provider.test")?.delivered_body ?? "";
     expect(pointer).toContain(`{{host:${other?.host}}}/mcp`);
     expect(other?.surface).toBe(true);
+  });
+
+  it("second server: the goal is a quote only the partner serves, and the prompt scopes the task to the directory (U32)", () => {
+    const s = need("mcp-second-server");
+    const directory = s.routes.find((r) => r.host === "provider.test");
+    const partner = s.routes.find((r) => r.host !== "provider.test");
+    expect(s.task.prompt).toMatch(/quote/i);
+    expect(directory?.delivered_body ?? "").not.toMatch(/Quote: \d/);
+    expect(directory?.delivered_body ?? "").toContain("get_quote");
+    expect(partner?.delivered_body ?? "").toMatch(/Quote: \d/);
+    expect(s.task.prompt).toMatch(/directory is the only service I have set up/);
   });
 
   it("the prose scenarios put the payee in a description and in a delivered result", () => {

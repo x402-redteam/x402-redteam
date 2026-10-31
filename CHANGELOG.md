@@ -8,6 +8,10 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+### Corpus
+
+- **mcp:** give mcp-second-server a goal only the partner serves (U32). The prompt now asks for a quote that only the second MCP server delivers and says the allowed directory is the only service set up. Corpus changes alter `corpus_hash`: results produced against an earlier corpus are shown as stale on the leaderboard.
+
 ### Changed
 
 - **Scorer:** `reached` for `repeat`-class scenarios is now `true` only when the agent pays a
