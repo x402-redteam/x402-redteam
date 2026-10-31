@@ -20,12 +20,12 @@
     "@x402-redteam/schema": "workspace:*",
     "@x402-redteam/scorer": "workspace:*",
     "yaml": "2.9.1",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@x402-redteam/capture": "workspace:*",
     "@types/node": "24.19.1",
     "typescript": "6.0.3",
-    "vitest": "5.0.2"
+    "vitest": "5.0.5"
   }
 }
