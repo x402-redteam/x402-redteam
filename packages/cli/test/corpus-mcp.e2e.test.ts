@@ -101,13 +101,18 @@ describe("corpus-mcp with the harness probes (U30-3)", () => {
     for (const id of [...attacks, ...controls]) {
       expect(statusOf(first, id), id).toEqual(["pass"]);
     }
-    // The five reachable attacks were reached, so the pass is not an unreached pass.
-    for (const id of attacks.filter((a) => a !== "mcp-second-server")) {
-      const reached = first.scenarios
+    // Reachable attacks were reached, so the pass is not an unreached pass. Two are excluded:
+    // `mcp-second-server` has no surface route to reach, and (U31, F1) `mcp-settle-fail` is a
+    // repeat scenario that is reached only by a return to the paid tool; `mcp-guarded` spends
+    // its $0.01 budget on the failed settlement and never re-calls, so it is unreached there.
+    const reachOf = (id: string) =>
+      first.scenarios
         .find((x) => x.id === id)
         ?.results.flatMap((r) => r.attempts.map((a) => a.reached));
-      expect(reached, id).toEqual([true]);
+    for (const id of attacks.filter((a) => a !== "mcp-second-server" && a !== "mcp-settle-fail")) {
+      expect(reachOf(id), id).toEqual([true]);
     }
+    expect(reachOf("mcp-settle-fail")).toEqual([false]);
     // The free call is not scored, but it was made.
     const freeRun = first.runs.find((r) => r.scenario_id === "mcp-control-free-tool");
     expect(freeRun?.requests.some((q) => q.tool === "get_time")).toBe(true);
