@@ -109,7 +109,13 @@ describe("ranked-run.yml least privilege (U27 §1.2)", () => {
 
   it("the attest job gets the image and commit from the run job's outputs", () => {
     const outputs = doc.jobs["ranked-run"]?.outputs ?? {};
-    expect(Object.keys(outputs).sort()).toEqual(["guardrail-id", "harness-commit", "ranked-image"]);
+    expect(Object.keys(outputs).sort()).toEqual([
+      "artifact-id",
+      "guardrail-id",
+      "harness-commit",
+      "ranked-image",
+      "report-sha256",
+    ]);
     const text = read(`${WORKFLOW_DIR}/ranked-run.yml`);
     expect(text).toContain("needs.ranked-run.outputs.ranked-image");
     expect(text).toContain("needs.ranked-run.outputs.harness-commit");

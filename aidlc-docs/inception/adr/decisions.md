@@ -215,6 +215,11 @@ An artifact attestation from a submitter's own workflow proves *which workflow* 
 - Attestation alone as ranking evidence. A submitter's job can rewrite the file before attesting it.
 - A private ranked-runner repo. Its logs aren't auditable, and attestation availability is plan-dependent.
 
+> **Amendment (U34, owner decisions 2026-10-31):**
+> 1. **Tier 2 is unranked.** The public corpus and seed are known in advance, so Tier 2 is a regression result: rows sort by id, `#` is a display ordinal, and the page says so. The Tier 2 residual is now "the public seed can be fitted to". The "same-job tampering" residual named above is retired: since U27 the guardrail runs in a job with no attestation rights, and U34 closes the hand-off between jobs. The run job exposes the report's sha256 and the uploaded artifact id as job outputs (only its own steps can set them), and the attest job downloads that artifact id and fails on a digest mismatch before attesting; the second predicate records `report_sha256`.
+> 2. **Tier 2 accepts only a fixed `rank.yml`.** The caller picks the `rank.yml` version, so the leaderboard verifies with `--cert-identity-regex` (this harness's `rank.yml` at `refs/tags/vX.Y.Z` or `@<40 hex>`) and `--signer-digest <report.config.harness_commit>`, and accepts a Tier 2 report only when its `harness_commit` is at or after `min_tier2_release` in `results/_harness.json`. Until a release containing U34 is cut and set there, no Tier 2 report is accepted.
+> 3. **Hardened ranked containers.** Both workflows run `--network none`, `--cap-drop ALL` plus CHOWN, SETUID, SETGID, KILL and DAC_OVERRIDE, `no-new-privileges`, `--pids-limit 512`, `--memory 4g`, `--read-only` with tmpfs for `/tmp`, `/root-out` (0700) and `/corpus` (0700); the entrypoint extracts with `tar --no-same-owner --no-same-permissions` so the held-out corpus is root-owned. `rank.yml` previously had bridge networking: **breaking for Tier 2 submitters** whose guardrail fetched at run time.
+
 ## ADR-012 (full) Realistic hostnames: `*.localhost` canonical, forward proxy optional
 **Status:** Accepted, pending G7. Amends ADR-002.
 

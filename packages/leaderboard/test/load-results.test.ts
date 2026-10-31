@@ -9,7 +9,9 @@ import {
   loadResultsDir,
   loadResultsMeta,
   loadSeasonRecords,
+  loadTier2EligibleCommits,
   loadVerifiedMap,
+  tier2EligibleCommits,
 } from "../src/load-results.js";
 
 describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () => {
@@ -252,5 +254,65 @@ describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () =
       const entries = loadResultsDir(dir);
       expect(entries[0]?.sha256).toBe(contentHash({ v: 1 }));
     });
+  });
+});
+
+describe("loadTier2EligibleCommits / min_tier2_release (U34 A1, C2)", () => {
+  const rel = (n: number, version: string) => ({
+    commit: String(n).repeat(40),
+    version,
+    image: `sha256:${String(n).repeat(64)}`,
+  });
+  const v010 = rel(1, "v0.1.0");
+  const v011 = rel(2, "v0.1.1");
+  const v020 = rel(3, "v0.2.0");
+  const v1010 = rel(4, "v0.10.0");
+
+  it("is empty when min_tier2_release is absent, however many releases are allowlisted", () => {
+    expect(tier2EligibleCommits({ allow: [v010, v011] })).toEqual([]);
+    expect(tier2EligibleCommits({ allow: ["*"] })).toEqual([]);
+    expect(tier2EligibleCommits(null)).toEqual([]);
+  });
+
+  it("lists only object-form releases at or after the minimum, comparing semver numerically", () => {
+    const parsed = {
+      allow: [v010, v011, v020, v1010, "f".repeat(40)],
+      min_tier2_release: "v0.1.1",
+    };
+    expect(tier2EligibleCommits(parsed)).toEqual([v011.commit, v020.commit, v1010.commit]);
+  });
+
+  it("throws when the field is malformed or names no object-form allow entry", () => {
+    expect(() => tier2EligibleCommits({ allow: [v010], min_tier2_release: "0.1.0" })).toThrow(
+      /vX\.Y\.Z/,
+    );
+    expect(() => tier2EligibleCommits({ allow: [v010], min_tier2_release: "v0.2.0" })).toThrow(
+      /object-form allow entry/,
+    );
+    expect(() =>
+      tier2EligibleCommits({ allow: [v010.commit], min_tier2_release: "v0.1.0" }),
+    ).toThrow(/object-form allow entry/);
+    expect(() => tier2EligibleCommits({ allow: ["*"], min_tier2_release: "*" })).toThrow();
+  });
+
+  it("reads results/_harness.json: a missing file means no Tier 2", () => {
+    const dir = mkdtempSync(join(tmpdir(), "x402-tier2-"));
+    try {
+      expect(loadTier2EligibleCommits(dir)).toEqual([]);
+      writeFileSync(
+        join(dir, "_harness.json"),
+        JSON.stringify({ allow: [v010, v011], min_tier2_release: "v0.1.1" }),
+      );
+      expect(loadTier2EligibleCommits(dir)).toEqual([v011.commit]);
+      // the existing allowlist loader tolerates the new field
+      expect(loadHarnessAllowlist(dir)).toEqual([v010.commit, v011.commit]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the committed results/_harness.json accepts no Tier 2 report yet (no U34 release exists)", () => {
+    const committed = new URL("../../../results", import.meta.url).pathname;
+    expect(loadTier2EligibleCommits(committed)).toEqual([]);
   });
 });

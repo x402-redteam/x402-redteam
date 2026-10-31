@@ -22,6 +22,11 @@ import { parse } from "yaml";
  */
 const REPO_ROOT = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
+/** A GitHub Actions expression, built so the literal never sits in a plain string. */
+function expr(inner: string): string {
+  return `$\{{ ${inner} }}`;
+}
+
 function readWorkflow(relativePath: string): string {
   return readFileSync(resolve(REPO_ROOT, relativePath), "utf8");
 }
@@ -318,6 +323,8 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
     environment?: string;
     outputs?: Record<string, string>;
     steps: Step[];
+    "timeout-minutes"?: number;
+    needs?: string;
   }
   interface Workflow {
     permissions?: unknown;
@@ -425,9 +432,143 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
       expect(custom.length).toBe(1);
       expect(String(custom[0]?.with?.["predicate-path"])).toMatch(/ranked-image\.json$/);
       const writer = steps.find((s) => (s.run ?? "").includes("ranked-image.json"));
-      expect(writer?.run).toContain("{image: $image, harness_commit: $commit}");
+      expect(writer?.run).toContain(
+        "{image: $image, harness_commit: $commit, report_sha256: $sha}",
+      );
     });
   }
+
+  // ---- U34 (H1, M6): the attested report is the one the run produced; hardened containers
+  const U34_FILES: Array<{ file: string; job: string; report: string; timeout: number }> = [
+    { file: ".github/workflows/rank.yml", job: "run", report: "report.json", timeout: 30 },
+    {
+      file: ".github/workflows/ranked-run.yml",
+      job: "ranked-run",
+      report: "report.redacted.json",
+      timeout: 45,
+    },
+  ];
+
+  for (const { file, job: jobName, report, timeout } of U34_FILES) {
+    describe(`U34: ${file}`, () => {
+      const doc = parseWorkflow(file);
+      const runJob = doc.jobs[jobName] as Job;
+      const attest = doc.jobs.attest as Job;
+      const dockerRun = (): string => {
+        const step = runJob.steps.find((s) => (s.run ?? "").includes("docker run"));
+        expect(step).toBeDefined();
+        return (step?.run ?? "").replace(/\\\n\s*/g, " ");
+      };
+
+      it("run job outputs artifact-id and report-sha256 from its own steps (C5)", () => {
+        expect(runJob.outputs?.["artifact-id"]).toBe(expr("steps.upload.outputs.artifact-id"));
+        expect(runJob.outputs?.["report-sha256"]).toBe(expr("steps.report.outputs.report-sha256"));
+        const upload = runJob.steps.find((s) =>
+          (s.uses ?? "").startsWith("actions/upload-artifact@"),
+        );
+        expect((upload as Step & { id?: string }).id).toBe("upload");
+      });
+
+      it("the digest step refuses a missing, symlinked or non-regular report, then hashes it after the container ran", () => {
+        const steps = runJob.steps;
+        const digest = stepIndex(
+          steps,
+          (s) => (s as Step & { id?: string }).id === "report",
+          "digest",
+        );
+        const run = stepIndex(steps, (s) => (s.run ?? "").includes("docker run"), "docker run");
+        const upload = stepIndex(
+          steps,
+          (s) => (s.uses ?? "").startsWith("actions/upload-artifact@"),
+          "upload",
+        );
+        expect(run).toBeLessThan(digest);
+        expect(digest).toBeLessThan(upload);
+        const script = steps[digest]?.run ?? "";
+        expect(script).toContain(`"$RUNNER_TEMP/out/${report}"`);
+        expect(script).toContain('[ -L "$report" ] || [ ! -f "$report" ]');
+        expect(script).toContain("sha256sum");
+        expect(script).toContain('echo "report-sha256=$sum" >> "$GITHUB_OUTPUT"');
+        // the chown that reconciles ownership happens in the docker run step, before the digest
+        expect(steps[run]?.run).toContain("chown -R");
+      });
+
+      it("attest downloads by artifact-ids only (no name) and checks the digest before any attestation (C5, A10)", () => {
+        expect(attest.needs).toBe(jobName);
+        const steps = attest.steps;
+        const download = stepIndex(
+          steps,
+          (s) => (s.uses ?? "").startsWith("actions/download-artifact@"),
+          "download",
+        );
+        expect(steps[download]?.with?.["artifact-ids"]).toBe(
+          `\${{ needs.${jobName}.outputs.artifact-id }}`,
+        );
+        expect(steps[download]?.with?.name).toBeUndefined();
+        const check = stepIndex(steps, (s) => (s.run ?? "").includes("sha256sum -c"), "check");
+        const firstAttest = stepIndex(
+          steps,
+          (s) => (s.uses ?? "").startsWith("actions/attest@"),
+          "attest",
+        );
+        expect(download).toBeLessThan(check);
+        expect(check).toBeLessThan(firstAttest);
+        const script = steps[check]?.run ?? "";
+        expect(script).toContain("'^[0-9a-f]{64}$'");
+        expect(script).toContain(
+          `printf '%s  %s\\n' "$EXPECTED_SHA256" out/${report} | sha256sum -c -`,
+        );
+        expect(script).toContain(`[ -L out/${report} ] || [ ! -f out/${report} ]`);
+        // the expected value reaches the script only through env:
+        expect(steps[check]?.env?.EXPECTED_SHA256).toBe(
+          `\${{ needs.${jobName}.outputs.report-sha256 }}`,
+        );
+      });
+
+      it("the second predicate records report_sha256 and the 40-hex harness commit is checked", () => {
+        const writer = attest.steps.find((s) => (s.run ?? "").includes("ranked-image.json"));
+        expect(writer?.env?.REPORT_SHA256).toBe(`\${{ needs.${jobName}.outputs.report-sha256 }}`);
+        expect(writer?.run).toContain("'^[0-9a-f]{40}$'");
+        expect(writer?.run).toContain("report_sha256: $sha");
+      });
+
+      it("docker run is hardened with exactly the flags in the U34 design (M6)", () => {
+        const cmd = dockerRun();
+        expect(cmd).toContain("--network none");
+        expect(cmd).toContain(
+          "--cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add DAC_OVERRIDE",
+        );
+        expect([...cmd.matchAll(/--cap-add (\w+)/g)].map((m) => m[1]).sort()).toEqual([
+          "CHOWN",
+          "DAC_OVERRIDE",
+          "KILL",
+          "SETGID",
+          "SETUID",
+        ]);
+        expect(cmd).toContain("--security-opt no-new-privileges");
+        expect(cmd).toContain("--pids-limit 512 --memory 4g --memory-swap 4g");
+        expect(cmd).toContain("--read-only");
+        expect(cmd).toContain("--tmpfs /tmp:rw,size=1g");
+        expect(cmd).toContain("--tmpfs /root-out:rw,mode=0700,size=256m");
+        expect(cmd).toContain("--tmpfs /corpus:rw,mode=0700,size=256m");
+        expect(cmd).not.toMatch(/--privileged|--cap-add (ALL|SYS_ADMIN)|--network (host|bridge)/);
+        expect(cmd).not.toContain("--ulimit");
+      });
+
+      it(`the run job has timeout-minutes: ${timeout} (A8)`, () => {
+        expect(runJob["timeout-minutes"]).toBe(timeout);
+      });
+    });
+  }
+
+  it("U34: entrypoint.sh extracts with --no-same-owner --no-same-permissions and chmods /root-out 0700 explicitly", () => {
+    const text = readFileSync(resolve(REPO_ROOT, ".github/ranked/entrypoint.sh"), "utf8");
+    expect(text).toMatch(/^\s*tar -x --no-same-owner --no-same-permissions -C /m);
+    expect(text).toMatch(/^chmod 0700 \/root-out$/m);
+    expect(text.indexOf("mkdir -m 0700 -p /root-out")).toBeLessThan(
+      text.indexOf("chmod 0700 /root-out"),
+    );
+  });
 
   it("rank.yml passes the image digest to the attest job, which alone holds id-token", () => {
     const doc = parseWorkflow(".github/workflows/rank.yml");

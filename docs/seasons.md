@@ -20,7 +20,8 @@ seed, and audit the season's ranking after the fact.
 
 ## Provenance tiers (ADR-011)
 
-Only **Tier 1** is ranked.
+Only **Tier 1** is ranked. Tier 2 is a regression result, not a ranking: the public corpus
+and seed are known in advance, so its rows are listed by id and `#` is only a display ordinal.
 
 | Tier | Name | Corpus | Report published | Attestation signer |
 |---|---|---|---|---|
@@ -130,7 +131,17 @@ runner itself (ADR-023):
    a second attestation over its report with predicate type
    `https://github.com/x402-redteam/x402-redteam/blob/main/docs/seasons.md#which-image-ran-this-result`
    and predicate `{"image": "ghcr.io/<org>/x402-redteam-ranked@sha256:…",
-   "harness_commit": "<40 hex>"}`. `report.json` itself is unchanged.
+   "harness_commit": "<40 hex>", "report_sha256": "<64 hex>"}`. `report.json` itself is
+   unchanged. (U34: the run job computes the report's sha256 and exposes it, with the
+   uploaded artifact's id, as job outputs; the attest job downloads that artifact id and
+   fails unless its sha256 matches, before it attests anything.)
+
+Tier 2 acceptance (U34): the leaderboard verifies the attestation with
+`--cert-identity-regex` (this harness's `rank.yml` at `refs/tags/vX.Y.Z` or at a 40-hex
+commit) and `--signer-digest <report.config.harness_commit>`, and accepts a Tier 2 report
+only when its `harness_commit` belongs to a release at or after `min_tier2_release` in
+`results/_harness.json` (a `vX.Y.Z` naming an object-form `allow` entry; absent means no
+Tier 2).
 
 To check a result yourself:
 

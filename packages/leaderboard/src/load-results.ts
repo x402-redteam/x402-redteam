@@ -193,6 +193,69 @@ function isHarnessRelease(value: unknown): value is HarnessRelease {
   );
 }
 
+function semverTuple(version: string): [number, number, number] {
+  const [a, b, c] = version.slice(1).split(".").map(Number);
+  return [a ?? 0, b ?? 0, c ?? 0];
+}
+
+/**
+ * U34 (A1, C2): the harness commits whose Tier 2 reports may be accepted. Reads
+ * `results/_harness.json`'s optional `min_tier2_release` (a `vX.Y.Z`, the first release
+ * that contains U34's `rank.yml`): it must itself name an object-form `allow` entry, and
+ * a commit is Tier 2-eligible only when it belongs to an object-form entry whose
+ * `version` is semver-greater than or equal to it. An absent field, a plain-commit
+ * entry or `["*"]` means no Tier 2 (an empty list). A malformed field or one naming no
+ * object-form entry throws, like the other `_harness.json` problems. A missing file
+ * means no Tier 2.
+ */
+export function loadTier2EligibleCommits(dir: string): string[] {
+  let raw: string;
+  try {
+    raw = readFileSync(join(dir, HARNESS_ALLOWLIST_FILENAME), "utf8");
+  } catch (err) {
+    if (isErrnoException(err) && err.code === "ENOENT") return [];
+    throw new Error(
+      `failed to read ${HARNESS_ALLOWLIST_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `${HARNESS_ALLOWLIST_FILENAME} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  return tier2EligibleCommits(parsed);
+}
+
+/** The pure half of `loadTier2EligibleCommits`, over an already-parsed `_harness.json`. */
+export function tier2EligibleCommits(parsed: unknown): string[] {
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const { allow, min_tier2_release: min } = parsed as Record<string, unknown>;
+  if (min === undefined) return [];
+  if (typeof min !== "string" || !RELEASE_VERSION.test(min)) {
+    throw new Error(`${HARNESS_ALLOWLIST_FILENAME}: min_tier2_release must be a vX.Y.Z version`);
+  }
+  const releases = (Array.isArray(allow) ? allow : []).filter(isHarnessRelease);
+  if (!releases.some((r) => r.version === min)) {
+    throw new Error(
+      `${HARNESS_ALLOWLIST_FILENAME}: min_tier2_release ${min} does not name an object-form allow entry`,
+    );
+  }
+  const floor = semverTuple(min);
+  return releases
+    .filter((r) => {
+      const v = semverTuple(r.version);
+      for (let i = 0; i < 3; i++) {
+        // biome-ignore lint/style/noNonNullAssertion: fixed-length tuples.
+        if (v[i]! !== floor[i]!) return v[i]! > floor[i]!;
+      }
+      return true;
+    })
+    .map((r) => r.commit);
+}
+
 const VERIFIED_FILENAME = "_verified.json";
 
 function isVerifiedEntry(value: unknown): value is VerifiedEntry {
