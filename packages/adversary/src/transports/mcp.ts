@@ -88,6 +88,15 @@ function resultMeta(
   return Object.keys(meta).length > 0 ? { _meta: meta } : {};
 }
 
+/** A tool result with the opt-in challenge copy merged into its `_meta` (U33-0): anything the
+ * result already carries in `_meta` is kept beside the copy, never replaced. */
+export function withMetaCopy(
+  result: Record<string, unknown>,
+  challenge: unknown,
+): Record<string, unknown> {
+  return { ...result, ...resultMeta(result._meta, challenge, undefined) };
+}
+
 /** A delivered tool result, carrying the settlement response in `_meta`. */
 export function deliveryResult(text: string, settlement: unknown): Record<string, unknown> {
   return {
@@ -196,7 +205,7 @@ export function planChannels(
       mode: parsed.mode,
       both: false,
       served: { ...served, meta: patched },
-      result: { ...result, ...resultMeta(undefined, patched, undefined) },
+      result: withMetaCopy(result, patched),
     };
   };
   const rpc = (data: unknown): ChannelPlan => ({

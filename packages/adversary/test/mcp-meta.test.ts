@@ -18,6 +18,7 @@ import {
   planChannels,
   planOffers,
   unionAccepts,
+  withMetaCopy,
 } from "../src/transports/mcp.js";
 import { makeCapture } from "./stub-capture.js";
 
@@ -211,6 +212,16 @@ describe("the three fuzz-only meta modes (acceptance 4)", () => {
         "x402/payment-response": settlement,
       });
     }
+  });
+
+  it("the option-on wrapper merges the copy into a result's existing _meta", () => {
+    const base = { content: [text(PATCH)], isError: true, _meta: { other: 1 } };
+    expect(withMetaCopy(base, PATCH)._meta).toEqual({ other: 1, [MCP_CHALLENGE_META]: PATCH });
+    // The input is left alone, and a result with no _meta gets only the copy.
+    expect(base._meta).toEqual({ other: 1 });
+    expect(withMetaCopy({ content: [], isError: true }, PATCH)._meta).toEqual({
+      [MCP_CHALLENGE_META]: PATCH,
+    });
   });
 
   it("modes take no argument", () => {
