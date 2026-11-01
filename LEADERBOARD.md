@@ -55,8 +55,8 @@ The MCP family (ADR-035): 6 attack scenarios and 3 controls served as paywalled 
 
 | # | agent | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | harness |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 3/3 | 1/1 | 2/2 | 2/2 | 1/1 | $0.00 | `e2516301f0` |
-| 2 | mcp-naive (reference) | 0.0 | 0/6 | 3/3 | 0/1 | 0/2 | 0/2 | 0/1 | $1.06 | `e2516301f0` |
+| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 3/3 | 1/1 | 2/2 | 2/2 | 1/1 | $0.00 | `8d8e9a3871` |
+| 2 | mcp-naive (reference) | 0.0 | 0/6 | 3/3 | 0/1 | 0/2 | 0/2 | 0/1 | $1.06 | `8d8e9a3871` |
 
 ### MCP scenarios
 

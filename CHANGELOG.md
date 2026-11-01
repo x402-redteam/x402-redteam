@@ -8,13 +8,36 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-01
+
 ### Added
 
-- **adversary:** an opt-in, non-spec result-`_meta` copy of the MCP challenge, behind the run option `--mcp-challenge-meta` (off by default; recorded in `report.json` `config` only when on, and the leaderboard rejects such reports), three fuzz-only `wire.channels` modes that carry the copy (`both_meta`, `meta_only`, `meta_differs`, all `undefined` tier), and an optional `tool.meta` / `reprice.meta` served in `tools/list` (U33-0). With the option off, HTTP output, MCP challenge bytes, corpus hashes and committed results are unchanged.
+- **third-party:** Cloudflare Agents SDK adapter (U33-1) (#47) (1fce38f)
+- **adversary:** opt-in result-_meta challenge copy and tools/list tool meta (U33-0) (#46) (96bd7c6)
+- **mcp:** MCP seller mode, corpus-mcp, MCP fuzz shape and LLM MCP tools (U30) (#42) (656bc79)
+- **u29-4:** governance text and a macOS CI smoke run against a golden diff (#37) (42b3380)
+- **u29-3:** x402-redteam diff (outcomes, three oracles, triage) and leaderboard refusal of fuzz reports (#32) (4504094)
+- **u29-2:** fuzz generator and manifest (packages/fuzz, x402-redteam fuzz) (#31) (d8ad493)
+- **u29-1:** wire-level challenge overrides (ChallengeSpec.wire, ADR-032) (#30) (67bc48f)
+- **u29-0:** total capture decode path, offered-terms verification, NaN-free atomicToUsd (#29) (c0753b5)
+- **u29-00:** fuzz safety layer (network-deny launcher, privacy guard, generator lint) (#28) (8b5469f)
+- **u28:** ClawRouter adapter under examples/third-party (#25) (9cc80f6)
+
+### Fixed
+
+- **leaderboard:** bind Tier 2 attestations to the run's report and release; unrank Tier 2; harden ranked containers (U34) (#48) (2ce9093)
+- **scorer:** count repeat-class reach only on a return to a paid route (U31) (#44) (0cb2f2c)
+- **deps:** clear open Dependabot alerts (vitest, zod, undici, stream-json) (#43) (7d25774)
+- **deps:** zod 4 to 4.6.7 and a documented audit exception for zod 3 (#40) (38bb467)
+- **deps:** certifi 2026.10.19 and vite 8.3.3 (#39) (8e7da3b)
+- **u29:** hash the raw offered accepts in both the manifest and diff (#34) (bfa607b)
+- **clawrouter:** move vulnerable transitive axios and ws to patched versions (#33) (b02f03a)
+- **u28:** log the spend-check outcome on each intent; reconcile ignores denied ones (#26) (5accd5b)
 
 ### Corpus
 
-- **mcp:** give mcp-second-server a goal only the partner serves (U32). The prompt now asks for a quote that only the second MCP server delivers and says the allowed directory is the only service set up. Corpus changes alter `corpus_hash`: results produced against an earlier corpus are shown as stale on the leaderboard.
+- **mcp:** give mcp-second-server a goal only the partner serves (U32) (#45) (c1362db). The prompt now asks for a quote that only the second MCP server delivers and says the allowed directory is the only service set up.
+- Corpus changes alter `corpus_hash`: results produced against an earlier corpus are shown as stale on the leaderboard.
 
 ### Security
 
@@ -31,8 +54,7 @@ All notable changes to x402-redteam are recorded here. The format follows
   per-run `reached`, `by_reach_class.*.reached`, `by_reach_class.*.passed_while_reached` and
   `summary.reach_rate` fields; pass/fail, violations and `safety_score` are unchanged. The
   committed results were re-scored in place from their stored runs. Reports scored by v0.1.0 fail
-  the leaderboard re-score, so no Tier 1/2 submission can be accepted until the next release is
-  cut and allowlisted in `results/_harness.json`.
+  the leaderboard re-score, so Tier 1/2 submissions need reports from v0.1.1 or later.
 
 ## [0.1.0] - 2026-10-14
 
