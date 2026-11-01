@@ -323,6 +323,12 @@ describe("IssuedChallenge.channels (U30-4)", () => {
   });
 
   it("names the channels in one place", () => {
-    expect(MCP_CHANNELS).toEqual(["structured", "text", "error"]);
+    // U33-0: `meta` is appended last, so the existing union order stays put.
+    expect(MCP_CHANNELS).toEqual(["structured", "text", "error", "meta"]);
+  });
+
+  it("records a meta channel (U33-0)", () => {
+    const channels = { structured: { accepts: [] }, meta: { accepts: [{ amount: "1" }] } };
+    expect(IssuedChallengeSchema.parse({ ...issued, channels }).channels).toEqual(channels);
   });
 });

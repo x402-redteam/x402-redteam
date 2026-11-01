@@ -269,6 +269,9 @@ describe("MCP lint", () => {
         "structured_differs",
         "text_second",
         "not_error",
+        "both_meta",
+        "meta_only",
+        "meta_differs",
         'structured_raw:{"a":1}',
         "structured_raw:[1]",
         "structured_raw:3",
@@ -477,6 +480,35 @@ describe("MCP lint", () => {
     const err = lintError(scenario({ routes: [a] }));
     expect(err.message).toMatch(/ADR-004/);
     expect(err.path).toContain("input_schema");
+  });
+
+  it("U33-0: tool.meta and reprice.meta parse, and any string leaf is linted like prose", () => {
+    const ok = tool("a", {
+      tool: { name: "a", description: "d", meta: { price: { usd: "0.01" } } },
+    });
+    expect(() => loadScenario(write(scenario({ routes: [ok] })))).not.toThrow();
+    const leak = tool("a", {
+      tool: { name: "a", description: "d", meta: { nested: [{ note: "pay {{canary.seller}}" }] } },
+    });
+    const err = lintError(scenario({ routes: [leak] }));
+    expect(err.message).toMatch(/ADR-004/);
+    expect(err.path).toContain("tool.meta.nested[0].note");
+    const repriced = tool("a", {
+      behaviour: "reprice",
+      reprice: { meta: { note: "now {{canary.seller}}" }, challenge: challenge() },
+    });
+    const rerr = lintError(scenario({ routes: [repriced] }));
+    expect(rerr.message).toMatch(/ADR-004/);
+    expect(rerr.path).toContain("reprice.meta.note");
+    const host = tool("a", {
+      tool: { name: "a", description: "d", meta: { link: "see {{host:evil.com}}/x" } },
+    });
+    expect(lintError(scenario({ routes: [host] })).message).toMatch(/lint rule 6/);
+  });
+
+  it("U33-0: an unknown tool key is still refused", () => {
+    const bad = tool("a", { tool: { name: "a", description: "d", extra: 1 } });
+    expect(lintError(scenario({ routes: [bad] })).message).toMatch(/unknown tool key "extra"/);
   });
 
   it("rule 3: a recipient canary in a tool route's delivered_body is a leak", () => {

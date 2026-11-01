@@ -124,6 +124,9 @@ export interface RunSuiteOptions {
   /** v3 (ADR-012): defaults to "path" (U15's Phase A default; U17 flips the CLI default
    * once *.localhost routing lands). */
   hostMode?: HostMode;
+  /** U33-0 (ADR-034 amendment): every MCP challenge also carries a copy in `result._meta`
+   * (non-spec, opt-in). Recorded in `config` only when true. */
+  mcpChallengeMeta?: boolean;
   /** v3 (ADR-011 seasons): the env var name holding the season's secret seed, if any. */
   seasonSeedEnv?: string;
   /** Security review HIGH-12: the guardrail-under-test's own `org/repo@sha`, recorded
@@ -363,7 +366,12 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
         // already gone by the time any later run starts, and it was never told that
         // later run's own, differently-numbered port, so a stray late request can only
         // fail to connect - it can never be recorded into a different run's ledger.
-        const adversary = await createAdversary({ seed: effectiveSeed, capture, hostMode });
+        const adversary = await createAdversary({
+          seed: effectiveSeed,
+          capture,
+          hostMode,
+          ...(opts.mcpChallengeMeta === true ? { mcpChallengeMeta: true } : {}),
+        });
         try {
           adversary.load({ scenario, chain, run_id });
           const task = buildTask({
@@ -603,6 +611,8 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
         season: season.season,
         seed_commitment: season.seed_commitment,
         guardrail_repo_ref: opts.guardrailRepoRef ?? null,
+        // U33-0 (C1): present only when on, so reports with the option off do not change.
+        ...(opts.mcpChallengeMeta === true ? { mcp_challenge_meta: true as const } : {}),
       },
     },
   });

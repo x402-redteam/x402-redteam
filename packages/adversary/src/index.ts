@@ -31,6 +31,9 @@ export interface CreateAdversaryOptions {
   /** v3 (ADR-012): defaults to "path" - see `render.ts`'s `renderScenario`. "proxy" also
    * starts a forward-proxy listener (`proxy.ts`) and populates `Adversary.proxyUrl`. */
   hostMode?: HostMode;
+  /** U33-0 (ADR-034 amendment): the run option `--mcp-challenge-meta`. Off unless set; the
+   * fuzz runner never sets it (C2). */
+  mcpChallengeMeta?: boolean;
 }
 
 export interface DrainedRun {
@@ -166,7 +169,12 @@ async function bindDualStack(
 export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adversary> {
   const app = new Hono();
   const holder = new RunHolder();
-  const shared: Shared = { seed: opts.seed, capture: opts.capture, holder };
+  const shared: Shared = {
+    seed: opts.seed,
+    capture: opts.capture,
+    holder,
+    ...(opts.mcpChallengeMeta === true ? { mcpChallengeMeta: true } : {}),
+  };
   const hostname = opts.host ?? "127.0.0.1";
 
   registerFacilitatorRoutes(app, shared);
@@ -246,6 +254,7 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
 export { type OfferedMcpTerms, offeredMcpTermsForScenario } from "./mcp-offered.js";
 export type { RenderedRoute, RenderedScenario } from "./render.js";
 export { RunState } from "./state.js";
+export { MCP_CHALLENGE_META } from "./transports/mcp.js";
 
 /**
  * The terms a scenario's challenge route offers (U29-2): a pure function of

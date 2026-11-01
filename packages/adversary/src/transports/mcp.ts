@@ -4,6 +4,7 @@ import {
   type ChannelOffer,
   canonicalize,
   type IssuedChallenge,
+  MCP_CHANNELS,
   type McpChannel,
   type ParsedChannels,
   parseWireChannels,
@@ -21,6 +22,14 @@ import { readableRequirement } from "../rails/x402v2.js";
 export const MCP_PAYMENT_META = "x402/payment";
 /** `result._meta` key a server puts its `SettleResponse` under. */
 export const MCP_PAYMENT_RESPONSE_META = "x402/payment-response";
+
+/**
+ * `result._meta` key of the opt-in, non-spec challenge copy (U33-0, ADR-034 amendment). The
+ * x402 MCP transport spec places the challenge only in `structuredContent` and `content[0].text`;
+ * this copy exists only under the `--mcp-challenge-meta` run option or a fuzz-only
+ * `wire.channels` mode, and every mode that carries it is `undefined` tier (ADR-033 #6).
+ */
+export const MCP_CHALLENGE_META = "x402/error";
 
 /** What a `tools/call` carried in `params._meta["x402/payment"]`. */
 export type McpCredential =
@@ -53,13 +62,30 @@ export function extractMcpCredential(params: unknown): McpCredential | null {
 export function paymentRequiredResult(
   paymentRequired: unknown,
   settlement?: unknown,
+  metaCopy = false,
 ): Record<string, unknown> {
   return {
     content: [{ type: "text", text: JSON.stringify(paymentRequired) }],
     structuredContent: paymentRequired,
     isError: true,
-    ...(settlement !== undefined ? { _meta: { [MCP_PAYMENT_RESPONSE_META]: settlement } } : {}),
+    ...resultMeta(undefined, metaCopy ? paymentRequired : undefined, settlement),
   };
+}
+
+/**
+ * The `_meta` of a challenge result, merged and never replaced (U33-0, M3): whatever the
+ * plan already put there, the opt-in challenge copy, then the settlement response. Empty
+ * when none applies, so with the option off the bytes are exactly what they were.
+ */
+function resultMeta(
+  existing: unknown,
+  copy: unknown,
+  settlement: unknown,
+): { _meta?: Record<string, unknown> } {
+  const meta: Record<string, unknown> = isRecord(existing) ? { ...existing } : {};
+  if (copy !== undefined) meta[MCP_CHALLENGE_META] = copy;
+  if (settlement !== undefined) meta[MCP_PAYMENT_RESPONSE_META] = settlement;
+  return Object.keys(meta).length > 0 ? { _meta: meta } : {};
 }
 
 /** A delivered tool result, carrying the settlement response in `_meta`. */
@@ -143,17 +169,36 @@ function objectOf(text: string): Record<string, unknown> | undefined {
  * ledger's issuance and the fuzz manifest's per-channel hashes all derive from this one plan.
  * `caseId` only names the scenario in an error.
  */
-export function planChannels(typed: unknown, wire: McpWire, caseId?: string): ChannelPlan {
+export function planChannels(
+  typed: unknown,
+  wire: McpWire,
+  caseId?: string,
+  options: { metaCopy?: boolean } = {},
+): ChannelPlan {
   const parsed = parseWireChannels(wire.channels ?? "both");
   if (parsed === null) throw new Error(`invalid wire.channels "${wire.channels}"`);
   const patched = applyMergePatch(clone(typed), wire.patch ?? {}) as Record<string, unknown>;
   const typedObject = clone(typed) as Record<string, unknown>;
   const text = (value: unknown) => ({ type: "text", text: JSON.stringify(value) });
+  // U33-0: under the run option every tool-result challenge also carries an identical copy of
+  // the (patched) `PaymentRequired` in `_meta`, unless the mode already placed one there. The
+  // copy makes the answer a non-`both` plan, so its issuance records `channels`.
   const plan = (
     both: boolean,
     served: ChannelPlan["served"],
     result: Record<string, unknown>,
-  ): ChannelPlan => ({ patched, mode: parsed.mode, both, served, result });
+  ): ChannelPlan => {
+    if (options.metaCopy !== true || served.meta !== undefined) {
+      return { patched, mode: parsed.mode, both, served, result };
+    }
+    return {
+      patched,
+      mode: parsed.mode,
+      both: false,
+      served: { ...served, meta: patched },
+      result: { ...result, ...resultMeta(undefined, patched, undefined) },
+    };
+  };
   const rpc = (data: unknown): ChannelPlan => ({
     patched,
     mode: parsed.mode,
@@ -226,6 +271,34 @@ export function planChannels(typed: unknown, wire: McpWire, caseId?: string): Ch
       return rpc({ x402: patched });
     case "jsonrpc_elicit":
       return rpc({ elicitations: [{ ...ELICITATION }], x402: patched });
+    case "both_meta":
+      return plan(
+        false,
+        { structured: patched, text: patched, meta: patched },
+        {
+          content: [text(patched)],
+          structuredContent: patched,
+          isError: true,
+          ...resultMeta(undefined, patched, undefined),
+        },
+      );
+    case "meta_only":
+      return plan(
+        false,
+        { meta: patched },
+        { content: [], isError: true, ...resultMeta(undefined, patched, undefined) },
+      );
+    case "meta_differs":
+      return plan(
+        false,
+        { structured: typedObject, text: typedObject, meta: patched },
+        {
+          content: [text(typedObject)],
+          structuredContent: typedObject,
+          isError: true,
+          ...resultMeta(undefined, patched, undefined),
+        },
+      );
     case "not_error":
       return plan(
         false,
@@ -236,7 +309,8 @@ export function planChannels(typed: unknown, wire: McpWire, caseId?: string): Ch
 }
 
 /** The answer for a plan: the tool result (the settlement response riding in `_meta`) or the
- * JSON-RPC error. A `both` plan is byte-identical to `paymentRequiredResult`. */
+ * JSON-RPC error. A `both` plan is byte-identical to `paymentRequiredResult`. The settlement
+ * response is merged into the result's `_meta`, beside any challenge copy (U33-0, M3). */
 export function planAnswer(
   plan: ChannelPlan,
   settlement?: unknown,
@@ -245,7 +319,7 @@ export function planAnswer(
   const result = plan.result as Record<string, unknown>;
   return settlement === undefined
     ? result
-    : { ...result, _meta: { [MCP_PAYMENT_RESPONSE_META]: settlement } };
+    : { ...result, ...resultMeta(result._meta, undefined, settlement) };
 }
 
 function readableEntries(accepts: unknown): Record<string, unknown>[] {
@@ -258,7 +332,7 @@ function readableEntries(accepts: unknown): Record<string, unknown>[] {
  * the object has none). */
 export function planOffers(plan: ChannelPlan): Partial<Record<McpChannel, ChannelOffer>> {
   const out: Partial<Record<McpChannel, ChannelOffer>> = {};
-  for (const channel of ["structured", "text", "error"] as const) {
+  for (const channel of MCP_CHANNELS) {
     const object = plan.served[channel];
     if (object !== undefined) {
       out[channel] = { accepts: object.accepts === undefined ? null : object.accepts };
@@ -268,13 +342,13 @@ export function planOffers(plan: ChannelPlan): Partial<Record<McpChannel, Channe
 }
 
 /** N1: the union of the channels' readable entries in a fixed order (structured, text,
- * error), identical entries once. It never depends on what the client sent. */
+ * error, meta), identical entries once. It never depends on what the client sent. */
 export function unionAccepts(
   offers: Partial<Record<McpChannel, ChannelOffer>>,
 ): Record<string, unknown>[] {
   const seen = new Set<string>();
   const out: Record<string, unknown>[] = [];
-  for (const channel of ["structured", "text", "error"] as const) {
+  for (const channel of MCP_CHANNELS) {
     const offer = offers[channel];
     if (offer === undefined) continue;
     for (const entry of readableEntries(offer.accepts)) {

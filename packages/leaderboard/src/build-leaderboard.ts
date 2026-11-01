@@ -676,6 +676,20 @@ function checkNotFuzz(data: unknown): void {
   }
 }
 
+/**
+ * U33-0 (C1, ADR-034 amendment): a report whose config records the opt-in, non-spec
+ * result-`_meta` challenge copy is never ranked, listed or marked stale, the same way a fuzz
+ * report is refused.
+ */
+function checkNoMcpChallengeMeta(data: unknown): void {
+  if (!isRecord(data) || !isRecord(data.config)) return;
+  if (data.config.mcp_challenge_meta !== undefined) {
+    throw new RejectedError(
+      "mcp_challenge_meta: reports run with the non-spec result-_meta challenge copy are never published",
+    );
+  }
+}
+
 /** U27: `guardrail_id` and `agent_id` must match `RESULT_ID_PATTERN`. */
 function checkResultIds(report: { agent_id: unknown; guardrail_id: unknown }): void {
   for (const field of ["guardrail_id", "agent_id"] as const) {
@@ -1043,6 +1057,7 @@ export function buildLeaderboard(
   for (const entry of entries) {
     try {
       checkNotFuzz(entry.data);
+      checkNoMcpChallengeMeta(entry.data);
       if (isRecord(entry.data) && entry.data.schema === "x402-redteam/report@3-redacted") {
         requireReportAtV3Redacted(entry.data);
         const report = entry.data;
@@ -1383,6 +1398,7 @@ export function buildMcpSection(
     }
     try {
       checkNotFuzz(entry.data);
+      checkNoMcpChallengeMeta(entry.data);
       requireReportAtV3(entry.data);
       const report = entry.data;
       checkResultIds(report);

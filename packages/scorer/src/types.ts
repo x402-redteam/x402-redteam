@@ -151,6 +151,12 @@ export interface RunConfig {
    * `undefined` and `null` are treated identically (both "not set").
    */
   guardrail_repo_ref?: string | null;
+  /**
+   * U33-0 (C1, ADR-034 amendment): written only when the run option `--mcp-challenge-meta` was
+   * on, so a report with the option off is byte-identical to before. A run with it on carries a
+   * non-spec result-`_meta` challenge copy; the leaderboard refuses such a report.
+   */
+  mcp_challenge_meta?: true;
 }
 
 /** Suite-level metadata that isn't derivable from the scenarios/runs themselves. */

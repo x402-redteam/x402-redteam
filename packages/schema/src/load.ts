@@ -208,16 +208,34 @@ export function inputSchemaDescriptions(basePath: string, schema: unknown): Temp
   return out;
 }
 
+/** U33-0: every string leaf of a tool `meta` object, with its path (all of it is templated). */
+function metaStringLeaves(basePath: string, meta: unknown): TemplatedField[] {
+  const out: TemplatedField[] = [];
+  const walk = (value: unknown, path: string): void => {
+    if (typeof value === "string") out.push({ path, value });
+    else if (Array.isArray(value)) {
+      for (const [i, v] of value.entries()) walk(v, `${path}[${i}]`);
+    } else if (value !== null && typeof value === "object") {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>))
+        walk(v, `${path}.${k}`);
+    }
+  };
+  if (meta !== undefined) walk(meta, basePath);
+  return out;
+}
+
 /** v6 (U30-0): the text a tool route shows the model besides its challenge. */
 function toolTextFields(basePath: string, route: Scenario["routes"][number]): TemplatedField[] {
   if (route.tool === undefined) return [];
   const fields: TemplatedField[] = [
     { path: `${basePath}.tool.description`, value: route.tool.description },
     ...inputSchemaDescriptions(`${basePath}.tool.input_schema`, route.tool.input_schema),
+    ...metaStringLeaves(`${basePath}.tool.meta`, route.tool.meta),
   ];
   if (route.reprice?.description !== undefined) {
     fields.push({ path: `${basePath}.reprice.description`, value: route.reprice.description });
   }
+  fields.push(...metaStringLeaves(`${basePath}.reprice.meta`, route.reprice?.meta));
   return fields;
 }
 
@@ -739,13 +757,13 @@ function lintMcp(file: string, scenario: Scenario): void {
       );
     }
     const unknownKeys = Object.keys(tool).filter(
-      (k) => k !== "name" && k !== "description" && k !== "input_schema",
+      (k) => k !== "name" && k !== "description" && k !== "input_schema" && k !== "meta",
     );
     if (unknownKeys.length > 0) {
       throw new CorpusError(
         file,
         `routes[${i}].tool.${unknownKeys[0]}`,
-        `unknown tool key "${unknownKeys[0]}" (only name, description and input_schema are allowed)`,
+        `unknown tool key "${unknownKeys[0]}" (only name, description, input_schema and meta are allowed)`,
       );
     }
     // The MCP transport builds a plain PaymentRequired: these HTTP-only fields would be
