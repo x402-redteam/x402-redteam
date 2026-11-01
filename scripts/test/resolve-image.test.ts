@@ -57,6 +57,11 @@ describe("resolveImage", () => {
     expect(result.error).toMatch(/2 _harness.json entries/);
   });
 
+  it("tolerates the min_tier2_release field (U34): it reads only allow", () => {
+    const result = resolveImage({ allow: [ENTRY], min_tier2_release: "v0.1.0" }, "v0.1.0");
+    expect(result.ok).toBe(true);
+  });
+
   it("rejects a ref that is neither a tag nor a full commit, and a file without allow", () => {
     for (const ref of ["main", "v1.2", COMMIT.slice(0, 12), "--help", undefined]) {
       expect(resolveImage({ allow: [ENTRY] }, ref).ok, String(ref)).toBe(false);

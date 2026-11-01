@@ -43,7 +43,10 @@ if [ -n "${AGE_KEY:-}" ]; then
   fi
   rm -f "$AGE_IDENTITY"
 
-  tar -x -C "$CORPUS_DIR" -f "$DECRYPTED_TAR"
+  # U34 (A3): --no-same-owner/--no-same-permissions so the extracted corpus is owned by
+  # root (this process) with the umask's modes, as ADR-011 states, whatever uid and
+  # modes the maintainer's archive recorded.
+  tar -x --no-same-owner --no-same-permissions -C "$CORPUS_DIR" -f "$DECRYPTED_TAR"
   rm -f "$DECRYPTED_TAR"
   trap - EXIT
 
@@ -53,7 +56,10 @@ else
   CORPUS_DIR=/harness/corpus
 fi
 
+# U34 (A5): /root-out may be a tmpfs mount (docker run --tmpfs), where mkdir -m on an
+# existing directory changes nothing - so set the mode explicitly.
 mkdir -m 0700 -p /root-out
+chmod 0700 /root-out
 set +e
 node /harness/packages/cli/bin/x402-redteam.mjs run --corpus "$CORPUS_DIR" --out /root-out "$@"
 STATUS=$?

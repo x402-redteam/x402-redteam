@@ -39,6 +39,25 @@ export const SIGNER_SOURCE_REF = "refs/heads/main";
 export const RANKED_RUN_SIGNER = `${HARNESS_ORG_REPO}/.github/workflows/ranked-run.yml`;
 export const RANK_SIGNER = `${HARNESS_ORG_REPO}/.github/workflows/rank.yml`;
 
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * U34 (C1): the certificate identity (SAN) a Tier 2 attestation must carry. The caller
+ * chooses which `rank.yml` version it calls, so the path alone is not enough: the SAN
+ * must name this harness's `rank.yml` at a release tag (`@refs/tags/vX.Y.Z`) or at a
+ * full commit SHA (`@<40 hex>`, for callers that pin `uses:` by SHA). Either form is
+ * tied to an allowlisted release by `--signer-digest` (the workflow's own commit must
+ * equal the report's `harness_commit`). Built from `HARNESS_ORG_REPO`, escaped and
+ * anchored at both ends, for `gh attestation verify --cert-identity-regex` (RE2).
+ */
+export const RANK_CERT_IDENTITY_REGEX =
+  `^https://github\\.com/${escapeRegex(HARNESS_ORG_REPO)}/\\.github/workflows/rank\\.yml@` +
+  "(refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+|[0-9a-f]{40})$";
+
 /** One `results/_verified.json` entry - what the out-of-band attestation check found
  * for one committed result id. Entries absent from the map are Tier 3 by definition. */
 export interface VerifiedEntry {
@@ -76,9 +95,9 @@ export interface AttestationCheckParams {
    * harness's own reusable workflow file) doesn't pin who called it. Ignored for
    * tier 1, where the signer is always this harness's own `ranked-run.yml`. */
   submitterOwner?: string;
-  /** Pins the signer's own published certificate digest, once known (left unset until
-   * a real one is resolved - `gh attestation verify` still enforces signer-workflow and
-   * source-ref either way). */
+  /** `--signer-digest`. Tier 1: optional (X402_SIGNER_DIGEST). Tier 2 (U34): required,
+   * a 40-hex commit - the report's own `config.harness_commit`, which ties the
+   * `rank.yml` version that signed to the allowlisted release that ran. */
   signerDigest?: string;
 }
 
@@ -109,7 +128,12 @@ export function buildGhAttestationVerifyArgs(params: AttestationCheckParams): st
     if (!params.submitterOwner) {
       throw new Error("a Tier 2 attestation check requires submitterOwner (--owner)");
     }
-    args.push("--owner", params.submitterOwner, "--signer-workflow", RANK_SIGNER);
+    if (params.signerDigest === undefined || !COMMIT_SHA.test(params.signerDigest)) {
+      throw new Error("a Tier 2 attestation check requires signerDigest (a 40-hex harness commit)");
+    }
+    // `--cert-identity-regex` is mutually exclusive with `--signer-workflow` in gh, so it
+    // replaces it here: the regex pins the workflow path AND its ref (U34, C1).
+    args.push("--owner", params.submitterOwner, "--cert-identity-regex", RANK_CERT_IDENTITY_REGEX);
   }
   if (params.signerDigest !== undefined) {
     args.push("--signer-digest", params.signerDigest);
@@ -146,7 +170,11 @@ export interface VerifyCandidate {
   /** Required for tier 2 - see `AttestationCheckParams.submitterOwner`. A tier 2
    * candidate with no owner is skipped (never verified) rather than guessed at. */
   submitterOwner?: string;
+  /** Tier 1 only (X402_SIGNER_DIGEST); ignored for tier 2. */
   signerDigest?: string;
+  /** Tier 2 (U34, C3): the candidate report's `config.harness_commit`, used as the
+   * signer digest. Missing or not 40-hex: the candidate is skipped, as with no owner. */
+  harnessCommit?: string;
   /** Security review HIGH-5: `load-results.ts`'s `contentHash` of this candidate's
    * *own* committed file, recorded into the written `VerifiedEntry.subject_sha256` once
    * verified - the binding `buildLeaderboard` later re-checks. */
@@ -167,12 +195,13 @@ export async function verifyEntries(
   const out: VerifiedMap = {};
   for (const candidate of candidates) {
     if (candidate.tier === 2 && !candidate.submitterOwner) continue;
+    if (candidate.tier === 2 && !COMMIT_SHA.test(candidate.harnessCommit ?? "")) continue;
     const ok = await verifier({
       resultPath: candidate.resultPath,
       bundlePath: candidate.bundlePath,
       tier: candidate.tier,
       submitterOwner: candidate.submitterOwner,
-      signerDigest: candidate.signerDigest,
+      signerDigest: candidate.tier === 2 ? candidate.harnessCommit : candidate.signerDigest,
     });
     if (ok) {
       const signer = candidate.tier === 1 ? RANKED_RUN_SIGNER : RANK_SIGNER;

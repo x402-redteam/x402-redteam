@@ -59,6 +59,7 @@ jobs:
   run:
     name: run
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # U34 (A8): a fixed ceiling, not derived from a local run
     permissions:
       contents: read # checkouts of the submitter's repo, the harness and its allowlist
     env:
@@ -68,6 +69,10 @@ jobs:
       guardrail-id: ${{ inputs.guardrail-id }}
       ranked-image: ${{ steps.resolve.outputs.ranked-image }}
       harness-commit: ${{ steps.resolve.outputs.harness-commit }}
+      # U34 (H1): written only by this job's own steps, so the caller workflow cannot set
+      # them. `attest` downloads this exact artifact id and checks this exact digest.
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      report-sha256: ${{ steps.report.outputs.report-sha256 }}
     steps:
       # Security re-review 3c: harness-ref must be a vX.Y.Z release tag - never a raw
       # commit SHA or a branch (unlike ranked-run.yml's harness-ref/guardrail-ref,
@@ -187,8 +192,21 @@ jobs:
           # even though github.repository/github.sha aren't attacker-controlled.
           GUARDRAIL_REPO_REF: ${{ github.repository }}@${{ github.sha }}
         run: |
+          # U34 (M6) hardening, identical in rank.yml and ranked-run.yml: no network, only the
+          # capabilities the harness needs as root (CHOWN: per-run HOME/task/GDP dirs;
+          # SETUID/SETGID: dropping to --agent-uid; KILL: kill(-pid) and pkill -u 2001;
+          # DAC_OVERRIDE: reading/removing 0700 dirs owned by uid 2001 and writing into the
+          # runner-owned /out), no privilege gain, bounded pids/memory, a read-only root
+          # filesystem with tmpfs for the three paths that are written. /root-out and
+          # /corpus are 0700 so the agent uid cannot read them (tmpfs defaults to 1777).
           mkdir -p "$RUNNER_TEMP/out"
           docker run --rm \
+            --network none \
+            --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add DAC_OVERRIDE \
+            --security-opt no-new-privileges \
+            --pids-limit 512 --memory 4g --memory-swap 4g \
+            --read-only \
+            --tmpfs /tmp:rw,size=1g --tmpfs /root-out:rw,mode=0700,size=256m --tmpfs /corpus:rw,mode=0700,size=256m \
             -e GUARDRAIL_CMD \
             -e GUARDRAIL_ID \
             -e GUARDRAIL_REPO_REF \
@@ -207,7 +225,27 @@ jobs:
           # upload-artifact step below can read it.
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # U34 (H1): refuse a missing, symlinked or non-regular report, then record its
+      # sha256 as a job output. The container has exited and ownership is reconciled, so
+      # nothing but this job's own steps can change the file before the upload below.
+      - name: Check report.json and record its sha256
+        id: report
+        run: |
+          report="$RUNNER_TEMP/out/report.json"
+          if [ -L "$report" ] || [ ! -f "$report" ]; then
+            echo "::error::report.json is missing, a symlink or not a regular file"
+            exit 2
+          fi
+          sum="$(sha256sum "$report" | cut -d' ' -f1)"
+          if ! printf '%s' "$sum" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "::error::could not compute the sha256 of report.json"
+            exit 2
+          fi
+          echo "report-sha256=$sum" >> "$GITHUB_OUTPUT"
+
+      - name: Upload report.json
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: report-${{ inputs.guardrail-id }}
           path: ${{ runner.temp }}/out/report.json
@@ -224,10 +262,28 @@ jobs:
       id-token: write # OIDC token that Sigstore signs the attestations with
       attestations: write # store the attestations on this repository
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      # U34 (H1, C5): download by the artifact id `run` uploaded (never by name), then
+      # check the bytes against the sha256 `run` computed BEFORE any attestation step.
+      - name: Download report.json
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: report-${{ needs.run.outputs.guardrail-id }}
+          artifact-ids: ${{ needs.run.outputs.artifact-id }}
+          merge-multiple: true
           path: out
+
+      - name: Check the downloaded report against the run job's sha256
+        env:
+          EXPECTED_SHA256: ${{ needs.run.outputs.report-sha256 }}
+        run: |
+          if ! printf '%s' "$EXPECTED_SHA256" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "::error::the run job's report sha256 '$EXPECTED_SHA256' is not 64 hex chars"
+            exit 2
+          fi
+          if [ -L out/report.json ] || [ ! -f out/report.json ]; then
+            echo "::error::out/report.json is missing, a symlink or not a regular file"
+            exit 2
+          fi
+          printf '%s  %s\n' "$EXPECTED_SHA256" out/report.json | sha256sum -c -
 
       - name: Attest report.json provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -238,13 +294,18 @@ jobs:
         env:
           RANKED_IMAGE_REF: ${{ needs.run.outputs.ranked-image }}
           HARNESS_COMMIT: ${{ needs.run.outputs.harness-commit }}
+          REPORT_SHA256: ${{ needs.run.outputs.report-sha256 }}
         run: |
           if ! printf '%s' "$RANKED_IMAGE_REF" | grep -qE '^ghcr\.io/[^@]+@sha256:[0-9a-f]{64}$'; then
             echo "::error::ranked image reference '$RANKED_IMAGE_REF' is not pinned by digest"
             exit 2
           fi
-          jq -n --arg image "$RANKED_IMAGE_REF" --arg commit "$HARNESS_COMMIT" \
-            '{image: $image, harness_commit: $commit}' > ranked-image.json
+          if ! printf '%s' "$HARNESS_COMMIT" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::harness commit '$HARNESS_COMMIT' is not a 40-hex-char commit SHA"
+            exit 2
+          fi
+          jq -n --arg image "$RANKED_IMAGE_REF" --arg commit "$HARNESS_COMMIT" --arg sha "$REPORT_SHA256" \
+            '{image: $image, harness_commit: $commit, report_sha256: $sha}' > ranked-image.json
 
       - name: Attest which image produced report.json
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

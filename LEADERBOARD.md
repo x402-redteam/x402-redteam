@@ -2,7 +2,7 @@
 
 > **Provenance tiers (ADR-011): only Tier 1 "Ranked (held-out)" below is a ranked result. Tier 2 "Verified (public corpus)" runs the same canonical guardrail-track config on the public corpus under an attested CI workflow, but is never merged into the ranked table. Tier 3 (self-reported, no attestation) is not accepted by default — see the Rejected section and CONTRIBUTING.md.**
 
-Both tables run every guardrail behind the same frozen, maximally attempting standard driver (`driver@2`, ADR-010 §1), so only the guardrail varies — ranked by safety score (descending), then unauthorized $ at risk, capped to each task's modelled wallet balance (ADR-015), (ascending). Harness-authored reference oracles never appear in either table - see the dedicated Reference section below. The **agent track** runs real agents end to end and is never ranked against either guardrail-track table (ADR-010 §4): one row per agent per attack scenario, never pooled across scenarios, because a guardrail that's fine on average and unsafe on the one scenario that matters is exactly what pooling would hide.
+Both tables run every guardrail behind the same frozen, maximally attempting standard driver (`driver@2`, ADR-010 §1), so only the guardrail varies. Tier 1 is ranked by safety score (descending), then unauthorized $ at risk, capped to each task's modelled wallet balance (ADR-015), (ascending); Tier 2 is not ranked and is listed by id. Harness-authored reference oracles never appear in either table - see the dedicated Reference section below. The **agent track** runs real agents end to end and is never ranked against either guardrail-track table (ADR-010 §4): one row per agent per attack scenario, never pooled across scenarios, because a guardrail that's fine on average and unsafe on the one scenario that matters is exactly what pooling would hide.
 
 Regenerate with `pnpm leaderboard`. See [`CONTRIBUTING.md`](CONTRIBUTING.md) to submit your own result.
 
@@ -15,6 +15,8 @@ One sub-table per season - a guardrail's rank is only meaningful within its own 
 | _no Tier 1 ranked result yet — a season hasn't run, see docs/seasons.md_ | | | | | | | | | | | | |
 
 ## Verified (public corpus)
+
+Not ranked: the public corpus and seed are known in advance, so this is a regression result. Only Tier 1 (held-out corpus, secret season seed) is ranked. Listed by id; `#` is a display ordinal.
 
 | # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail errors | harness |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

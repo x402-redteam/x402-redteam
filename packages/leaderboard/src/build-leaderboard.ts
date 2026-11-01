@@ -120,7 +120,8 @@ export interface LeaderboardResult {
    * a season has actually run and been attested (`results/_verified.json`). */
   ranked: GuardrailRow[];
   /** ADR-011 Tier 2 "Verified (public corpus)" - same row shape as `ranked`, but never
-   * merged into it (a different corpus, a different attestation workflow). */
+   * merged into it (a different corpus, a different attestation workflow). Not a
+   * ranking (U34): sorted by id, `rank` is a display ordinal only. */
   guardrails: GuardrailRow[];
   agents: AgentScenarioRow[];
   /**
@@ -284,6 +285,22 @@ function checkHarnessAllowlistConcrete(allowlist: string[]): void {
       "Tier 1/2 requires a concrete results/_harness.json release allowlist " +
         '(absent or "*" is rejected, not permissively allowed, until a real release ' +
         "commit is on it)",
+    );
+  }
+}
+
+/**
+ * U34 (A1, C2): a Tier 2 report is accepted only when its `harness_commit` belongs to a
+ * release at or after `results/_harness.json`'s `min_tier2_release` (the first release
+ * whose `rank.yml` binds the attestation to the run's report). Until that release
+ * exists the list is empty and no Tier 2 report is accepted.
+ */
+function checkTier2Eligible(report: GuardrailLikeReport, tier2Eligible: string[]): void {
+  const commit = report.config.harness_commit;
+  if (typeof commit !== "string" || !tier2Eligible.includes(commit)) {
+    throw new RejectedError(
+      `Tier 2 requires a harness release at or after min_tier2_release in results/_harness.json ` +
+        `(harness_commit ${JSON.stringify(commit)} is not eligible; none is until that release is cut)`,
     );
   }
 }
@@ -973,9 +990,10 @@ function renderMarkdown(
       "default — see the Rejected section and CONTRIBUTING.md.**",
     "",
     "Both tables run every guardrail behind the same frozen, maximally attempting " +
-      `standard driver (\`${CANONICAL.driver}\`, ADR-010 §1), so only the guardrail varies — ranked ` +
-      "by safety score (descending), then unauthorized $ at risk, capped to each task's " +
-      "modelled wallet balance (ADR-015), (ascending). Harness-authored reference " +
+      `standard driver (\`${CANONICAL.driver}\`, ADR-010 §1), so only the guardrail varies. ` +
+      "Tier 1 is ranked by safety score (descending), then unauthorized $ at risk, " +
+      "capped to each task's modelled wallet balance (ADR-015), (ascending); Tier 2 is " +
+      "not ranked and is listed by id. Harness-authored reference " +
       "oracles never appear in either table - see the dedicated Reference section " +
       "below. The **agent track** runs real agents end to end and is never ranked " +
       "against either guardrail-track table (ADR-010 §4): one row per agent per " +
@@ -988,6 +1006,10 @@ function renderMarkdown(
     "",
     ...renderRankedSection(ranked),
     "## Verified (public corpus)",
+    "",
+    "Not ranked: the public corpus and seed are known in advance, so this is a " +
+      "regression result. Only Tier 1 (held-out corpus, secret season seed) is ranked. " +
+      "Listed by id; `#` is a display ordinal.",
     "",
     ...renderGuardrailTable(guardrails, "no Tier 2 verified result yet — see CONTRIBUTING.md"),
     "",
@@ -1046,6 +1068,7 @@ export function buildLeaderboard(
   harnessAllowlist: string[] = ["*"],
   verified: VerifiedMap = {},
   seasonRecords: SeasonRecords = {},
+  tier2Eligible: string[] = [],
 ): LeaderboardResult {
   const currentHash = corpusHash(scenarios);
   const reachClassByScenario = new Map(scenarios.map((s) => [s.id, s.reach_class]));
@@ -1121,6 +1144,7 @@ export function buildLeaderboard(
         checkHarnessAllowlistConcrete(harnessAllowlist); // condition #14
         checkGuardrailRepoRef(report.config as unknown as Record<string, unknown>); // HIGH-12
         checkVerifiedTier(entry.id, 2, verified);
+        checkTier2Eligible(report, tier2Eligible); // U34 A1/C2
         checkSubjectHash(entry.sha256, verified[entry.id]?.subject_sha256 ?? ""); // HIGH-5
       }
 
@@ -1199,9 +1223,11 @@ export function buildLeaderboard(
     .sort(bySafetyThenId)
     .map((row, i) => ({ rank: i + 1, ...row }));
 
+  // U34 (H2): Tier 2 is not a ranking - the corpus and seed are public, so rows sort by
+  // id and `rank` is a display ordinal only.
   const guardrails = verifiedItems
     .map(({ id, report }) => toGuardrailRow(id, report, meta))
-    .sort(bySafetyThenId)
+    .sort((a, b) => compareCodeUnits(a.id, b.id))
     .map((row, i) => ({ rank: i + 1, ...row }));
 
   const agents = agentItems

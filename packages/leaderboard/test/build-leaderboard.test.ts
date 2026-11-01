@@ -64,8 +64,17 @@ function buildLeaderboard(
   scenarios: Scenario[],
   meta: ResultsMeta = {},
   harnessAllowlist: string[] = TEST_HARNESS_ALLOWLIST,
+  tier2Eligible: string[] = TEST_TIER2_ELIGIBLE,
 ) {
-  return buildLeaderboardReal(entries, scenarios, meta, harnessAllowlist, autoVerified(entries));
+  return buildLeaderboardReal(
+    entries,
+    scenarios,
+    meta,
+    harnessAllowlist,
+    autoVerified(entries),
+    {},
+    tier2Eligible,
+  );
 }
 
 /**
@@ -238,6 +247,9 @@ const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
 /** Security review condition #14: the only harness allowlist under which a Tier 1/2
  * entry can ever be accepted - `["*"]`/`[]` are both rejected outright now. */
 const TEST_HARNESS_ALLOWLIST = [CANONICAL_CONFIG.harness_commit];
+/** U34: the commits whose Tier 2 reports may be accepted (min_tier2_release). Tests that
+ * are not about that rule treat the canonical commit as eligible. */
+const TEST_TIER2_ELIGIBLE = [CANONICAL_CONFIG.harness_commit];
 
 /** The agent track's own canonical shape (ADR-010 §4): no driver/hooks, `repeat >= 5`. */
 const AGENT_CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
@@ -1027,9 +1039,13 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     const entry = acceptedEntry("unknown-commit", {
       config: { ...CANONICAL_CONFIG, harness_commit: "unknown" },
     });
-    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META, [
-      "unknown",
-    ]);
+    const { guardrails, rejected } = buildLeaderboard(
+      [entry],
+      CURRENT_SCENARIOS,
+      NO_META,
+      ["unknown"],
+      ["unknown"],
+    );
     expect(rejected).toEqual([]);
     expect(guardrails.map((r) => r.id)).toEqual(["unknown-commit"]);
   });
@@ -1284,12 +1300,11 @@ describe("buildLeaderboard: ranking, columns and kind (functional-design.md §4)
 
     const { guardrails } = buildLeaderboard(entries, CURRENT_SCENARIOS, NO_META);
 
-    expect(guardrails.map((r) => r.id)).toEqual(["alpha", "gamma", "beta"]);
+    // U34 (H2): Tier 2 is not a ranking - id order, whatever the safety scores are.
+    expect(guardrails.map((r) => r.id)).toEqual(["alpha", "beta", "gamma"]);
     expect(guardrails.map((r) => r.rank)).toEqual([1, 2, 3]);
-    expect(guardrails[0]?.safetyScore).toBe(100);
-    expect(guardrails[1]?.unauthorizedUsd).toBeLessThan(
-      guardrails[2]?.unauthorizedUsd ?? Number.NaN,
-    );
+    expect(guardrails.find((r) => r.id === "alpha")?.safetyScore).toBe(100);
+    expect(guardrails.find((r) => r.id === "beta")?.safetyScore).toBeLessThan(100);
   });
 
   it(
@@ -1545,7 +1560,11 @@ describe("buildLeaderboard: provenance tiers (ADR-011, U19, security review)", (
   function buildReal(
     entries: LeaderboardEntry[],
     verified: VerifiedMap,
-    opts: { harnessAllowlist?: string[]; seasonRecords?: SeasonRecords } = {},
+    opts: {
+      harnessAllowlist?: string[];
+      seasonRecords?: SeasonRecords;
+      tier2Eligible?: string[];
+    } = {},
   ) {
     return buildLeaderboardReal(
       entries,
@@ -1554,6 +1573,7 @@ describe("buildLeaderboard: provenance tiers (ADR-011, U19, security review)", (
       opts.harnessAllowlist ?? TEST_HARNESS_ALLOWLIST,
       verified,
       opts.seasonRecords ?? SEASON_1_RECORDS,
+      opts.tier2Eligible ?? TEST_TIER2_ELIGIBLE,
     );
   }
 
@@ -1732,6 +1752,48 @@ describe("buildLeaderboard: provenance tiers (ADR-011, U19, security review)", (
     expect(ranked).toEqual([]);
     expect(guardrails.map((r) => r.id)).toEqual(["verified-guardrail"]);
     expect(markdown).toContain("## Verified (public corpus)");
+  });
+
+  it("U34 A1/C2: Tier 2 is rejected, with a reason, when no release is Tier 2-eligible (min_tier2_release unset)", () => {
+    const entry = acceptedEntry("tier2-not-eligible");
+    const { guardrails, rejected } = buildReal([entry], verifiedFor(entry, 2), {
+      tier2Eligible: [],
+    });
+    expect(guardrails).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["tier2-not-eligible"]);
+    expect(rejected[0]?.reason).toMatch(/min_tier2_release/);
+  });
+
+  it("U34 A1/C2: Tier 2 is rejected when its harness_commit is allowlisted but before min_tier2_release", () => {
+    const entry = acceptedEntry("tier2-old-release");
+    const { guardrails, rejected } = buildReal([entry], verifiedFor(entry, 2), {
+      tier2Eligible: ["b".repeat(40)],
+    });
+    expect(guardrails).toEqual([]);
+    expect(rejected[0]?.reason).toMatch(/min_tier2_release/);
+  });
+
+  it("U34 A1/C2: the default (no eligibility list given) accepts no Tier 2 report", () => {
+    const entry = acceptedEntry("tier2-default");
+    const { guardrails, rejected } = buildLeaderboardReal(
+      [entry],
+      CURRENT_SCENARIOS,
+      NO_META,
+      TEST_HARNESS_ALLOWLIST,
+      verifiedFor(entry, 2),
+      SEASON_1_RECORDS,
+    );
+    expect(guardrails).toEqual([]);
+    expect(rejectedIds(rejected)).toEqual(["tier2-default"]);
+  });
+
+  it("U34 H2: the Verified section says it is not ranked, and the page header no longer claims both tables are ranked", () => {
+    const { markdown } = buildReal([], {});
+    expect(markdown).toContain(
+      "Not ranked: the public corpus and seed are known in advance, so this is a regression result. Only Tier 1 (held-out corpus, secret season seed) is ranked.",
+    );
+    expect(markdown).not.toContain("only the guardrail varies — ranked by safety score");
+    expect(markdown).toContain("Tier 2 is not ranked");
   });
 
   it("Tier 3: a full report@3 guardrail-track entry with no verified entry is rejected by default", () => {

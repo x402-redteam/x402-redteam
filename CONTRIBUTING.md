@@ -35,7 +35,7 @@ The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** 
 | Tier | Table | How | Who can produce one |
 |---|---|---|---|
 | 1 | **Ranked (held-out)** | a maintainer runs `.github/workflows/ranked-run.yml` against the current season's held-out corpus | maintainers only (the `ranked` environment's required reviewers) |
-| 2 | **Verified (public corpus)** | your own public repo calls the reusable `.github/workflows/rank.yml@<release tag>` against the public corpus | anyone, via a PR that adds the workflow call |
+| 2 | **Verified (public corpus)** | your own public repo calls the reusable `.github/workflows/rank.yml@<release tag>` against the public corpus | anyone, via a PR that adds the workflow call. Not ranked: a regression result, listed by id |
 | 3 | Self-reported | a committed `results/<id>.json` with no attestation | **rejected by default** — shown in the Rejected section, not displayed (user decision; may change at G8) |
 
 ### Getting a Tier 2 "Verified (public corpus)" result
@@ -52,6 +52,20 @@ The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** 
          guardrail-id: your-guardrail-id
    ```
 
+
+   Pin `rank.yml` either by release tag (`@v0.1.1`) or by the full 40-character commit SHA
+   of that release (`@<sha>`); the leaderboard accepts both, and ties either one to the
+   release through the report's `harness_commit` (`--signer-digest`). A branch, a
+   pre-release tag or a commit that is not an allowlisted release is refused. Only releases
+   at or after `min_tier2_release` in `results/_harness.json` are accepted. Use the same
+   release for the `uses:` pin and for `harness-ref`: if they differ, the attestation's
+   signer digest does not match the report's `harness_commit` and the result is refused.
+
+   **Your guardrail runs with no network.** `rank.yml` runs the container with
+   `--network none`, a read-only checkout (`/workspace`), a read-only root filesystem, no
+   extra capabilities, 512 processes and 4 GiB of memory. It cannot fetch anything at run
+   time (`npx`, `pnpm`/corepack installs, LLM or other APIs): commit or vendor your
+   dependencies, and use only Node built-ins at run time.
 
 2. That workflow runs the canonical guardrail-track config against the public corpus and
    attests `report.json` under GitHub's own build provenance. Download the attestation

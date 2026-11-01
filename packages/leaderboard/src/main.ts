@@ -26,6 +26,7 @@ import {
   loadResultsDir,
   loadResultsMeta,
   loadSeasonRecords,
+  loadTier2EligibleCommits,
   loadVerifiedMap,
   type RawResultEntry,
   type ResultsMeta,
@@ -98,6 +99,7 @@ function buildVerifyCandidates(
   entries: RawResultEntry[],
   resultsDir: string,
   meta: ResultsMeta,
+  tier2Eligible: string[],
 ): VerifyCandidate[] {
   const candidates: VerifyCandidate[] = [];
   const digest = signerDigest();
@@ -116,6 +118,11 @@ function buildVerifyCandidates(
         signerDigest: digest,
       });
     } else if (schema === "x402-redteam/report@3") {
+      // U34 (A1, C3): the signer digest is the report's own harness_commit, and only a
+      // Tier 2-eligible release is worth a network check at all.
+      const commit = (entry.data as { config?: { harness_commit?: unknown } }).config
+        ?.harness_commit;
+      if (typeof commit !== "string" || !tier2Eligible.includes(commit)) continue;
       candidates.push({
         id: entry.id,
         resultPath,
@@ -123,7 +130,7 @@ function buildVerifyCandidates(
         tier: 2,
         submitterOwner: meta[entry.id]?.owner,
         contentHash: entry.sha256,
-        signerDigest: digest,
+        harnessCommit: commit,
       });
     }
   }
@@ -138,12 +145,13 @@ async function main(): Promise<void> {
   const entries = loadResultsDir(resultsDir);
   const meta = loadResultsMeta(resultsDir);
   const harnessAllowlist = loadHarnessAllowlist(resultsDir);
+  const tier2Eligible = loadTier2EligibleCommits(resultsDir);
   const seasonRecords = loadSeasonRecords(resultsDir);
   const scenarios = loadCorpus(corpusDir);
 
   let verified = loadVerifiedMap(resultsDir);
   if (process.argv.includes("--verify-attestations")) {
-    const candidates = buildVerifyCandidates(entries, resultsDir, meta);
+    const candidates = buildVerifyCandidates(entries, resultsDir, meta, tier2Eligible);
     verified = await verifyEntries(candidates, ghAttestationVerifier);
     writeFileSync(resolve(resultsDir, "_verified.json"), `${JSON.stringify(verified, null, 2)}\n`);
   }
@@ -155,6 +163,7 @@ async function main(): Promise<void> {
     harnessAllowlist,
     verified,
     seasonRecords,
+    tier2Eligible,
   );
 
   // U30-3 (ADR-035 #3): the MCP family has its own corpus, results and section. It is

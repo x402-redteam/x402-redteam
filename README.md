@@ -510,9 +510,13 @@ could end up, so it's excluded from the artifact unless you set `include-agent-l
   container and publishes a redacted report plus a GitHub artifact attestation. This is
   the only table a safety claim can be read off.
 - **Tier 2 — Verified (public corpus).** A submitter's own public repo calls this repo's
-  reusable CI workflow against the *public* corpus and attests the result. Shown in its
-  own table, never merged into Tier 1 — a submitter's job still controls the guardrail in
-  the same job that attests it, so same-job tampering is a disclosed residual risk.
+  reusable CI workflow against the *public* corpus and attests the result. **Not ranked:**
+  the public corpus and seed are known in advance, so this is a regression result, listed by
+  id in its own table and never merged into Tier 1. The attested report is the one the run
+  produced (the run job hashes it and the attest job checks that digest), and the
+  leaderboard accepts only attestations signed by this harness's `rank.yml` at a release at
+  or after `min_tier2_release` in `results/_harness.json` (not set yet, so no Tier 2 result
+  is accepted today). The residual is that the public seed can be fitted to.
 - **Tier 3 — Self-reported.** No attestation at all. Rejected by default.
 
 Every accepted entry is still checked against the full acceptance suite (canonical
