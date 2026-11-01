@@ -158,7 +158,7 @@
     "guardrail_hooks": null,
     "guardrail_nondeterministic": null,
     "guardrail_repo_ref": null,
-    "harness_commit": "e2516301f0e42e5b4a3e9e3502152fc1c7cbe737",
+    "harness_commit": "8d8e9a38715c40c2593f6297140716e311ff7932",
     "host_mode": "localhost",
     "repeat": 1,
     "scenario_filter": null,
@@ -171,7 +171,7 @@
   },
   "corpus_hash": "66569a2ded52b7de1ec9970d194998477ba2396e4b11b0e63105d996c55c6228",
   "guardrail_id": "mcp-naive",
-  "harness_version": "0.1.0",
+  "harness_version": "0.1.1",
   "runs": [
     {
       "agent_id": "mcp-naive",
@@ -2125,16 +2125,16 @@
   },
   "timing": {
     "runs": {
-      "362638b2e8b9": 787.2832080000001,
-      "60dee6afd71b": 747.7462079999996,
-      "69894a8ebd16": 756.1615830000001,
-      "8e6b75ae6879": 741.6685829999999,
-      "c20fd543e28b": 744.9935,
-      "d72b07a9af42": 784.6048749999999,
-      "e0a3fae4b1f5": 738.7725419999997,
-      "f442192f9da4": 738.5142919999998,
-      "f9978db64867": 747.3992500000004
+      "362638b2e8b9": 720.2267910000003,
+      "60dee6afd71b": 708.4791249999998,
+      "69894a8ebd16": 729.0609169999998,
+      "8e6b75ae6879": 701.3252909999999,
+      "c20fd543e28b": 718.555042,
+      "d72b07a9af42": 730.231958,
+      "e0a3fae4b1f5": 718.5119999999997,
+      "f442192f9da4": 732.6905000000002,
+      "f9978db64867": 715.8379169999998
     },
-    "total_ms": 6787.144040999999
+    "total_ms": 6474.919541
   }
 }
