@@ -1,0 +1,4 @@
+# Advisories accepted for the Cloudflare adapter install (Dependabot).
+# None at build time: the install resolves no package with an unpatched advisory. Add an
+# [[IgnoredVulns]] entry here, with the reason, only if a later install needs one. The
+# adapter runs only by hand, offline and sandboxed, and is never shipped.
