@@ -4,6 +4,12 @@
       "commit": "39568a31870a486bcc59afd9036631ed883bd617",
       "version": "v0.1.0",
       "image": "sha256:61b5bdd36608a90853222d13b7b38bcc28cea06a1913f08d8221ba363812244c"
+    },
+    {
+      "commit": "7c129dedceca4d2f80878be6f80d10e693e64d34",
+      "version": "v0.1.1",
+      "image": "sha256:17f72e36085c482d6cd2c8c7ecbbd3bc3ab5701d8c92f099f62730f602a7bee7"
     }
-  ]
+  ],
+  "min_tier2_release": "v0.1.1"
 }

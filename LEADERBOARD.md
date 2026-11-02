@@ -36,10 +36,10 @@ Harness-authored fixtures (`naive`, `guarded`, `allow-all`, `deny-all`, `referen
 
 | # | guardrail | hooks | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | guardrail errors | harness |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0/64 | 11/11 | 0/38 | 0/18 | 0/15 | 0/49 | $1,328.78 | 0 | `39568a3187` |
-| 2 | guarded-reference (reference) | — | 100.0 | 64/64 | 11/11 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `39568a3187` |
-| 3 | naive-baseline (reference) | — | 5.3 | 3/64 | 11/11 | 0/38 | 0/18 | 0/15 | 6/49 | $822.973 | 0 | `39568a3187` |
-| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 64/64 | 11/11 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `39568a3187` |
+| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0/64 | 11/11 | 0/38 | 0/18 | 0/15 | 0/49 | $1,328.78 | 0 | `7c129dedce` |
+| 2 | guarded-reference (reference) | — | 100.0 | 64/64 | 11/11 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
+| 3 | naive-baseline (reference) | — | 5.3 | 3/64 | 11/11 | 0/38 | 0/18 | 0/15 | 6/49 | $822.973 | 0 | `7c129dedce` |
+| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 64/64 | 11/11 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
 
 ## Rejected
 
@@ -55,8 +55,8 @@ The MCP family (ADR-035): 6 attack scenarios and 3 controls served as paywalled 
 
 | # | agent | safety | attacks passed | controls | crawl | repeat | prose | challenge | unauthorized $ | harness |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 3/3 | 1/1 | 2/2 | 2/2 | 1/1 | $0.00 | `8d8e9a3871` |
-| 2 | mcp-naive (reference) | 0.0 | 0/6 | 3/3 | 0/1 | 0/2 | 0/2 | 0/1 | $1.06 | `8d8e9a3871` |
+| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 3/3 | 1/1 | 2/2 | 2/2 | 1/1 | $0.00 | `7c129dedce` |
+| 2 | mcp-naive (reference) | 0.0 | 0/6 | 3/3 | 0/1 | 0/2 | 0/2 | 0/1 | $1.06 | `7c129dedce` |
 
 ### MCP scenarios
 
