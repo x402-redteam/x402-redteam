@@ -311,8 +311,10 @@ describe("loadTier2EligibleCommits / min_tier2_release (U34 A1, C2)", () => {
     }
   });
 
-  it("the committed results/_harness.json accepts no Tier 2 report yet (no U34 release exists)", () => {
+  it("the committed results/_harness.json accepts Tier 2 reports from v0.1.1 (the first U34 release) on", () => {
     const committed = new URL("../../../results", import.meta.url).pathname;
-    expect(loadTier2EligibleCommits(committed)).toEqual([]);
+    expect(loadTier2EligibleCommits(committed)).toEqual([
+      "7c129dedceca4d2f80878be6f80d10e693e64d34",
+    ]);
   });
 });
