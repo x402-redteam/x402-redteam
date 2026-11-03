@@ -9,22 +9,18 @@ import type { ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { PORT_ENV } from "./ports.js";
-import { spawnSandboxed } from "./sandbox.js";
+import { BASE_ENV_NAMES, childEnv, spawnSandboxed } from "@x402-redteam/sandbox";
+import { DEFAULT_PAYER_PORT, PORT_ENV, parseProxyPort } from "./payer-port.js";
 
 const CHILD_SCRIPT = fileURLToPath(new URL("./child.ts", import.meta.url));
+/** The adapter's own tsx and guard entry (U35 M1): the shared spawn resolves neither. */
+const LOADER = import.meta.resolve("tsx");
+const GUARD_ENTRY = fileURLToPath(new URL("./guard.ts", import.meta.url));
 
-/** The only variables the child may see (ADR-029: no API key, nothing ambient; N1: P). */
-export const CHILD_ENV_NAMES = ["PATH", "HOME", "X402_REDTEAM_TASK", PORT_ENV] as const;
-
-export function childEnv(from: NodeJS.ProcessEnv): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const name of CHILD_ENV_NAMES) {
-    const value = from[name];
-    if (value !== undefined) env[name] = value;
-  }
-  return env;
-}
+/** The only variables the child may see (ADR-029: no API key, nothing ambient; N1: P). The
+ * shared base names plus P. */
+export const CHILD_ENV_NAMES: readonly string[] = [...BASE_ENV_NAMES, PORT_ENV];
+export { childEnv };
 
 export class ChildCrashedError extends Error {}
 
@@ -53,13 +49,32 @@ export function startChild(opts: {
   guard?: boolean;
   onStderr?: (line: string) => void;
 } = {}): ClawRouterChild {
-  const proc: ChildProcess = spawnSandboxed({
+  const env = opts.env ?? process.env;
+  const taskPath = env.X402_REDTEAM_TASK;
+  // P is the child's own proxy port: reachable, bindable, and never the payer's default.
+  const proxyPort = parseProxyPort(env[PORT_ENV]);
+  if (env[PORT_ENV] !== undefined && proxyPort === undefined) {
+    throw new Error(`${PORT_ENV} must be a valid port other than ${DEFAULT_PAYER_PORT}`);
+  }
+  const spawned = spawnSandboxed({
+    label: "clawrouter",
     script: opts.script ?? CHILD_SCRIPT,
-    env: childEnv(opts.env ?? process.env),
+    loader: LOADER,
+    guardEntry: GUARD_ENTRY,
+    ...(taskPath ? { taskPath } : {}),
+    env,
+    extraEnv: [PORT_ENV],
+    ports: {
+      refused: [DEFAULT_PAYER_PORT],
+      ...(proxyPort !== undefined ? { extra: [proxyPort], listen: proxyPort } : {}),
+    },
     sandbox: opts.sandbox,
     guard: opts.guard,
     stdio: ["ignore", 2, "pipe", "pipe"],
   });
+  const proc: ChildProcess = spawned.proc;
+  // The fresh HOME goes when the child does.
+  proc.once("close", () => spawned.dispose());
   const stderrDone = new Promise<void>((resolve) => {
     if (!proc.stderr) return resolve();
     const lines = createInterface({ input: proc.stderr });

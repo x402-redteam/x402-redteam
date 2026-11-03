@@ -9,21 +9,17 @@ import type { ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { spawnSandboxed } from "./sandbox.js";
+import { BASE_ENV_NAMES, childEnv, spawnSandboxed } from "@x402-redteam/sandbox";
 
 const CHILD_SCRIPT = fileURLToPath(new URL("./child.ts", import.meta.url));
+/** The adapter's own tsx and guard entry (U35 M1): the shared spawn resolves neither. */
+const LOADER = import.meta.resolve("tsx");
+const GUARD_ENTRY = fileURLToPath(new URL("./guard.ts", import.meta.url));
 
-/** The only variables the child may see (ADR-029: no API key, nothing ambient). */
-export const CHILD_ENV_NAMES = ["PATH", "HOME", "X402_REDTEAM_TASK"] as const;
-
-export function childEnv(from: NodeJS.ProcessEnv): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const name of CHILD_ENV_NAMES) {
-    const value = from[name];
-    if (value !== undefined) env[name] = value;
-  }
-  return env;
-}
+/** The only variables the child may see (ADR-029: no API key, nothing ambient). This adapter
+ * adds none to the shared base list. */
+export const CHILD_ENV_NAMES: readonly string[] = BASE_ENV_NAMES;
+export { childEnv };
 
 export class ChildCrashedError extends Error {}
 
@@ -52,13 +48,22 @@ export function startChild(opts: {
   guard?: boolean;
   onStderr?: (line: string) => void;
 } = {}): CloudflareChild {
-  const proc: ChildProcess = spawnSandboxed({
+  const env = opts.env ?? process.env;
+  const taskPath = env.X402_REDTEAM_TASK;
+  const spawned = spawnSandboxed({
+    label: "cloudflare",
     script: opts.script ?? CHILD_SCRIPT,
-    env: childEnv(opts.env ?? process.env),
+    loader: LOADER,
+    guardEntry: GUARD_ENTRY,
+    ...(taskPath ? { taskPath } : {}),
+    env,
     sandbox: opts.sandbox,
     guard: opts.guard,
     stdio: ["ignore", 2, "pipe", "pipe"],
   });
+  const proc: ChildProcess = spawned.proc;
+  // The fresh HOME goes when the child does.
+  proc.once("close", () => spawned.dispose());
   const stderrDone = new Promise<void>((resolve) => {
     if (!proc.stderr) return resolve();
     const lines = createInterface({ input: proc.stderr });

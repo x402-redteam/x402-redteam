@@ -8,6 +8,19 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **sandbox:** shared third-party sandbox package `@x402-redteam/sandbox` (U35): one OS-sandbox profile, egress guard and spawn wrapper, no runtime dependencies, linked by the AgentKit (default and bracket), ClawRouter and Cloudflare adapters, plus a conformance canary (C1-C9 and the process-environment probes P1-P6) run from each adapter's canary.
+- **third-party:** key-file mode for the AgentKit LLM script: `X402_ANTHROPIC_KEY_FILE` (0600 regular file) instead of an exported key; the script refuses when `ANTHROPIC_API_KEY` is also exported.
+
+### Changed
+
+- **third-party:** every adapter now gets the strictest sandbox: the union of denied private folders, a fresh `HOME` with `TMPDIR` inside it as the only writable and non-executable area, a read-only out dir, port pinning and `::1` refusal (AgentKit gains port pinning, `::1` refusal and a fresh `HOME`). The LLM spend file moves to its own 0700 directory removed on exit.
+
+### Security
+
+- **sandbox:** every spawn runs a cached preflight that refuses to start the child when another process's environment is readable from it, naming the probe. Process-environment read via sysctl is not blocked by sandbox-exec on macOS 26 (probe P5), so third-party runs are blocked unless the owner records a residual (ADR-029). The canary reports P5 as a failure.
+
 ## [0.1.1] - 2026-11-01
 
 ### Added

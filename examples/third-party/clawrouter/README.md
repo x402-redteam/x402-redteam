@@ -36,23 +36,35 @@ deterministic.
   handle is on port P, in wallet mode, with the task wallet (addresses compared
   case-insensitively), and it waits for the package's start-up catalog fetches to settle
   (the response body read or the fetch rejected, then one macrotask turn, within 10 s).
-- The child gets a clean environment: `PATH`, `HOME` set to a fresh temp dir,
+- The child gets a clean environment: `PATH`, a fresh `HOME`, `TMPDIR`,
   `X402_REDTEAM_TASK` and `X402_CLAWROUTER_PORT` (P). No `BLOCKRUN_*`, `CLAWROUTER_*`,
   `HTTP(S)_PROXY`, `NODE_OPTIONS` or API key.
 - Two isolation layers, both built from the harness port (from `task.base_url`) and P and
-  nothing else (`src/ports.ts`):
-  1. **OS sandbox** (`src/sandbox.ts`, macOS `sandbox-exec`). Outbound network only to
+  nothing else (`allowedPorts` in the shared package; the payer's default port 8402 is refused):
+  1. **OS sandbox** (shared `profile.ts` and `spawn.ts`, macOS `sandbox-exec`). Outbound network only to
      `localhost:<harness port>` and `localhost:<P>`; the child may bind P only. It denies
      reads of `~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.gnupg`, `~/.npmrc`, `~/.netrc`,
      `~/.openclaw`, `~/.blockrun`, `~/x402-redteam-heldout`, `~/x402-redteam-private`
      (except the run's out dir), `~/x402-redteam-prepublish`, `~/Library/Keychains` and any
-     `.env` file. Writes go only to the temp dir and the out dir.
-  2. **Guard** (`src/guard.ts`, preloaded with `--import`). Wraps `net`, `tls`, `dgram`,
+     `.env` or `.dev.vars` file, and `~/.wrangler`. Writes go only to the child's own `HOME`.
+     The out dir is readable and not writable.
+  2. **Guard** (`src/guard.ts` is configuration only; the shared guard is preloaded with `--import`). Wraps `net`, `tls`, `dgram`,
      `dns`, `fetch`, `WebSocket` and `child_process`. Loopback, `*.localhost` and the task's
      host names pass only on the two allowed ports, and only as 127.0.0.1 (::1 is refused,
      which the sandbox cannot do). The
      package's npm update check gets a local 204. Anything else is refused and logged to
      stderr as `EGRESS_BLOCKED <target>`.
+
+  The sandbox, the guard and the child launcher are not in this adapter: they are the shared
+  `@x402-redteam/sandbox` package (`packages/sandbox`, linked with `link:`), which this
+  adapter configures in `src/guard.ts` and `src/child-client.ts` (U35). The child's only
+  writable path is its own fresh `HOME` (`TMPDIR=<home>/tmp`), where nothing can be executed;
+  the run's out dir is read-only to it, and the C1-C9 conformance canary runs from
+  `test/canary.test.ts`. Before every run the launcher runs a one-shot check that other
+  processes' environments are hidden from the child and refuses to start if one of the
+  checks leaks, naming the probe: process-environment read via sysctl is not blocked by
+  sandbox-exec on macOS 26, so third-party runs are blocked unless the owner records a
+  residual (ADR-029). Do not export `ANTHROPIC_API_KEY` in the shell that runs the harness.
 
 ## Setup
 
@@ -195,7 +207,7 @@ with each layer on its own and with both:
 - decoy listeners on 8402 and on a random loopback port are refused on 127.0.0.1, ::1 and a
   `*.localhost` name, and accept no connection;
 - reads of `~/.ssh`, `.env`, `~/.openclaw` and `~/.blockrun` fail (the last two are checked
-  against real files in a stand-in home), and writes outside the temp dir and the out dir fail;
+  against real files in a stand-in home), and writes outside the child's own `HOME` (including the out dir) fail;
 - the child's own proxy port and the harness port work, and the update check is answered
   locally while any other registry path is refused;
 - the child environment holds only its four variables, the allowlist is built from P and the

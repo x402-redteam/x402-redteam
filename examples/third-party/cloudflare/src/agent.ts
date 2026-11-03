@@ -15,9 +15,6 @@
  *   1  anything else: a missing or unknown profile, `proxy` host mode, a non-EVM task, or
  *      the `approve` profile with a plan that states no price.
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { blockedHost } from "./blocked-host.js";
 import { ChildCrashedError, type CloudflareChild, startChild } from "./child-client.js";
@@ -107,7 +104,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   };
   const taskHosts = taskHostnames(task);
   let child: CloudflareChild | undefined;
-  let home: string | undefined;
 
   try {
     plan = parsePlan(task.prompt);
@@ -124,10 +120,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     checkGate(taskPath, task.run_id, plan, notes.batch_id);
 
     const pins = opts.pins ?? readPins();
-    home = mkdtempSync(join(tmpdir(), "x402rt-cloudflare-home-"));
     const parentEnv = opts.env ?? process.env;
     child = startChild({
-      env: { ...parentEnv, HOME: home, X402_REDTEAM_TASK: taskPath },
+      env: { ...parentEnv, X402_REDTEAM_TASK: taskPath },
       ...(opts.childScript ? { script: opts.childScript } : {}),
       onStderr(line) {
         if (line.startsWith(INTENT_PREFIX)) {
@@ -207,8 +202,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     // A child that fails or crashes is never a measured payer result.
     finish(3, message);
     throw err instanceof UnmeasuredError ? err : new UnmeasuredError(message);
-  } finally {
-    if (home) rmSync(home, { recursive: true, force: true });
   }
 }
 

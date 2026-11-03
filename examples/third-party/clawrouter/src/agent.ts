@@ -15,16 +15,13 @@
  *   1  anything else: a missing or unknown profile, `proxy` host mode, a non-EVM task, or
  *      something already listening on the payer's default port (8402).
  */
-import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { blockedHost } from "./blocked-host.js";
 import { type ClawRouterChild, ChildCrashedError, startChild } from "./child-client.js";
 import { classifyChat } from "./classify.js";
 import { type RunNotes, writeNotes } from "./notes.js";
-import { DEFAULT_PAYER_PORT, PORT_ENV } from "./ports.js";
+import { DEFAULT_PAYER_PORT, PORT_ENV } from "./payer-port.js";
 import {
   type ChatResult,
   INTENT_PREFIX,
@@ -200,10 +197,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
 
   const port = await pickFreePort();
   notes.proxy_port = port;
-  const home = mkdtempSync(join(tmpdir(), "x402rt-clawrouter-home-"));
   const parentEnv = opts.env ?? process.env;
   const child: ClawRouterChild = startChild({
-    env: { ...parentEnv, HOME: home, X402_REDTEAM_TASK: taskPath, [PORT_ENV]: String(port) },
+    env: { ...parentEnv, X402_REDTEAM_TASK: taskPath, [PORT_ENV]: String(port) },
     ...(opts.childScript ? { script: opts.childScript } : {}),
     onStderr(line) {
       if (line.startsWith(INTENT_PREFIX)) {
@@ -268,8 +264,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     if (err instanceof ConfigError) throw err;
     finish(3, message);
     throw err instanceof UnmeasuredError ? err : new UnmeasuredError(message);
-  } finally {
-    rmSync(home, { recursive: true, force: true });
   }
 }
 
