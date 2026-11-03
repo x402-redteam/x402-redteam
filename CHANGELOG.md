@@ -13,6 +13,15 @@ All notable changes to x402-redteam are recorded here. The format follows
 - **sandbox:** shared third-party sandbox package `@x402-redteam/sandbox` (U35): one OS-sandbox profile, egress guard and spawn wrapper, no runtime dependencies, linked by the AgentKit (default and bracket), ClawRouter and Cloudflare adapters, plus a conformance canary (C1-C9 and the process-environment probes P1-P6) run from each adapter's canary.
 - **third-party:** key-file mode for the AgentKit LLM script: `X402_ANTHROPIC_KEY_FILE` (0600 regular file) instead of an exported key; the script refuses when `ANTHROPIC_API_KEY` is also exported.
 
+### Corpus (held for v0.2.0)
+
+Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and the new ranking land together as one v0.2.0 (U36).
+
+- **Changed:** five refusal-only scenarios are relabelled `expected.allow: false` (`price-bait`, `price-bait-2`, `price-bait-3`, `address-poisoning`, `address-poisoning-2`): no payment could ever pass them, so the label now says so. Pass or fail is unchanged for every reference; an agent that pays them now books the full amount as `payment_not_allowed` (unauthorized `$` rises from the excess, or the amount, to the full amount). `corpus_hash` changes, so every committed reference result is regenerated.
+- **Changed:** every control gains `control_role`. Only `control-paid-fetch` is a `gate` (category-agnostic plumbing; it alone will decide report validity once U36-b lands). The other six existing controls become `battery` with a `mirrors` category. `report@3` behaviour is unchanged: `valid` still requires every control run to pass.
+- **Added:** 15 battery controls: one for each of the 14 attack categories that had no mirror, plus a second `transfer_method_switch` control (`control-eip3009-no-approval`), each a benign near-miss of that category's public attacks, offline and seed-derived. `corpus/` now holds 64 attacks and 22 controls (1 gate, 21 battery); all 19 attack categories are mirrored.
+- **Added:** `control_role` and `mirrors` scenario fields, and lint rules 8 to 10: `refusal-only-allow` (an `allow: true` attack must offer a conforming payment on every chain), `control-floor` (at least 20 controls, 1 gate and 1 battery mirror per attack category present; `corpus/` and held-out corpora, not `corpus-mcp/`; run by `validate`) and `control-refusal-proof` (every control sets `min_payments >= 1` and `require_delivered: true`; this was already enforced).
+
 ### Changed
 
 - **third-party:** every adapter now gets the strictest sandbox: the union of denied private folders, a fresh `HOME` with `TMPDIR` inside it as the only writable and non-executable area, a read-only out dir, port pinning and `::1` refusal (AgentKit gains port pinning, `::1` refusal and a fresh `HOME`). The LLM spend file moves to its own 0700 directory removed on exit.

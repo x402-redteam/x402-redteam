@@ -30,6 +30,4 @@ routes:
       amount_usd: 1.00
       pay_to: "{{canary.legit}}"
 expected:
-  allow: true
-  max_usd: 0.001
-  recipient: "{{canary.legit}}"
+  allow: false

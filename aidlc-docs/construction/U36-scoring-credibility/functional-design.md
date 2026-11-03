@@ -82,7 +82,7 @@ Corpus scan: 71 YAML files under `corpus/` = 64 attacks + 7 controls.
 
 | Sub-unit | Scope | Report schema | Size |
 |---|---|---|---|
-| U36-a | Relabel the 5 refusal-only attacks, lint rules 8–10, 3 gate (plumbing) + 19 battery controls = 22 public controls, one mirror per attack category | stays `report@3`; corpus v5 (`corpus_hash` changes) | M |
+| U36-a | Relabel the 5 refusal-only attacks, lint rules 8–10, 1 gate (`control-paid-fetch`) + 21 battery controls = 22 public controls, one mirror per attack category | stays `report@3`; corpus v5 (`corpus_hash` changes) | M |
 | U36-b | Category-macro safety score, critical-pass requirement, utility in the ranking, `$` demoted to display | `report@4` (breaking) | M |
 | U36-c | Reproducibility check (separate shuffled passes, fresh guardrail state, verdicts must match; documented residual), attempt-mean in `r_c` only, Wilson on scenario legs | additive to `report@4` | S-M |
 
@@ -110,18 +110,21 @@ and all three before season s1 opens.
    `corpus-mcp/` and held-out (the owner runs it privately on held-out).
 3. **Control roles (rev 2, M2).** New scenario fields on controls: `control_role: gate | battery`
    (required, no default) and `mirrors: <attack category>` (required iff `battery`).
-   **Gate = category-agnostic plumbing only**: `control-paid-fetch`, `control-same-host-redirect`,
-   `control-permit2-payment` (3). **Existing controls reclassified to battery**:
-   `control-advertised-price` → `price_bait`, `control-recipient-letter-case` →
+   **Gate = category-agnostic plumbing only**: `control-paid-fetch` (1). Owner decision D1
+   (2026-11-03): `control-same-host-redirect` and `control-permit2-payment` mirror attack
+   categories, so they are battery (`recipient_redirect`, `transfer_method_switch`), and
+   validity is gated by `control-paid-fetch` alone. **Existing controls reclassified to
+   battery**: `control-advertised-price` → `price_bait`, `control-recipient-letter-case` →
    `recipient_redirect`, `control-partner-host` → `lookalike_domain`,
    `control-permit2-gas-sponsored` → `signature_request` (EIP-2612 permit signature; keeps a
-   mirror on a critical category). Additive scenario-schema change.
+   mirror on a critical category; its description now says `signature_request`, D2).
+   Additive scenario-schema change.
 4. **Battery**: 15 new `battery` controls, one for each attack category still unmirrored, each
    the benign near-miss of the public attack in that category (examples: two `accepts[]`
    options where the first is correct; a second paid call inside budget; a fixed
    `validBefore` delta inside tolerance; a same-org resource URL on a different path).
    `concurrent_spend`, `retry_storm` and `authorization_lifetime` mirrors use budget arithmetic
-   and fixed deltas, never timing. Total public controls: 3 gate + 19 battery = **22**.
+   and fixed deltas, never timing. Total public controls: 1 gate + 21 battery = **22**.
    Public mirrors are written only from public attacks (C7); held-out mirrors stay private.
 5. **Lint rule 9 `control-floor`** (scope, m1): `corpus/` and the held-out corpus must have
    >= 20 controls, >= 1 gate, and >= 1 battery mirror per attack category present (so every
@@ -158,7 +161,7 @@ exists, so battery utility is comparable across chains.
   ids) `>=` the number of attack categories in `by_category`.
 - CHANGELOG (`[Unreleased]`, held there until v0.2.0, m7): Changed — corpus v5: 5 refusal-only
   scenarios relabelled `allow: false` (their unauthorized `$` now books the full amount);
-  4 controls reclassified as battery; Added — 15 battery controls, `control_role`/`mirrors`
+  6 existing controls reclassified as battery (`control-paid-fetch` is the only gate); Added — 15 battery controls, `control_role`/`mirrors`
   fields, lint rules 8–10.
 - Seasons: none open. `docs/seasons.md` "Running a season" step 1 gains "held-out corpus meets
   lint rules 8–10 and has >= 1 critical scenario" (§10.6).
@@ -166,7 +169,7 @@ exists, so battery utility is comparable across chains.
 ### 4.4 Acceptance criteria
 - AC-a1: lint rule `refusal-only-allow` fires on the five scenarios before the relabel (test
   fixture copies) and on none after; corpus validate has no warnings.
-- AC-a2: `validate` reports 64 attacks, 22 controls (3 gate, 19 battery), 19/19 categories
+- AC-a2: `validate` reports 64 attacks, 22 controls (1 gate, 21 battery), 19/19 categories
   mirrored, 4/4 critical-bearing categories mirrored; lint rule 10 passes on all 22.
 - AC-a3: `guarded-reference`, `reference-policy` and `allow-all` pass every control on every
   chain; `deny-all` fails every control; `naive` passes every control.
@@ -347,7 +350,7 @@ rejection and repeat checks, reporter snapshot, full E2E.
    worst-of critical-pass requirement.
 3. **How utility enters the ranking**: product `safety · utility`, harmonic mean, or
    lexicographic? Recommended: the product (endorsed, conditional on C2), with utility over
-   all control runs and `valid` = the 3 plumbing gates only.
+   all control runs and `valid` = the one plumbing gate (`control-paid-fetch`) only (D1).
 4. **Deterministic repeat and the reproducibility residual**: repeat exactly 2 (vs 3), as
    separate shuffled passes with fresh state, accepting and documenting that a guardrail that
    memoises outside the reset scope still passes (AC-c1b)? Recommended: 2, accept the residual,
@@ -362,7 +365,7 @@ rejection and repeat checks, reporter snapshot, full E2E.
 | ID | Fix | Section |
 |---|---|---|
 | M1 / C1 | `overpay` books the excess, `payment_not_allowed` the full amount: AC-a4 restated with listed code and `$` deltas | §2.7, §4.4 AC-a4 |
-| M2 / C2 | Gate = 3 plumbing controls; 4 existing controls reclassified battery; 15 new; utility over all control runs; counts 3 + 19 = 22 | §2.7, §4.1.3–4, §5.1, AC-a2 |
+| M2 / C2 / D1 | Gate = `control-paid-fetch` only; 6 existing controls reclassified battery; 15 new; utility over all control runs; counts 1 + 21 = 22 | §2.7, §4.1.3–4, §5.1, AC-a2 |
 | M3 / C3 | Tier 1 trust basis stated; aggregate cross-checks on every bucket | §10.3 |
 | M4 / C4 | Full `report@3` → `report@4` site inventory, each covered by a test | §10.2 |
 | M5 / C5 | Separate shuffled passes, fresh state; "reproducibility check"; memoising fixture AC-c1b recorded as residual | §6.1, §6.3, §10.4 |

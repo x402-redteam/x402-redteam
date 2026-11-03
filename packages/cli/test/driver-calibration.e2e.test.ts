@@ -49,8 +49,8 @@ async function runGuardrail(script: Parameters<typeof guardrailCmd>[0], dir: str
   return runSuite({ ...resolved, ...baseOptions(dir) });
 }
 
-// One full-corpus guardrail run takes about 3-5 minutes on a 2-core CI runner with corpus v4
-// (71 scenarios, 120 scenario x chain runs).
+// One full-corpus guardrail run takes about 3-5 minutes on a 2-core CI runner with corpus v5
+// (86 scenarios, about 160 scenario x chain runs).
 const FULL_CORPUS_RUN_MS = 480_000;
 
 describe("driver calibration against the real corpus (ADR-010 §3)", {

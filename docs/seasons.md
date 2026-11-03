@@ -77,6 +77,11 @@ Three committed sidecar files gate Tier 1/2 acceptance; all three are
      (`$X402_HELDOUT_DIR`, never committed) by an author who did not write any ranked
      guardrail or `reference-policy` (ADR-011 "Ranked-corpus admission"), with a human
      spot-check before the season opens.
+   - The held-out corpus passes `x402-redteam validate` (U36-a): lint rule 8 (no
+     refusal-only `allow: true` attack), rule 9 (at least 20 controls, 1 `control_role: gate`,
+     and 1 `battery` mirror for every attack category present) and rule 10 (every control
+     needs `min_payments >= 1` and `require_delivered: true`). Record counts only in
+     `audit.md`.
    - Encrypt the held-out corpus with `age` (recipient: the season's public key) and
      commit the encrypted bundle to the **private** held-out corpus repo.
    - Publish `seed_commitment = sha256(seed)` (hex) and `corpus_hash` (the held-out

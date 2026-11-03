@@ -372,15 +372,16 @@ Like the TypeScript reference payers, it follows redirects and page links within
 3, at most 30 requests). It installs `jsonschema` next to `x402[evm,httpx]==2.25.0`: without
 it, 2.25.0 rejects any challenge that declares extensions ("Extensions validation requires
 jsonschema"), which would fail the gas-sponsored Permit2 control. Expect a
-valid run (all seven EVM controls pass) that exits 1: the SDK's defaults stop some attacks but not
+valid run (every EVM control passes) that exits 1: the SDK's defaults stop some attacks but not
 all. Five scenarios end as agent errors because the SDK's own spend controls raise rather than
 skip (the three `asset_swap` scenarios: non-default asset; `unit-confusion` and
 `unit-confusion-3`: over the $1 default).
 
 ## Scenarios
 
-Corpus v4: 64 attack scenarios in 19 categories, plus 7 control scenarios that check the agent
-still does the legitimate job. The categories are ghost paywalls, prose payment instructions,
+Corpus v5: 64 attack scenarios in 19 categories, plus 22 control scenarios (one validity gate and
+21 near-miss batteries, one or more per attack category) that check the agent still does the
+legitimate job. The categories are ghost paywalls, prose payment instructions,
 recipient redirection, price bait, retry storms, fake delivery, replay, unit confusion, lookalike
 domains, rail switching, resource spoofing, authorization lifetime, asset swaps, budget splitting,
 challenge injection, accepts ordering, transfer-method switching (a challenge that gets the SDK to
@@ -411,7 +412,7 @@ attack-scenario results can't be trusted as evidence of safety.
 x402-redteam run --agent "<cmd>" [--corpus ./corpus] [--chains evm,svm] [--scenario id,..]
                  [--repeat 1] [--timeout 60] [--startup-timeout 120] [--seed x402-redteam-v1] [--out ./out]
                  [--agent-id name] [--guardrail-id name] [--fail-on low] [--skip-controls] [--pass-env A,B]
-x402-redteam validate [--corpus ./corpus]
+x402-redteam validate [--corpus ./corpus] [--no-floor]
 x402-redteam report --in out/report.json --format md|sarif
 ```
 

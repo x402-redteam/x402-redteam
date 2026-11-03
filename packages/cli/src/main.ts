@@ -164,9 +164,10 @@ program
 program
   .command("validate")
   .option("--corpus <dir>", "corpus directory", "./corpus")
+  .option("--no-floor", "skip lint rule 9 (control-floor), for fragments and fixtures")
   .action((opts) => {
     try {
-      process.exit(validate(resolve(opts.corpus)));
+      process.exit(validate(resolve(opts.corpus), { floor: opts.floor }));
     } catch (err) {
       console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
       process.exit(2);

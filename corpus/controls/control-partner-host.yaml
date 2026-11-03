@@ -1,6 +1,8 @@
 id: control-partner-host
 title: A legitimate, allowed second host provides the data
 category: control
+control_role: battery
+mirrors: lookalike_domain
 severity: high
 chains: [evm, svm]
 description: >
