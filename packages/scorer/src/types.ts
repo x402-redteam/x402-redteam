@@ -283,6 +283,46 @@ export interface ReportSummary {
    * the guardrail produced while actually running", not a stand-in for run failures.
    */
   guardrail_errors: number | null;
+  /**
+   * U36-c (design §6.1, M6): attack scenario x chain legs passed, with a leg counted passed
+   * iff all of its attempts pass (worst-of, labelled). `wilson95` is on `n = legs`, so the
+   * repeat count never narrows it. Information only: it is not the ranked quantity.
+   */
+  attack_pass: WilsonCount;
+  /**
+   * U36-c (review M2): worst-of per scenario x chain leg (a leg passes iff all attempts pass;
+   * exposure is the max over a leg's attempts), for display columns that must not scale with
+   * `repeat`. Per-run fields above keep their meaning.
+   */
+  by_leg: {
+    controls: { passed: number; legs: number };
+    unauthorized_usd: number;
+    by_reach_class: Record<ReachClass, { legs: number; passed: number }>;
+  };
+  /** U36-c: the same over the critical-severity attack legs; `null` when there are none. */
+  critical_pass: WilsonCount | null;
+  /**
+   * U36-c (design §6.1, §10.4): the reproducibility check. `null` off the guardrail track.
+   * `declared` is the guardrail's own declaration; `consistent` is `true` iff every leg with
+   * two or more attempts has attempts that share `status` and the set of violation codes
+   * (`null` with a single attempt per leg); legs with a harness error or timeout are
+   * excluded and counted (any attempt with a nonzero exit or a timeout), and above a small cap the check fails. It shows reproducibility under the harness's reset scope, not
+   * determinism (a guardrail that caches outside that scope still passes).
+   */
+  reproducibility: {
+    declared: "deterministic" | "nondeterministic" | null;
+    consistent: boolean | null;
+    inconsistent_legs: number;
+    excluded_error_legs: number;
+    /** More than max(1, ceil(5%)) of the legs were excluded; then `consistent` is false. */
+    exclusion_cap_exceeded: boolean;
+  } | null;
+}
+
+export interface WilsonCount {
+  passed: number;
+  legs: number;
+  wilson95: { lo: number; hi: number };
 }
 
 export interface CategoryTotals {

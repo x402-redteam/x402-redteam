@@ -461,3 +461,25 @@ Until U36-c ships, `r_c` uses worst-of `p_s`, so the two readings agree.
 - `packages/fuzz/test/golden/`, `packages/scorer/test/__snapshots__/`: regenerated, with the
   diff reviewed line by line (only counts, codes and `$` cells for the five ids may change).
 U36-b and U36-c regenerate the same snapshots for `report@4`.
+
+### 10.8 U36-c build notes (2026-11-04)
+- `p_s` is the mean over attempts of "every chain passed that attempt" (not the mean over chains of
+  the per-chain pass share quoted in §6.1). With one attempt it is the U36-b worst-of value, so
+  single-attempt references keep their scores; for a single-chain scenario the two definitions
+  agree, and dual-chain scenarios are still counted once (§5.1).
+- Without `--repeat`, a guardrail run starts with 2 passes and extends to 3 after pass 1 unless the
+  guardrail explicitly declared itself deterministic (read from the driver's GDP record), so the
+  ranked containers, which pass no `--repeat`, produce a rankable run either way. Ranked workflow
+  time limits are sized for 3 passes: `rank.yml` 30 to 90 minutes, `ranked-run.yml` 45 to 135.
+- Fresh state per guardrail-track run: a new `sh -c` driver and guardrail process, and a fresh `HOME`
+  with `TMPDIR` inside it (removed after the run). The cwd is not reset (relative guardrail commands
+  need it); the residual is listed in `docs/seasons.md`.
+- Season pins: `repeat.deterministic` must equal 2 and `repeat.nondeterministic` is a floor (>= 3),
+  enforced by `loadSeasonRecords` and `checkSeasonRecord`.
+- Reproducibility exclusion (review M1): a leg is excluded when any attempt has a harness error, a
+  nonzero exit or a timeout (`!agent_ok`); more than max(1, ceil(5%)) of the legs excluded makes the
+  check fail (`exclusion_cap_exceeded`). Residual: exclusion absorbs at most max(1, ceil(5%)) of the legs (8 of 159 today); a guardrail that times out on purpose loses those attempts in every score but can hide that many flipped verdicts from the reproducibility check. Both Tier 1 (check 6) and the Tier 2 re-score read the same
+  `consistent`.
+- Display columns (review M2): the leaderboard's controls, reach and modelled-exposure columns read
+  `summary.by_leg` (worst-of per scenario x chain leg; exposure is the max over a leg's attempts), so
+  rows with different repeat counts are comparable. The per-run `summary` fields keep their meaning.

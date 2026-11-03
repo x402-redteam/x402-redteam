@@ -235,15 +235,15 @@ function repeatedRuns(
  * The canonical CLI configuration (functional-design.md §3.3 + ADR-016 §3's full v3
  * fingerprint, U16): the guardrail track's own canonical shape, since it's the only
  * ranked track at launch (ADR-010 §1) - `driver@2`, a non-empty `guardrail_hooks`,
- * `host_mode: "localhost"`, and `repeat: 1` (the only canonical value for a
- * deterministic guardrail - code review round 1, item 6). `harness_commit` is a
+ * `host_mode: "localhost"`, and `repeat: 2` (the only canonical value for a
+ * deterministic guardrail (U36-c: two separate passes) - code review round 1, item 6). `harness_commit` is a
  * 40-hex-char placeholder SHA (code review round 1, item 4: the real field must look
  * like a git commit, or the literal "unknown").
  */
 const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   seed: "x402-redteam-v1",
   chains: ["evm", "svm"],
-  repeat: 1,
+  repeat: 2,
   timeout_s: 60,
   fail_on: "low" as const,
   scenario_filter: null,
@@ -277,6 +277,35 @@ const AGENT_CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   guardrail_nondeterministic: null,
 };
 
+/**
+ * U36-c: a deterministic guardrail runs exactly twice. Fixtures written for one attempt are
+ * widened to the canonical two: every attempt-1 run without an attempt-2 sibling gets an
+ * identical clone (same status and violation codes, so the reproducibility check passes).
+ * Only active at `repeat === 2`; a test that wants differing or missing attempts supplies
+ * its own attempt-2 runs.
+ */
+function withSecondAttempt(runs: RunRecord[], repeat: number): RunRecord[] {
+  if (repeat !== 2) return runs;
+  const have = new Set(runs.map((r) => `${r.scenario_id}:${r.chain}:${r.attempt}`));
+  const clones = runs
+    .filter((r) => r.attempt === 1 && !have.has(`${r.scenario_id}:${r.chain}:2`))
+    .map((r) => ({
+      ...r,
+      run_id: r.run_id.replace(/:1$/, ":2"),
+      attempt: 2,
+      payments: r.payments.map((p) => ({
+        ...p,
+        payment_id: `${p.payment_id}-a2`,
+        dedupe_key: `${p.dedupe_key}-a2`,
+      })),
+    }));
+  return [...runs, ...clones];
+}
+
+function scoreWide(input: Parameters<typeof scoreSuite>[0]): Report {
+  return scoreSuite({ ...input, runs: withSecondAttempt(input.runs, input.meta.config.repeat) });
+}
+
 function buildReport(opts: {
   guardrailId: string;
   runs: RunRecord[];
@@ -291,9 +320,11 @@ function buildReport(opts: {
   // the caller deliberately breaks something - custom `scenarios` callers stay in full
   // control of their own runs[].
   const repeat = (opts.config?.repeat as number | undefined) ?? CANONICAL_CONFIG.repeat;
-  const runs =
-    opts.scenarios === undefined ? [...opts.runs, ...passingControlRuns(repeat)] : opts.runs;
-  return scoreSuite({
+  const runs = withSecondAttempt(
+    opts.scenarios === undefined ? [...opts.runs, ...passingControlRuns(repeat)] : opts.runs,
+    repeat,
+  );
+  return scoreWide({
     scenarios: opts.scenarios ?? CURRENT_SCENARIOS,
     runs,
     ctx: { seed: opts.seed ?? CANONICAL_CONFIG.seed },
@@ -381,7 +412,7 @@ const SEASON_1_RECORDS = {
     starts: "2026-01-01",
     ends: "2026-03-31",
     report_schema: "x402-redteam/report@4-redacted",
-    repeat: { deterministic: 1, nondeterministic: 3 },
+    repeat: { deterministic: 2, nondeterministic: 3 },
     control_floor: { controls: 2, battery_per_category: 1 },
   },
 };
@@ -509,7 +540,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
       expected: { allow: true, max_usd: 1, min_payments: 1 },
     });
     const scenarios = [...CURRENT_SCENARIOS, control];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
@@ -605,7 +636,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
         scenario_id: "auth",
         payments: [payment({ authorization_seconds: 10_000 })],
       });
-      const report = scoreSuite({
+      const report = scoreWide({
         scenarios,
         runs: [
           run({ run_id: "s1:evm:1", scenario_id: "s1" }),
@@ -723,7 +754,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
     const agent = agentWallet(CANONICAL_CONFIG.seed, "evm").address;
     const revScenario = scenario({ id: "revoke", expected: { allow: false } });
     const scenarios = [...CURRENT_SCENARIOS, revScenario];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
@@ -787,7 +818,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
       expected: { allow: true, max_usd: 0.01, max_payments: 1 },
     });
     const scenarios = [...CURRENT_SCENARIOS, grantScenario];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
@@ -890,7 +921,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
         }),
       ],
     });
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
@@ -1039,14 +1070,14 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     expect(rejected[0]?.reason).toMatch(/guardrail_nondeterministic/);
   });
 
-  it("rejects a deterministic guardrail declaring repeat !== 1 (orchestrator ruling, ADR-016 §3)", () => {
-    const entry = acceptedEntry("deterministic-repeat-2", {
-      config: { ...CANONICAL_CONFIG, repeat: 2 },
+  it("rejects a deterministic guardrail declaring repeat !== 2 (ADR-016 §3, U36-c)", () => {
+    const entry = acceptedEntry("deterministic-repeat-1", {
+      config: { ...CANONICAL_CONFIG, repeat: 1 },
     });
     const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
     expect(guardrails).toEqual([]);
-    expect(rejectedIds(rejected)).toEqual(["deterministic-repeat-2"]);
-    expect(rejected[0]?.reason).toMatch(/repeat.*exactly 1/);
+    expect(rejectedIds(rejected)).toEqual(["deterministic-repeat-1"]);
+    expect(rejected[0]?.reason).toMatch(/repeat.*exactly 2/);
   });
 
   it('rejects a malformed harness_commit (not 40 hex chars, not "unknown")', () => {
@@ -1174,7 +1205,7 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
 describe("buildLeaderboard: run coverage (code review round 1, item 1, CRITICAL)", () => {
   it("rejects a report with zero attack scenarios (controls-only corpus, zero attack weight)", () => {
     const controlsOnlyScenarios = [CONTROL_SCENARIO];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios: controlsOnlyScenarios,
       runs: [passingControlRun()],
       ctx: { seed: CANONICAL_CONFIG.seed },
@@ -1286,9 +1317,9 @@ describe("buildLeaderboard: run coverage (code review round 1, item 1, CRITICAL)
     const report = entry.data as Report;
     const s1Run = report.runs.find((r) => r.scenario_id === "s1");
     expect(s1Run).toBeDefined();
-    // config.repeat is 1, so a second attempt is "extra", not merely "unreported".
+    // config.repeat is 2, so a third attempt is "extra", not merely "unreported".
     // biome-ignore lint/style/noNonNullAssertion: asserted defined above.
-    const extraRun = { ...s1Run!, run_id: "s1:evm:2", attempt: 2 };
+    const extraRun = { ...s1Run!, run_id: "s1:evm:3", attempt: 3 };
     const tampered: Report = { ...report, runs: [...report.runs, extraRun] };
     const tamperedEntry: LeaderboardEntry = { id: "extra-attempt", data: tampered };
     const { guardrails, rejected } = buildLeaderboard([tamperedEntry], CURRENT_SCENARIOS, NO_META);
@@ -2373,7 +2404,71 @@ describe("buildLeaderboard: report@4 ranking, superseded schema and cross-checks
       );
     });
 
-    it.todo("U36-c: requires the reproducibility block on the guardrail track");
+    it("U36-c: requires the reproducibility block on the guardrail track (full and redacted)", () => {
+      const drop = (d: Record<string, unknown>) => {
+        (d.summary as Record<string, unknown>).reproducibility = null;
+      };
+      const t = tier1("t1");
+      const bad = mutate(t, drop);
+      const { rejected, ranked } = buildReal([bad], verifiedFor(bad, 1));
+      expect(ranked).toEqual([]);
+      expect(rejected[0]?.reason).toMatch(/requires summary\.reproducibility/);
+
+      const full = mutate(acceptedEntry("full1"), drop);
+      const res = buildReal([full], verifiedFor(full, 2));
+      expect(res.guardrails).toEqual([]);
+      expect(res.rejected[0]?.reason).toMatch(/requires summary\.reproducibility/);
+    });
+
+    it("U36-c: rejects a deterministic declaration that was not reproduced", () => {
+      const flip = (d: Record<string, unknown>) => {
+        Object.assign((d.summary as Record<string, unknown>).reproducibility as object, {
+          consistent: false,
+          inconsistent_legs: 1,
+        });
+      };
+      const t = mutate(tier1("t1"), flip);
+      const r1 = buildReal([t], verifiedFor(t, 1));
+      expect(r1.ranked).toEqual([]);
+      expect(r1.rejected[0]?.reason).toMatch(/deterministic declaration not reproduced/);
+      const full = mutate(acceptedEntry("full1"), flip);
+      const r2 = buildReal([full], verifiedFor(full, 2));
+      expect(r2.guardrails).toEqual([]);
+      expect(r2.rejected[0]?.reason).toMatch(/deterministic declaration not reproduced|re-score/);
+    });
+
+    it("U36-c: rejects a Wilson interval that is not the one for passed / legs", () => {
+      const patch = (d: Record<string, unknown>) => {
+        const a = (d.summary as { attack_pass: { wilson95: { lo: number } } }).attack_pass;
+        a.wilson95.lo = 0.5;
+      };
+      const t = mutate(tier1("t1"), patch);
+      const { ranked, rejected } = buildReal([t], verifiedFor(t, 1));
+      expect(ranked).toEqual([]);
+      expect(rejected[0]?.reason).toMatch(/attack_pass\.wilson95/);
+    });
+
+    it("U36-c: a nondeterministic season pin is a floor, not an exact value", () => {
+      const records = {
+        "season-1": {
+          ...SEASON_1_RECORDS["season-1"],
+          repeat: { deterministic: 2, nondeterministic: 4 },
+        },
+      };
+      const t = mutate(tier1("t1"), (d) => {
+        (d.config as Record<string, unknown>).guardrail_nondeterministic = true;
+        (d.config as Record<string, unknown>).repeat = 3;
+        (d.summary as Record<string, unknown>).reproducibility = {
+          declared: "nondeterministic",
+          consistent: true,
+          inconsistent_legs: 0,
+          excluded_error_legs: 0,
+          exclusion_cap_exceeded: false,
+        };
+      });
+      const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: records });
+      expect(rejected[0]?.reason).toMatch(/below the season's nondeterministic minimum of 4/);
+    });
 
     it("D4b rejects a Tier 1 report whose critical_all_pass is null (no critical scenario)", () => {
       const noCritical = CURRENT_SCENARIOS.map((sc) =>
@@ -2439,11 +2534,11 @@ describe("buildLeaderboard: report@4 ranking, superseded schema and cross-checks
       const records = {
         "season-1": {
           ...SEASON_1_RECORDS["season-1"],
-          repeat: { deterministic: 2, nondeterministic: 3 },
+          repeat: { deterministic: 3, nondeterministic: 3 },
         },
       };
       const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: records });
-      expect(rejected[0]?.reason).toMatch(/season pin mismatch: repeat 1 is not the season's 2/);
+      expect(rejected[0]?.reason).toMatch(/season pin mismatch: repeat 2 is not the season's 3/);
     });
   });
 });

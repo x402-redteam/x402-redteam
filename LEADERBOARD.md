@@ -10,17 +10,17 @@ Regenerate with `pnpm leaderboard`. See [`CONTRIBUTING.md`](CONTRIBUTING.md) to 
 
 One sub-table per season - a guardrail's rank is only meaningful within its own season's held-out corpus, never across seasons.
 
-| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| _no Tier 1 ranked result yet — a season hasn't run, see docs/seasons.md_ | | | | | | | | | | | | | | | |
+| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | attack legs (95% CI) | reproduced (excluded legs) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| _no Tier 1 ranked result yet — a season hasn't run, see docs/seasons.md_ | | | | | | | | | | | | | | | | | |
 
 ## Verified (public corpus)
 
 Not ranked: the public corpus and seed are known in advance, so this is a regression result. Only Tier 1 (held-out corpus, secret season seed) is ranked. Listed by id; `#` is a display ordinal.
 
-| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| _no Tier 2 verified result yet — see CONTRIBUTING.md_ | | | | | | | | | | | | | | | |
+| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | attack legs (95% CI) | reproduced (excluded legs) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| _no Tier 2 verified result yet — see CONTRIBUTING.md_ | | | | | | | | | | | | | | | | | |
 
 ## Agent track — observations (unranked)
 
@@ -34,12 +34,12 @@ Not ranked: the public corpus and seed are known in advance, so this is a regres
 
 Harness-authored fixtures (`naive`, `guarded`, `allow-all`, `deny-all`, `reference-policy`, `sdk-defaults`, ...) used to sanity-check the harness itself (ADR-008 amendment) - never evidence that any real guardrail is safe, and never requiring (or eligible for) a Tier 1/2 attestation. Sorted by id, not ranked - the `#` column here is a display ordinal only.
 
-| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0.0 | 100.0% | FAIL | 0/64 | 39/39 | 0/38 | 0/18 | 0/15 | 0/49 | $1,328.80 | 0 | `7c129dedce` |
-| 2 | guarded-reference (reference) | — | 100.0 | 100.0 | 100.0% | pass | 64/64 | 39/39 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
-| 3 | naive-baseline (reference) | — | 5.3 | 5.3 | 100.0% | FAIL | 3/64 | 39/39 | 0/38 | 0/18 | 0/15 | 6/49 | $822.985 | 0 | `7c129dedce` |
-| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 100.0 | 100.0% | pass | 64/64 | 39/39 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
+| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | attack legs (95% CI) | reproduced (excluded legs) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0.0 | 100.0% | FAIL | 0/64 | 0/120 [0.0–3.1%] | yes (0) | 39/39 | 0/38 | 0/18 | 0/15 | 0/49 | $1,328.80 | 0 | `7c129dedce` |
+| 2 | guarded-reference (reference) | — | 100.0 | 100.0 | 100.0% | pass | 64/64 | 120/120 [96.9–100.0%] | — | 39/39 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
+| 3 | naive-baseline (reference) | — | 5.3 | 5.3 | 100.0% | FAIL | 3/64 | 6/120 [2.3–10.5%] | — | 39/39 | 0/38 | 0/18 | 0/15 | 6/49 | $822.985 | 0 | `7c129dedce` |
+| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 100.0 | 100.0% | pass | 64/64 | 120/120 [96.9–100.0%] | yes (0) | 39/39 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
 
 ## Rejected
 
@@ -57,10 +57,10 @@ _none_
 
 The MCP family (ADR-035): 6 attack scenarios and 3 controls served as paywalled MCP tools, corpus `76e6c383a3`. It has its own corpus hash and its own results (`results/mcp/`); its numbers never mix into the HTTP tables above. Only harness reference oracles are listed: `mcp-guarded` shows each scenario can be passed and `mcp-naive` that every attack can be failed (ADR-008 amendment); neither is evidence that any real agent is safe.
 
-| # | agent | safety | attacks passed | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | harness |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 3/3 | 1/1 | 2/2 | 2/2 | 1/1 | $0.00 | `7c129dedce` |
-| 2 | mcp-naive (reference) | 0.0 | 0/6 | 3/3 | 0/1 | 0/2 | 0/2 | 0/1 | $1.07 | `7c129dedce` |
+| # | agent | safety | attacks passed | attack legs (95% CI) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | harness |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 6/6 [61.0–100.0%] | 3/3 | 1/1 | 2/2 | 2/2 | 1/1 | $0.00 | `7c129dedce` |
+| 2 | mcp-naive (reference) | 0.0 | 0/6 | 0/6 [0.0–39.0%] | 3/3 | 0/1 | 0/2 | 0/2 | 0/1 | $1.07 | `7c129dedce` |
 
 ### MCP scenarios
 

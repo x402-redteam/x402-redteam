@@ -200,6 +200,25 @@ describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () =
       });
     });
 
+    it("U36-c: rejects a repeat pin the canonical rule would reject (deterministic != 2, nondeterministic < 3)", () => {
+      const base = {
+        seed_commitment: "a".repeat(64),
+        corpus_hash: "b".repeat(64),
+        starts: "2026-01-01",
+        ends: "2026-03-31",
+        report_schema: "x402-redteam/report@4-redacted",
+        control_floor: { controls: 20, battery_per_category: 1 },
+      };
+      for (const repeat of [
+        { deterministic: 1, nondeterministic: 3 },
+        { deterministic: 3, nondeterministic: 3 },
+        { deterministic: 2, nondeterministic: 2 },
+      ]) {
+        writeFileSync(join(dir, "_seasons.json"), JSON.stringify({ s1: { ...base, repeat } }));
+        expect(() => loadSeasonRecords(dir)).toThrow(/deterministic exactly 2/);
+      }
+    });
+
     it("is never loaded as a report by loadResultsDir (underscore-prefixed sidecar)", () => {
       writeFileSync(join(dir, "_verified.json"), JSON.stringify({}));
       writeFileSync(join(dir, "naive-baseline.json"), JSON.stringify({ v: 1 }));

@@ -44,7 +44,9 @@ describe("the MCP section (U30-3)", () => {
     expect(r.markdown).toContain("## MCP (corpus-mcp, EVM)");
     expect(r.markdown).toContain("| mcp-settle-fail | repeat | mcp_settle_fail | pass | fail |");
     expect(r.markdown).toContain("| mcp-control-paid-tool | control | — | pass | pass |");
-    expect(r.markdown).toContain("| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 3/3 |");
+    expect(r.markdown).toContain(
+      "| 1 | mcp-guarded (reference) | 100.0 | 6/6 | 6/6 [61.0–100.0%] | 3/3 |",
+    );
   });
 
   it("is deterministic, whatever order the entries arrive in", () => {

@@ -5,9 +5,11 @@ exports[`toMarkdown (functional-design.md §5) > matches the markdown snapshot 1
 
 ## Summary
 
-| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | rank score | critical pass | controls | utility | guardrail errors |
+| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score (mean per-attempt) | rank score | critical pass | controls | utility | guardrail errors |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 2 | 50.0% | $0.25 | $0.00 | 0.10× | 1 | 50.0 | 50.0 | — | 1/1 | 100.0% | — |
+
+- Attack legs passed (worst-of over attempts): 1/2, Wilson 95% [9.5%, 90.5%] (n = scenario x chain legs).
 
 ## By category
 
@@ -44,9 +46,11 @@ exports[`toMarkdown (functional-design.md §5) > names the scheme of grant and m
 
 ## Summary
 
-| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | rank score | critical pass | controls | utility | guardrail errors |
+| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score (mean per-attempt) | rank score | critical pass | controls | utility | guardrail errors |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | 0.0% | $100.00 | $0.00 | 0.00× | 0 | 0.0 | 0.0 | — | 0/0 | 0.0% | — |
+
+- Attack legs passed (worst-of over attempts): 0/1, Wilson 95% [0.0%, 79.3%] (n = scenario x chain legs).
 
 ## By category
 

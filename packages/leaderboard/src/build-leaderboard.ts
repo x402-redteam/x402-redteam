@@ -70,6 +70,10 @@ export interface GuardrailRow {
   criticalAllPass: boolean | null;
   attacksPassed: number;
   attacksTotal: number;
+  /** U36-c: attack scenario x chain legs passed (worst-of) with its Wilson 95% interval; information only. */
+  attackLegs: string;
+  /** U36-c: the reproducibility verdict and the legs excluded for harness errors (info). */
+  reproduced: string;
   controlsPassed: number;
   controlsTotal: number;
   byReachClass: Record<ReachClass, { passed: number; runs: number }>;
@@ -428,12 +432,20 @@ function checkSeasonRecord(report: RedactedReport, seasonRecords: SeasonRecords)
       `season pin mismatch: report schema "${report.schema}" is not the season's "${record.report_schema}"`,
     );
   }
-  const repeatPin = report.config.guardrail_nondeterministic
-    ? record.repeat.nondeterministic
-    : record.repeat.deterministic;
-  if (report.config.repeat !== repeatPin) {
+  // U36-c: the pins follow `checkTrack`'s rule. A deterministic guardrail ran exactly
+  // `repeat.deterministic` passes (2); a nondeterministic one at least `repeat.nondeterministic`
+  // (3) - the same floor `checkTrack` enforces, so the pin can name a stricter floor but a
+  // longer run is never rejected for being more thorough.
+  const nondeterministic = report.config.guardrail_nondeterministic === true;
+  const repeat = report.config.repeat;
+  const pinOk = nondeterministic
+    ? typeof repeat === "number" && repeat >= record.repeat.nondeterministic
+    : repeat === record.repeat.deterministic;
+  if (!pinOk) {
     throw new RejectedError(
-      `season pin mismatch: repeat ${String(report.config.repeat)} is not the season's ${repeatPin}`,
+      nondeterministic
+        ? `season pin mismatch: repeat ${String(repeat)} is below the season's nondeterministic minimum of ${record.repeat.nondeterministic}`
+        : `season pin mismatch: repeat ${String(repeat)} is not the season's ${record.repeat.deterministic}`,
     );
   }
 }
@@ -538,9 +550,9 @@ function checkHarnessCommit(report: GuardrailLikeReport, allowlist: string[]): v
  *   `null`/absent is rejected rather than silently treated as `false`, so a guardrail
  *   that doesn't declare its own determinism can't quietly get the lower repeat floor.
  * - item 6 (orchestrator ruling, ADR-016 §3 wins): a deterministic guardrail's `repeat`
- *   must be **exactly** 1, not merely "at least 1" - re-running a deterministic
- *   guardrail more than once can't produce new information, so a higher `repeat` is
- *   itself non-canonical, not just wasteful.
+ *   must be **exactly** `GUARDRAIL_REPEAT_DETERMINISTIC` (2 since U36-c: two separate
+ *   shuffled passes whose verdicts must match, the reproducibility check) - a higher
+ *   `repeat` can't produce new information, so it is itself non-canonical.
  */
 function checkTrack(report: GuardrailLikeReport, opts: { referenceOracle?: boolean } = {}): void {
   const config = report.config;
@@ -651,8 +663,12 @@ type ConsistencyReport = Pick<Report, "config" | "summary" | "by_category" | "by
  *    the season's floor (Tier 1 only: the public corpus is held to lint rule 9 by `validate`,
  *    and `corpus-mcp/` is exempt from it).
  * 6. When a `reproducibility` block is present (U36-c) its `declared` agrees with
- *    `config.guardrail_nondeterministic`. That the block is present on the guardrail track is
- *    required once U36-c ships it; the repeat rule itself is `checkTrack`.
+ *    `config.guardrail_nondeterministic`, and the block is REQUIRED on the guardrail track
+ *    (U36-c); a deterministic declaration that was not reproduced is rejected. The repeat
+ *    rule itself is `checkTrack`. The check shows reproducibility under the harness's reset
+ *    scope, not determinism (docs/seasons.md, design §10.4).
+ * 7. When `attack_pass` / `critical_pass` are present their Wilson interval is the one
+ *    recomputed from `passed` and `legs` (n = scenario x chain legs, never attempts).
  */
 function checkSummaryConsistency(
   report: ConsistencyReport,
@@ -747,23 +763,58 @@ function checkSummaryConsistency(
     }
   }
 
-  // 6. reproducibility block, when present.
-  // TODO(U36-c): require the block on the guardrail track (see the pending test
-  // "U36-c: requires the reproducibility block on the guardrail track").
+  // 6. reproducibility block (required on the guardrail track).
   // `utility_by_category` is display-only: attested on Tier 1, not cross-checked.
   const repro = sum.reproducibility;
-  if (repro !== undefined && repro !== null) {
-    const declared = isRecord(repro) ? (repro as Record<string, unknown>).declared : undefined;
-    const nondeterministic = report.config.guardrail_nondeterministic;
+  const nondeterministic = report.config.guardrail_nondeterministic;
+  const isGuardrailTrack = report.config.track === "guardrail";
+  if (isGuardrailTrack && !isRecord(repro)) {
+    throw new RejectedError(
+      "summary mismatch: the guardrail track requires summary.reproducibility (U36-c)",
+    );
+  }
+  if (isRecord(repro)) {
+    const r = repro as Record<string, unknown>;
     const expectedDeclared =
       nondeterministic === true
         ? "nondeterministic"
         : nondeterministic === false
           ? "deterministic"
           : null;
-    if (declared !== expectedDeclared) {
+    if (r.declared !== expectedDeclared) {
       throw new RejectedError(
-        `summary mismatch: reproducibility.declared ${JSON.stringify(declared)} does not agree with config.guardrail_nondeterministic ${JSON.stringify(nondeterministic)}`,
+        `summary mismatch: reproducibility.declared ${JSON.stringify(r.declared)} does not agree with config.guardrail_nondeterministic ${JSON.stringify(nondeterministic)}`,
+      );
+    }
+    if (r.declared === "deterministic" && r.consistent !== true) {
+      throw new RejectedError(
+        "deterministic declaration not reproduced: the guardrail declares itself deterministic but its two passes differ (or were not both run)",
+      );
+    }
+  }
+
+  // 7. Wilson inputs: n is scenario x chain legs, so the interval is a pure function of
+  // (passed, legs) and the repeat count cannot move it (AC-c4b).
+  for (const key of ["attack_pass", "critical_pass"] as const) {
+    const v = sum[key];
+    if (v === undefined || v === null) continue;
+    const w = isRecord(v) ? (v as Record<string, unknown>) : undefined;
+    const ci =
+      w !== undefined && isRecord(w.wilson95) ? (w.wilson95 as Record<string, unknown>) : undefined;
+    if (
+      w === undefined ||
+      !Number.isInteger(w.passed) ||
+      !Number.isInteger(w.legs) ||
+      (w.passed as number) < 0 ||
+      (w.passed as number) > (w.legs as number) ||
+      ci === undefined
+    ) {
+      throw new RejectedError(`malformed report: summary.${key}`);
+    }
+    const expected = wilson95(w.passed as number, w.legs as number);
+    if (ci.lo !== expected.lo || ci.hi !== expected.hi) {
+      throw new RejectedError(
+        `summary mismatch: ${key}.wilson95 does not match wilson95(${String(w.passed)}, ${String(w.legs)})`,
       );
     }
   }
@@ -946,8 +997,13 @@ function emptyReachClassByReach(
 ): Record<ReachClass, { passed: number; runs: number }> {
   const out = {} as Record<ReachClass, { passed: number; runs: number }>;
   for (const reachClass of ReachClassSchema.options) {
+    // Review M2: per scenario x chain leg (worst-of), so the column does not scale with repeat.
+    const leg = report.summary.by_leg?.by_reach_class?.[reachClass];
     const totals = report.by_reach_class[reachClass];
-    out[reachClass] = { passed: totals.passed, runs: totals.runs };
+    out[reachClass] =
+      leg !== undefined
+        ? { passed: leg.passed, runs: leg.legs }
+        : { passed: totals.passed, runs: totals.runs };
   }
   return out;
 }
@@ -969,10 +1025,12 @@ function toGuardrailRow(
     criticalAllPass: report.summary.critical_all_pass,
     attacksPassed: report.summary.scenarios_passed,
     attacksTotal: report.summary.scenarios,
-    controlsPassed: report.summary.controls.passed,
-    controlsTotal: report.summary.controls.runs,
+    attackLegs: attackLegsCell(report.summary.attack_pass),
+    reproduced: reproducedCell(report.summary.reproducibility),
+    controlsPassed: report.summary.by_leg?.controls.passed ?? report.summary.controls.passed,
+    controlsTotal: report.summary.by_leg?.controls.legs ?? report.summary.controls.runs,
     byReachClass: emptyReachClassByReach(report),
-    unauthorizedUsd: report.summary.unauthorized_usd,
+    unauthorizedUsd: report.summary.by_leg?.unauthorized_usd ?? report.summary.unauthorized_usd,
     harnessCommit: report.config.harness_commit,
     // Defensive fallback only: `checkTrack`/`checkRescore` already guarantee a
     // guardrail-track report's `summary.guardrail_errors` is a real, re-scored number
@@ -1031,6 +1089,24 @@ function reachCell(totals: { passed: number; runs: number }): string {
   return totals.runs === 0 ? "—" : `${totals.passed}/${totals.runs}`;
 }
 
+/** U36-c (review M1): `yes (n excluded)` / `NO (n excluded)`; "—" off the guardrail track or
+ * with a single attempt. Information only for a nondeterministic guardrail. */
+function reproducedCell(
+  v: { consistent: boolean | null; excluded_error_legs: number } | null | undefined,
+): string {
+  if (v === null || v === undefined || v.consistent === null) return "—";
+  return `${v.consistent ? "yes" : "NO"} (${v.excluded_error_legs})`;
+}
+
+/** U36-c: `passed/legs [lo-hi%]` for `summary.attack_pass` (n = scenario x chain legs, worst-of
+ * per leg); "—" for a report without it. Display only: the ranking never reads it. */
+function attackLegsCell(
+  v: { passed: number; legs: number; wilson95: { lo: number; hi: number } } | undefined,
+): string {
+  if (v === undefined) return "—";
+  return `${v.passed}/${v.legs} [${(v.wilson95.lo * 100).toFixed(1)}–${(v.wilson95.hi * 100).toFixed(1)}%]`;
+}
+
 function wilsonCell(passed: number, total: number, wilson: { lo: number; hi: number }): string {
   const rate = total === 0 ? 0 : (passed / total) * 100;
   return `${rate.toFixed(1)}% [${(wilson.lo * 100).toFixed(1)}–${(wilson.hi * 100).toFixed(1)}%]`;
@@ -1060,15 +1136,15 @@ function withKindMarker(id: string, kind: EntryKind): string {
  */
 function renderGuardrailTable(rows: GuardrailRow[], emptyMessage: string): string[] {
   const header = [
-    "| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | attack legs (95% CI) | reproduced (excluded legs) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   if (rows.length === 0) {
-    return [...header, `| _${emptyMessage}_ | | | | | | | | | | | | | | | |`];
+    return [...header, `| _${emptyMessage}_ | | | | | | | | | | | | | | | | | |`];
   }
   const body = rows.map((r) => {
     const rc = r.byReachClass;
-    return `| ${r.rank} | ${escapeCell(withKindMarker(r.id, r.kind))} | ${escapeCell(formatHooks(r.hooks))} | ${r.rankScore.toFixed(1)} | ${r.safetyScore.toFixed(1)} | ${(r.utility * 100).toFixed(1)}% | ${criticalLabel(r.criticalAllPass)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | ${r.guardrailErrors} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`;
+    return `| ${r.rank} | ${escapeCell(withKindMarker(r.id, r.kind))} | ${escapeCell(formatHooks(r.hooks))} | ${r.rankScore.toFixed(1)} | ${r.safetyScore.toFixed(1)} | ${(r.utility * 100).toFixed(1)}% | ${criticalLabel(r.criticalAllPass)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.attackLegs} | ${r.reproduced} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | ${r.guardrailErrors} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`;
   });
   return [...header, ...body];
 }
@@ -1374,13 +1450,12 @@ export function buildLeaderboard(
         checkFilenameMatchesId(entry.id, report);
         checkSeasonRecord(report, seasonRecords); // MEDIUM-11
         // M3/D4: a Tier 1 summary is attested, not re-scored - cross-check its aggregates.
+        // biome-ignore lint/style/noNonNullAssertion: checkSeasonRecord found the record.
+        const seasonFloor = seasonRecords[report.config.season!]?.control_floor;
         checkSummaryConsistency(report, {
           tier1: true,
-          // biome-ignore lint/style/noNonNullAssertion: checkSeasonRecord found the record.
-          controlFloor: seasonRecords[report.config.season!]?.control_floor.controls,
-          // biome-ignore lint/style/noNonNullAssertion: checkSeasonRecord found the record.
-          batteryPerCategory:
-            seasonRecords[report.config.season!]?.control_floor.battery_per_category,
+          controlFloor: seasonFloor?.controls,
+          batteryPerCategory: seasonFloor?.battery_per_category,
         });
         checkVerifiedTier(entry.id, 1, verified);
         checkSubjectHash(entry.sha256, verified[entry.id]?.subject_sha256 ?? ""); // HIGH-5
@@ -1597,6 +1672,8 @@ export interface McpRow {
   safetyScore: number;
   attacksPassed: number;
   attacksTotal: number;
+  /** U36-c: attack scenario x chain legs passed (worst-of) with its Wilson 95% interval; information only. */
+  attackLegs: string;
   controlsPassed: number;
   controlsTotal: number;
   byReachClass: Record<ReachClass, { passed: number; runs: number }>;
@@ -1674,16 +1751,16 @@ function renderMcpSection(
       "passed and `mcp-naive` that every attack can be failed " +
       "(ADR-008 amendment); neither is evidence that any real agent is safe.",
     "",
-    "| # | agent | safety | attacks passed | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | harness |",
-    "|---|---|---|---|---|---|---|---|---|---|---|",
+    "| # | agent | safety | attacks passed | attack legs (95% CI) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | harness |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   if (rows.length === 0) {
-    lines.push("| _no MCP reference result yet_ | | | | | | | | | | |");
+    lines.push("| _no MCP reference result yet_ | | | | | | | | | | | |");
   } else {
     rows.forEach((r, i) => {
       const rc = r.byReachClass;
       lines.push(
-        `| ${i + 1} | ${escapeCell(`${r.id} (reference)`)} | ${r.safetyScore.toFixed(1)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`,
+        `| ${i + 1} | ${escapeCell(`${r.id} (reference)`)} | ${r.safetyScore.toFixed(1)} | ${r.attacksPassed}/${r.attacksTotal} | ${r.attackLegs} | ${r.controlsPassed}/${r.controlsTotal} | ${reachCell(rc.crawl)} | ${reachCell(rc.repeat)} | ${reachCell(rc.prose)} | ${reachCell(rc.challenge)} | ${formatUsd(r.unauthorizedUsd)} | \`${escapeCell(shortHash(r.harnessCommit))}\` |`,
       );
     });
   }
@@ -1790,10 +1867,11 @@ export function buildMcpSection(
       safetyScore: report.summary.safety_score!,
       attacksPassed: report.summary.scenarios_passed,
       attacksTotal: report.summary.scenarios,
-      controlsPassed: report.summary.controls.passed,
-      controlsTotal: report.summary.controls.runs,
+      attackLegs: attackLegsCell(report.summary.attack_pass),
+      controlsPassed: report.summary.by_leg?.controls.passed ?? report.summary.controls.passed,
+      controlsTotal: report.summary.by_leg?.controls.legs ?? report.summary.controls.runs,
       byReachClass: emptyReachClassByReach(report),
-      unauthorizedUsd: report.summary.unauthorized_usd,
+      unauthorizedUsd: report.summary.by_leg?.unauthorized_usd ?? report.summary.unauthorized_usd,
       harnessCommit: report.config.harness_commit,
     }))
     .sort((a, b) => compareCodeUnits(a.id, b.id));

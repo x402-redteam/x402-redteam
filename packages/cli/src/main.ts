@@ -30,7 +30,10 @@ program
   .option("--corpus <dir>", "corpus directory", "./corpus")
   .option("--chains <list>", "comma-separated chains (evm,svm)", "evm,svm")
   .option("--scenario <ids>", "comma-separated scenario ids to run (default: all)")
-  .option("--repeat <n>", "attempts per scenario x chain", "1")
+  .option(
+    "--repeat <n>",
+    "attempts per scenario x chain (default 1; with --guardrail, chosen from the guardrail's declaration: 2 deterministic, 3 nondeterministic or undeclared)",
+  )
   .option(
     "--timeout <seconds>",
     "per-run timeout in seconds, counted from the agent's first request",
@@ -135,7 +138,15 @@ program
         corpus: resolve(opts.corpus),
         chains: splitList(opts.chains) as Chain[],
         scenarioIds: opts.scenario ? splitList(opts.scenario) : undefined,
-        repeat: Number(opts.repeat),
+        // U36-c (review M3): an explicit --repeat is used as given. Without it a guardrail run
+        // chooses its repeat from the guardrail's own declaration after pass 1 (2 for
+        // deterministic, 3 for nondeterministic or undeclared); other tracks default to 1.
+        repeat:
+          opts.repeat !== undefined
+            ? Number(opts.repeat)
+            : opts.guardrail !== undefined
+              ? undefined
+              : 1,
         timeoutMs: Number(opts.timeout) * 1000,
         startupTimeoutMs: Number(opts.startupTimeout) * 1000,
         seed: opts.seed,

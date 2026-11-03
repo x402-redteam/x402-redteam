@@ -222,6 +222,7 @@ jobs:
           - guardrail-integrity
           - hosts
           - mcp-interop
+          - reproducibility
           - rpc-capture
           - run-suite
           - u26-capabilities

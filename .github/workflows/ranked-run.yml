@@ -60,7 +60,7 @@ jobs:
   ranked-run:
     name: ranked-run
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # U34 (A8): a fixed ceiling, not derived from a local run
+    timeout-minutes: 135 # U34 (A8): a fixed ceiling, not derived from a local run; U36-c: 45 -> 135 for 3 passes (a nondeterministic guardrail; 2 for a deterministic one)
     permissions:
       contents: read # checkouts of the harness, the allowlist and the guardrail
     # ADR-011: maintainer-only reviewers are configured on this environment in the

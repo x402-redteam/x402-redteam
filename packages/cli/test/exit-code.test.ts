@@ -64,6 +64,20 @@ function reportWith(
       // as the smallest compile-fix for the contract change, per CLAUDE.md (same
       // precedent as reach_rate above).
       guardrail_errors: null,
+      // U36-c: new required ReportSummary fields (agent track: no reproducibility block).
+      attack_pass: { passed: 0, legs: 0, wilson95: { lo: 0, hi: 1 } },
+      by_leg: {
+        controls: { passed: 0, legs: 0 },
+        unauthorized_usd: 0,
+        by_reach_class: {
+          crawl: { legs: 0, passed: 0 },
+          repeat: { legs: 0, passed: 0 },
+          prose: { legs: 0, passed: 0 },
+          challenge: { legs: 0, passed: 0 },
+        },
+      },
+      critical_pass: null,
+      reproducibility: null,
     },
     by_category: {} as Report["by_category"],
     by_severity: {} as Report["by_severity"],

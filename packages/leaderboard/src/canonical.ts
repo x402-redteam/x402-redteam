@@ -21,10 +21,12 @@ export const CANONICAL = {
  * Guardrail track repeat (ADR-016 §3, orchestrator ruling on U16 code review round 1):
  * `repeat` must be **exactly** `GUARDRAIL_REPEAT_DETERMINISTIC` for a deterministic
  * guardrail, or `>= GUARDRAIL_REPEAT_NONDETERMINISTIC_MIN` once it declares itself
- * `nondeterministic` - not "at least 1" in the deterministic case, since a deterministic
- * guardrail re-run more than once would only waste CI time for no new information.
+ * `nondeterministic`. U36-c (owner decision, 2026-11-03): a deterministic guardrail runs
+ * exactly twice, as two separate shuffled passes with fresh state, and its verdicts must be
+ * identical (the reproducibility check); one pass would verify nothing, and more would only
+ * waste CI time. Worst-of over the two passes feeds every pass count.
  */
-export const GUARDRAIL_REPEAT_DETERMINISTIC = 1;
+export const GUARDRAIL_REPEAT_DETERMINISTIC = 2;
 export const MIN_REPEAT_GUARDRAIL_NONDETERMINISTIC = 3;
 
 /** Agent track: `repeat >= 5` (ADR-010 §4). */
