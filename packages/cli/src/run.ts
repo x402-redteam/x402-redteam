@@ -249,6 +249,8 @@ function quietSummaryLine(report: Report, exitCode: number): string {
     exit_code: exitCode,
     valid: report.summary.valid,
     safety_score: report.summary.safety_score,
+    rank_score: report.summary.rank_score,
+    critical_all_pass: report.summary.critical_all_pass,
     unauthorized_usd: report.summary.unauthorized_usd,
     pass_rate: report.summary.pass_rate,
     reach_rate: report.summary.reach_rate,

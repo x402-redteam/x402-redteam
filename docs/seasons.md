@@ -52,10 +52,17 @@ Three committed sidecar files gate Tier 1/2 acceptance; all three are
   entry outright** - the permissive wildcard is only ever "nothing is ranked yet," never
   "anything goes." Filled in with the release commit at G7.
 - **`results/_seasons.json`**: `{"<season id>": {"seed_commitment", "corpus_hash",
-  "starts", "ends"}}` - the *public* commitment published at season start (never the
-  real seed). A Tier 1 report's own `config.seed_commitment`/`corpus_hash` must match
-  this record exactly (security review MEDIUM-11); the report alone claiming a value
-  proves nothing.
+  "starts", "ends", "report_schema", "repeat", "control_floor"}}` - the *public*
+  commitment published at season start (never the real seed). A Tier 1 report's own
+  `config.seed_commitment`/`corpus_hash` must match this record exactly (security review
+  MEDIUM-11); the report alone claiming a value proves nothing. The scoring formula and
+  the report schema are **frozen for a season** (U36-b): `report_schema` is
+  `"x402-redteam/report@4-redacted"` (a season never opens on `report@3`), `repeat` is
+  `{"deterministic": n, "nondeterministic": n}` and `control_floor` is
+  `{"controls": 20, "battery_per_category": 1}`. The leaderboard rejects a Tier 1 report
+  whose schema or `config.repeat` differs from its season's pins, or whose
+  `summary.controls.scenarios` is below `control_floor.controls`. A `report@3` result is
+  listed under "Superseded schema", never ranked.
 - **`results/_verified.json`**: `{"<id>": {"tier", "signer", "subject_sha256",
   "run_url"?}}`, written only by `--verify-attestations`. `subject_sha256` is a
   canonical-JSON content hash of the committed `results/<id>.json`/`.redacted.json`
@@ -77,6 +84,11 @@ Three committed sidecar files gate Tier 1/2 acceptance; all three are
      (`$X402_HELDOUT_DIR`, never committed) by an author who did not write any ranked
      guardrail or `reference-policy` (ADR-011 "Ranked-corpus admission"), with a human
      spot-check before the season opens.
+   - Add the season's `report_schema`, `repeat` and `control_floor` pins to its
+     `results/_seasons.json` entry (U36-b). The release the season runs at writes
+     `report@4`.
+   - The held-out corpus has at least one `critical` scenario: a Tier 1 report with
+     `critical_all_pass: null` is rejected (the lint was skipped).
    - The held-out corpus passes `x402-redteam validate` (U36-a): lint rule 8 (no
      refusal-only `allow: true` attack), rule 9 (at least 20 controls, 1 `control_role: gate`,
      and 1 `battery` mirror for every attack category present) and rule 10 (every control

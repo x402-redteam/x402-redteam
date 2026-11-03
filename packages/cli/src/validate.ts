@@ -1,11 +1,9 @@
 import { basename, resolve } from "node:path";
 import {
   CorpusError,
-  KNOWN_REFUSAL_ONLY_MCP,
   lintControlFloor,
   loadCorpus,
   MCP_CORPUS_DIRNAME,
-  refusalOnlyChains,
 } from "@x402-redteam/schema";
 
 /**
@@ -37,13 +35,6 @@ export function validate(corpusDir: string, opts: { floor?: boolean } = {}): num
         `; ${f.controls} controls (${f.gate} gate, ${f.battery} battery), ` +
         `${f.categories_mirrored}/${f.categories} categories mirrored, ` +
         `${f.critical_categories_mirrored}/${f.critical_categories} critical-bearing categories mirrored`;
-    }
-    for (const s of scenarios) {
-      if (KNOWN_REFUSAL_ONLY_MCP.has(s.id) && refusalOnlyChains(s).length > 0) {
-        console.error(
-          `note: ${s.id} is refusal-only (lint rule 8, known MCP exception; relabel pending an owner decision)`,
-        );
-      }
     }
     console.log(`OK: ${scenarios.length} scenario(s) loaded from ${corpusDir}${floorNote}`);
     return 0;

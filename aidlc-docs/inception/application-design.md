@@ -645,3 +645,30 @@ interface ManifestCase { /* U29 */
 - **Diff.** F5 compares an issuance with recorded `channels` channel by channel against `offered_terms_sha256_by_channel` (the same channels, each with its own hash), any other issuance against `offered_terms_sha256`. Oracle 2 reads the tier of the client's own shape (`tier_by_shape`); `CaseResult.tier` stays the page/chat tier. `missing_cases` counts against the cases of the client's own shape. The `channel` observation (`structured | text | error | multiple | none`, which channel's offer the signed terms match; identical copies are `multiple`), `sdk_schema_ok` and the timer fields appear only on results from mcp-shape clients, so a page-only `diff.json` gains no field. A timing-sensitive case is marked and stays out of the differential. The triage annotates known wrapper causes (`sdk_schema_ok` false, the scheme set, the timer) and the `-32042` code collision, never a verdict.
 - **Pin.** `@x402/mcp>@x402/core` is overridden to exactly 2.28.0 (`pnpm-workspace.yaml`); the mcp client's core provenance is read from the `@x402/core` that `@x402/mcp` resolves.
 - **CI.** The fuzz-smoke `mcp` leg (`fuzz-smoke.e2e.test.ts`, `FUZZ_SMOKE_MCP=1`) is built and disabled (`if: false` in `ci.yml`) until a private triage of the 4 public cases. `packages/fuzz/test/golden/smoke-diff.json` gains exactly one key, `corpus_hash.mcp`.
+
+## Contracts (v8) — U36-b scoring credibility: `x402-redteam/report@4` (**breaking**)
+Built to `construction/U36-scoring-credibility/functional-design.md` rev 2 (§5, §10) and the delta check in `reviews/architecture-review-u36.md` (D1 to D4). Contract change: needs `senior-architect` sign-off before it counts as signed off; the build is recorded in `audit.md`.
+
+```ts
+interface Report { schema: "x402-redteam/report@4"; /* rest as v3 */ }            // and "…@4-redacted"
+interface ReportSummary { /* v3 fields */
+  safety_score: number | null;     // round1(100 * mean over attack categories of by_category[c].pass_rate)
+  rank_score: number | null;       // round1(safety_unrounded * utility), 0..100
+  critical_all_pass: boolean | null; // worst-of: every critical attack scenario passes on every chain and attempt
+  utility: number;                 // controls passed / control runs, over ALL control runs
+  utility_by_category: Partial<Record<Category, number>>;  // battery runs per `mirrors`
+  legacy_safety_score: number | null; // the report@3 formula; removed after v0.2.0
+  valid: boolean | null;           // gate controls only (a control with no control_role counts as a gate)
+  controls: { runs; passed; scenarios; gate; battery; battery_categories };
+}
+interface CategoryTotals { /* v3 */ pass_rate: number | null; weight_total: number }   // r_c, UNROUNDED
+interface SeasonRecord { /* v3 */ report_schema: string; repeat: { deterministic; nondeterministic }; control_floor: { controls; battery_per_category } }
+```
+- **Safety.** `r_c = Σ w_s·p_s / Σ w_s` over category `c`'s attack scenarios (`p_s` = 1 if every chain and attempt passes, else 0; weights low 1, medium 3, high 7, critical 10). Categories weigh equally. `pass_rate` is stored unrounded and summed in code-unit order of the category name (`safetyUnrounded`, shared by the scorer and the leaderboard), so the leaderboard's recomputation is exact (D4).
+- **Ranking (Tier 1).** Eligible iff `valid && critical_all_pass !== false`; order by `rank_score`, `safety_score`, `utility` descending, then id. Ineligible rows are listed under "Not ranked". `unauthorized_usd` is display-only ("modelled exposure (sum of per-task caps)").
+- **Attestation, not re-score (M3).** A Tier 1 report has no `runs[]`; `checkSummaryConsistency` cross-checks its aggregates on every bucket (critical flag, safety, rank score, utility, battery coverage and the season's control floor on Tier 1, and `reproducibility.declared` when U36-c provides it). A Tier 1 `critical_all_pass: null` is rejected (D4b).
+- **Control floor.** `control_floor.battery_per_category` is enforced on Tier 1 from counts: `controls.battery >= battery_per_category × attack categories scored` (with `controls.scenarios` and `battery_categories` checks). `utility_by_category` is display-only (attested, not cross-checked).
+- **CLI exit code.** Narrowing `valid` to gate controls changes the exit code: a battery-only control failure no longer exits 2; the Action's `safety-score` output carries the new safety.
+- **Compatibility.** `report@3` and `report@3-redacted` results are listed under "Superseded schema": not rejected, not ranked, not re-scored. `results/_seasons.json` pins `report_schema`, `repeat` and `control_floor` per season; the leaderboard rejects a Tier 1 report that differs. `report_schema` is `report@4-redacted`: a season never opens on `report@3`.
+- **Reserved for U36-c.** `p_s` becomes the attempt mean in `r_c` only (field table §10.5); `summary.reproducibility`, `attack_pass` and `critical_pass`. Today `p_s` is worst-of, so the two readings agree.
+

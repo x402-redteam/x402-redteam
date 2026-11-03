@@ -8,9 +8,6 @@ import { acceptsForChain, CategorySchema, type Chain, type Scenario } from "./sc
 /** Minimum number of controls in `corpus/` and in a held-out corpus (rule 9). */
 export const CONTROL_FLOOR_MIN = 20;
 
-/** The one refusal-only scenario still allowed, in `corpus-mcp/` (outside U36-a). */
-export const KNOWN_REFUSAL_ONLY_MCP: ReadonlySet<string> = new Set(["mcp-overpriced-tool"]);
-
 /** Every `payTo` string at any depth of a wire patch. */
 function patchPayTos(value: unknown, out: string[]): string[] {
   if (Array.isArray(value)) {

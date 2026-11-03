@@ -29,7 +29,7 @@ function committedReports(): { file: string; report: CommittedReport }[] {
         file: `${dir}/${f}`,
         report: JSON.parse(readFileSync(join(ROOT, dir, f), "utf8")) as CommittedReport,
       }))
-      .filter((e) => e.report.schema === "x402-redteam/report@3"),
+      .filter((e) => e.report.schema === "x402-redteam/report@4"),
   );
 }
 

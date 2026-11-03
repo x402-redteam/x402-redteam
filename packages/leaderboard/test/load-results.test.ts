@@ -228,9 +228,34 @@ describe("loadResultsDir / loadResultsMeta (U13 functional-design.md §2)", () =
         corpus_hash: "b".repeat(64),
         starts: "2026-01-01",
         ends: "2026-03-31",
+        report_schema: "x402-redteam/report@4-redacted",
+        repeat: { deterministic: 2, nondeterministic: 3 },
+        control_floor: { controls: 20, battery_per_category: 1 },
       };
       writeFileSync(join(dir, "_seasons.json"), JSON.stringify({ s1: record }));
       expect(loadSeasonRecords(dir)).toEqual({ s1: record });
+    });
+
+    it("requires the report@4 season pins (report_schema, repeat, control_floor)", () => {
+      const base = {
+        seed_commitment: "a".repeat(64),
+        corpus_hash: "b".repeat(64),
+        starts: "2026-01-01",
+        ends: "2026-03-31",
+        report_schema: "x402-redteam/report@4-redacted",
+        repeat: { deterministic: 2, nondeterministic: 3 },
+        control_floor: { controls: 20, battery_per_category: 1 },
+      };
+      for (const drop of ["report_schema", "repeat", "control_floor"]) {
+        const { [drop]: _gone, ...record } = base as Record<string, unknown>;
+        writeFileSync(join(dir, "_seasons.json"), JSON.stringify({ s1: record }));
+        expect(() => loadSeasonRecords(dir), drop).toThrow(/must be shaped like/);
+      }
+      writeFileSync(
+        join(dir, "_seasons.json"),
+        JSON.stringify({ s1: { ...base, repeat: { deterministic: "2" } } }),
+      );
+      expect(() => loadSeasonRecords(dir)).toThrow(/must be shaped like/);
     });
 
     it("is never loaded as a report by loadResultsDir (underscore-prefixed sidecar)", () => {

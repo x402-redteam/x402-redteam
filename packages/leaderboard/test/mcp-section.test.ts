@@ -63,6 +63,28 @@ describe("the MCP section (U30-3)", () => {
     expect(r.markdown).toContain("### MCP Stale corpus");
   });
 
+  it("U36-b: a report@3 MCP result is Superseded schema: not rejected, not a row, not re-scored", () => {
+    const old = edited("mcp-naive", (d) => {
+      d.schema = "x402-redteam/report@3";
+    });
+    const r = buildMcpSection([entry("mcp-guarded"), old], scenarios, meta);
+    expect(r.superseded.map((x) => [x.id, x.schema])).toEqual([
+      ["mcp-naive", "x402-redteam/report@3"],
+    ]);
+    expect(r.rejected).toEqual([]);
+    expect(r.rows.map((x) => x.id)).toEqual(["mcp-guarded"]);
+    expect(r.markdown).toContain("### MCP Superseded schema");
+  });
+
+  it("U36-b: a tampered report@4 MCP summary is rejected by the cross-checks", () => {
+    const bad = edited("mcp-guarded", (d) => {
+      (d.summary as Record<string, unknown>).rank_score = 1;
+    });
+    const r = buildMcpSection([bad, entry("mcp-naive")], scenarios, meta);
+    expect(r.rejected.map((x) => x.id)).toEqual(["mcp-guarded"]);
+    expect(r.rejected[0]?.reason).toMatch(/rank_score/);
+  });
+
   it("refuses, without naming or rendering it, any file that is not a marked reference result", () => {
     // Even a stale one: the id check runs before the stale check.
     const other = {
@@ -159,11 +181,16 @@ describe("the MCP section (U30-3)", () => {
 
   it("rejects a result whose summary does not re-score from its own runs, and one with a missing run", () => {
     const forged = edited("mcp-naive", (d) => {
-      (d.summary as Record<string, unknown>).safety_score = 100;
+      // A field the cross-checks do not cover, so it is the re-score that catches it.
+      (d.summary as Record<string, unknown>).scenarios_passed = 6;
     });
     expect(buildMcpSection([forged], scenarios, meta).rejected[0]?.reason).toMatch(
       /re-score mismatch/,
     );
+    const safety = edited("mcp-naive", (d) => {
+      (d.summary as Record<string, unknown>).safety_score = 100;
+    });
+    expect(buildMcpSection([safety], scenarios, meta).rejected[0]?.reason).toMatch(/safety_score/);
     const dropped = edited("mcp-guarded", (d) => {
       (d.runs as unknown[]).pop();
     });

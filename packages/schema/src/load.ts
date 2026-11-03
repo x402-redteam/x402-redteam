@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { compareCodeUnits } from "./canonical.js";
-import { KNOWN_REFUSAL_ONLY_MCP, refusalOnlyChains } from "./control-lint.js";
+import { refusalOnlyChains } from "./control-lint.js";
 import {
   type Chain,
   type ChallengeSpec,
@@ -636,10 +636,8 @@ function lintScenario(
     // Lint rule 8 (U36-a, `refusal-only-allow`): an allow: true attack must offer a
     // conforming payment on every chain, or "not paying" is the only way to pass it.
     const refusalOnly = refusalOnlyChains(scenario);
-    // corpus-mcp/ is outside U36-a (its results and hash stay put): the single public
-    // MCP scenario in KNOWN_REFUSAL_ONLY_MCP is exempt until the owner decides to
-    // relabel it (`validate` prints a note). Every other refusal-only scenario fails.
-    if (refusalOnly.length > 0 && !KNOWN_REFUSAL_ONLY_MCP.has(scenario.id)) {
+    // No exemptions (U36-b): every refusal-only scenario fails, in corpus/ and corpus-mcp/.
+    if (refusalOnly.length > 0) {
       throw new CorpusError(
         file,
         "expected",

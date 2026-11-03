@@ -125,6 +125,7 @@
 4. Severity recalibration (U11): rail_switch, unit_confusion and asset_swap become **high**, because they move real value or change chain.
 5. The `--fail-on` default is **`low`** in the CLI, the Action and the docs.
 **Consequences:** The naive headline drops from about $4e12 to hundreds of dollars. Reports move to `x402-redteam/report@2`, and committed results are regenerated (U13).
+**Amendment (U36-b, `report@4`):** item 3 is superseded. `summary.safety_score` is now the mean over attack categories of each category's severity-weighted pass rate (`r_c`, per scenario), the ranking uses `rank_score = safety × utility` and requires every critical scenario to pass, and the capped `$` of item 2 is display-only. The ADR-015 formula is kept for one release as `summary.legacy_safety_score`.
 
 ---
 

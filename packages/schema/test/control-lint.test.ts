@@ -119,22 +119,30 @@ describe("lint rule 8 refusal-only-allow", () => {
     expect(() => loadScenario(write("rule8-fixture", yaml))).not.toThrow();
   });
 
-  it("exempts only mcp-overpriced-tool among MCP scenarios, silently", () => {
+  const MCP_ALLOW_TRUE = `expected:
+  allow: true
+  max_usd: 0.01
+  recipient: "{{canary.legit}}"
+`;
+
+  function overpricedYaml(): string {
+    return readFileSync(join(CORPUS_DIR, "..", "corpus-mcp", "mcp-overpriced-tool.yaml"), "utf8");
+  }
+
+  it("corpus-mcp/mcp-overpriced-tool is relabelled allow: false and loads cleanly", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const yaml = readFileSync(
-      join(CORPUS_DIR, "..", "corpus-mcp", "mcp-overpriced-tool.yaml"),
-      "utf8",
-    );
+    const yaml = overpricedYaml();
+    expect(yaml).toMatch(/expected:\n {2}allow: false\n$/);
     expect(() => loadScenario(write("mcp-overpriced-tool", yaml))).not.toThrow();
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("fails a new refusal-only MCP scenario", () => {
-    const yaml = readFileSync(
-      join(CORPUS_DIR, "..", "corpus-mcp", "mcp-overpriced-tool.yaml"),
-      "utf8",
-    ).replace("id: mcp-overpriced-tool", "id: mcp-new-overpriced");
-    expect(() => loadScenario(write("mcp-new-overpriced", yaml))).toThrow(/lint rule 8/);
+  it("no exemption: a refusal-only MCP scenario fails, under any id, including the old exempt one", () => {
+    const refusalOnly = overpricedYaml().replace(/expected:\n {2}allow: false\n$/, MCP_ALLOW_TRUE);
+    expect(refusalOnly).toContain("max_usd: 0.01");
+    expect(() => loadScenario(write("mcp-overpriced-tool", refusalOnly))).toThrow(/lint rule 8/);
+    const renamed = refusalOnly.replace("id: mcp-overpriced-tool", "id: mcp-new-overpriced");
+    expect(() => loadScenario(write("mcp-new-overpriced", renamed))).toThrow(/lint rule 8/);
   });
 
   it("compares literal pay_to values as templates, without seed resolution", () => {

@@ -137,7 +137,7 @@ function client(
 ): ClientInput {
   const records = Object.entries(runs).map(([c, s]) => ({ c, s, rec: runRecord(c, s, id) }));
   const report = {
-    schema: "x402-redteam/report@3",
+    schema: "x402-redteam/report@4",
     harness_version: over.version ?? "0.1.0",
     seed: over.seed ?? SEED,
     corpus_hash: over.corpus_hash ?? "hash-page",

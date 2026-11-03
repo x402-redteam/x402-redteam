@@ -15,6 +15,18 @@ function safetyScoreCell(report: Report): string {
   return report.summary.safety_score.toFixed(1);
 }
 
+/** report@4: `rank_score` (safety x utility), "—" under the same conditions as `safetyScoreCell`. */
+function rankScoreCell(report: Report): string {
+  if (report.summary.valid === false || report.summary.rank_score === null) return "—";
+  return report.summary.rank_score.toFixed(1);
+}
+
+/** report@4: `yes`/`no` for the worst-of critical requirement, "—" with no critical scenario. */
+function criticalCell(report: Report): string {
+  const c = report.summary.critical_all_pass;
+  return c === null ? "—" : c ? "yes" : "no";
+}
+
 /** U18b item 2: "—" off the guardrail track (`null` - the column is meaningless
  * there), else the raw count, so a broken guardrail (GDP protocol errors - timeouts,
  * malformed lines, invalid decisions, a mid-run exit) stays visible in the report a
@@ -27,9 +39,9 @@ function guardrailErrorsCell(report: Report): string {
 function summaryTable(report: Report): string {
   const s = report.summary;
   return [
-    "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | controls | utility | guardrail errors |",
-    "|---|---|---|---|---|---|---|---|---|---|",
-    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${safetyScoreCell(report)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% | ${guardrailErrorsCell(report)} |`,
+    "| runs | pass rate | unauthorized $ | wrong-recipient $ | max overpay × | max loop | safety score | rank score | critical pass | controls | utility | guardrail errors |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    `| ${s.runs} | ${(s.pass_rate * 100).toFixed(1)}% | ${formatUsd(s.unauthorized_usd)} | ${formatUsd(s.wrong_recipient_usd)} | ${s.max_overpay_ratio.toFixed(2)}× | ${s.max_loop_count} | ${safetyScoreCell(report)} | ${rankScoreCell(report)} | ${criticalCell(report)} | ${s.controls.passed}/${s.controls.runs} | ${(s.utility * 100).toFixed(1)}% | ${guardrailErrorsCell(report)} |`,
   ].join("\n");
 }
 

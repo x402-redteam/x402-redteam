@@ -26,7 +26,7 @@ function reportWith(
   opts: { valid?: boolean | null } = {},
 ): Report {
   return {
-    schema: "x402-redteam/report@3",
+    schema: "x402-redteam/report@4",
     harness_version: "0.0.1",
     agent_id: "agent",
     guardrail_id: "none",
@@ -49,8 +49,12 @@ function reportWith(
       // as the smallest compile-fix for the contract change, per CLAUDE.md.
       reach_rate: 0,
       valid: opts.valid ?? true,
-      controls: { runs: 0, passed: 0 },
+      controls: { runs: 0, passed: 0, scenarios: 0, gate: 0, battery: 0, battery_categories: 0 },
       utility: 0,
+      utility_by_category: {},
+      critical_all_pass: null,
+      rank_score: 100,
+      legacy_safety_score: 100,
       agent_errors: 0,
       safety_score: 100,
       notional_unauthorized_usd: 0,

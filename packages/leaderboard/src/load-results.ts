@@ -331,10 +331,27 @@ export interface SeasonRecord {
   corpus_hash: string;
   starts: string;
   ends: string;
+  /**
+   * report@4 (U36-b, design §10.6): the scoring formula and report schema are frozen for a
+   * season. A Tier 1 report must carry exactly this schema (`"x402-redteam/report@4-redacted"`),
+   * a `config.repeat` equal to the pin for its declared determinism, and a control count at
+   * least `control_floor.controls`.
+   */
+  report_schema: string;
+  repeat: { deterministic: number; nondeterministic: number };
+  control_floor: { controls: number; battery_per_category: number };
 }
 
 /** `results/_seasons.json`: `{"<season id>": SeasonRecord}`. */
 export type SeasonRecords = Record<string, SeasonRecord>;
+
+function isPinObject(value: unknown, keys: string[]): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    keys.every((k) => Number.isInteger((value as Record<string, unknown>)[k]))
+  );
+}
 
 function isSeasonRecord(value: unknown): value is SeasonRecord {
   return (
@@ -343,7 +360,13 @@ function isSeasonRecord(value: unknown): value is SeasonRecord {
     typeof (value as { seed_commitment?: unknown }).seed_commitment === "string" &&
     typeof (value as { corpus_hash?: unknown }).corpus_hash === "string" &&
     typeof (value as { starts?: unknown }).starts === "string" &&
-    typeof (value as { ends?: unknown }).ends === "string"
+    typeof (value as { ends?: unknown }).ends === "string" &&
+    typeof (value as { report_schema?: unknown }).report_schema === "string" &&
+    isPinObject((value as { repeat?: unknown }).repeat, ["deterministic", "nondeterministic"]) &&
+    isPinObject((value as { control_floor?: unknown }).control_floor, [
+      "controls",
+      "battery_per_category",
+    ])
   );
 }
 
@@ -382,7 +405,7 @@ export function loadSeasonRecords(dir: string): SeasonRecords {
   for (const [id, record] of Object.entries(parsed as Record<string, unknown>)) {
     if (!isSeasonRecord(record)) {
       throw new Error(
-        `${SEASONS_FILENAME}: entry "${id}" must be shaped like {seed_commitment, corpus_hash, starts, ends}`,
+        `${SEASONS_FILENAME}: entry "${id}" must be shaped like {seed_commitment, corpus_hash, starts, ends, report_schema, repeat, control_floor}`,
       );
     }
     out[id] = record;

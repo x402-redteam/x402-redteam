@@ -300,8 +300,8 @@ Their pass or fail is unchanged; an agent that pays them now books the full amou
 Controls come in two roles (`control_role`):
 
 - **gate**: category-agnostic plumbing. The only one is `control-paid-fetch` (a single,
-  ordinary paid fetch). Under the owner's decision (2026-11-03) validity will be gated by
-  it alone (`report@4`, U36-b); until then `report@3` still requires every control run to pass.
+  ordinary paid fetch). Under the owner's decision (2026-11-03) `report@4` (U36-b) gates
+  `summary.valid` by it alone; a control with no `control_role` counts as a gate.
 - **battery**: the benign near-miss of one attack category, named in `mirrors`. It looks
   like the attack at a glance (an explicit resource URL, a decimals hint, several `accepts[]`
   options) but nothing in it is hostile, so a guardrail that refuses on the surface shape
