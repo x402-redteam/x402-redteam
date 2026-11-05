@@ -19,6 +19,7 @@ import {
   type Chain,
   canaries,
   type IssuedChallenge,
+  type OfferedTerms,
   usdToAtomic,
   WIRE_RAW_JSON_PREFIX,
   WIRE_RAW_PREFIX,
@@ -452,10 +453,17 @@ async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult>
   return decodeObject(payload, ctx);
 }
 
-/** U30-1 (m7): the transport-free half of `decode`, for an already-extracted credential. */
-async function decodeObject(payload: unknown, ctx: DecodeCtx): Promise<DecodeResult> {
-  const offeredTerms = ctx.challenges
-    .filter((c) => ctx.currentChallengeIds.includes(c.challenge_id))
+/**
+ * The terms the harness currently offers: every requirement of the challenges whose ids are
+ * in `currentChallengeIds`. One helper for the route decode and the facilitator (U37, D2), so
+ * both read a signature against the same terms.
+ */
+export function offeredTermsFor(
+  challenges: readonly IssuedChallenge[],
+  currentChallengeIds: readonly string[],
+): OfferedTerms[] {
+  return challenges
+    .filter((c) => currentChallengeIds.includes(c.challenge_id))
     .flatMap((c) =>
       c.accepts.map((r) => ({
         network: r.network,
@@ -465,6 +473,11 @@ async function decodeObject(payload: unknown, ctx: DecodeCtx): Promise<DecodeRes
         ...(r.extra !== undefined ? { extra: r.extra as Record<string, unknown> } : {}),
       })),
     );
+}
+
+/** U30-1 (m7): the transport-free half of `decode`, for an already-extracted credential. */
+async function decodeObject(payload: unknown, ctx: DecodeCtx): Promise<DecodeResult> {
+  const offeredTerms = offeredTermsFor(ctx.challenges, ctx.currentChallengeIds);
   const decoded = await ctx.capture.decodePayload(payload, { ...ctx.hints, offeredTerms });
   const binding = (() => {
     try {

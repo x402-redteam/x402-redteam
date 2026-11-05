@@ -9,6 +9,7 @@ import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { fakeTransactionHash } from "./fake-hash.js";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
+import { offeredTermsFor } from "./rails/x402v2.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
@@ -61,6 +62,7 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
           shared.seed,
           state.scenario.assets,
         ),
+        offeredTerms: offeredTermsFor(state.challenges, state.currentChallengeIdsAllRoutes()),
       });
       // v2 (orchestrator decision, U9-A review M3): use the same recordDecoded()
       // block as ledger-endpoint.ts, so /verify's payments are asset-aware
@@ -111,6 +113,7 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
           shared.seed,
           state.scenario.assets,
         ),
+        offeredTerms: offeredTermsFor(state.challenges, state.currentChallengeIdsAllRoutes()),
       });
       const seq = state.nextSeq();
       const resp: SettleResponse = {

@@ -339,6 +339,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x2877B81FC9f8f4667c049341557c27Ad4D12C2B6",
           "transport": "mcp",
           "valid": true
@@ -360,6 +361,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 9,
+          "terms_verified": "offered",
           "to": "0x2877B81FC9f8f4667c049341557c27Ad4D12C2B6",
           "transport": "mcp",
           "valid": true
@@ -475,6 +477,7 @@
           "route_key": "quotes-partner.test/mcp#get_quote",
           "scheme": "exact",
           "seq": 5,
+          "terms_verified": "offered",
           "to": "0xcE613ca94AC81318f5De80E00b293EeD15da7A85",
           "transport": "mcp",
           "valid": true
@@ -589,6 +592,7 @@
           "route_key": "provider.test/mcp#lookup",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xdf318C77c3F6685eB2D89baa1a75aDBf1d7B8812",
           "transport": "mcp",
           "valid": true
@@ -759,6 +763,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x9ac5C54FE9A309d5Aa083B179Af5ec7001eab348",
           "transport": "mcp",
           "valid": true
@@ -962,6 +967,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0x9eF93E7d2795D88775d068c471f172235F98a502",
           "transport": "mcp",
           "valid": true
@@ -1101,6 +1107,7 @@
           "route_key": "provider.test/mcp#get_quote",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x832675F8ea0d0d763B0C5fe6758A2f8a14060f50",
           "transport": "mcp",
           "valid": true
@@ -1122,6 +1129,7 @@
           "route_key": "provider.test/mcp#get_quote",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x832675F8ea0d0d763B0C5fe6758A2f8a14060f50",
           "transport": "mcp",
           "valid": true
@@ -1237,6 +1245,7 @@
           "route_key": "provider.test/mcp#get_quote",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x91aA425Ea17AF47071489dA61B8A5f1669A4d6ea",
           "transport": "mcp",
           "valid": true
@@ -1400,6 +1409,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x79a4e4552483665897071Ca97a7d6231E40C1eab",
           "transport": "mcp",
           "valid": true
@@ -1421,6 +1431,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 9,
+          "terms_verified": "offered",
           "to": "0x79a4e4552483665897071Ca97a7d6231E40C1eab",
           "transport": "mcp",
           "valid": true
@@ -2215,16 +2226,16 @@
   },
   "timing": {
     "runs": {
-      "362638b2e8b9": 700.9242920000002,
-      "60dee6afd71b": 700.8295419999995,
-      "69894a8ebd16": 717.027,
-      "8e6b75ae6879": 694.332167,
-      "c20fd543e28b": 716.051416,
-      "d72b07a9af42": 697.5977499999999,
-      "e0a3fae4b1f5": 717.1313749999999,
-      "f442192f9da4": 702.1410000000001,
-      "f9978db64867": 704.4834170000004
+      "362638b2e8b9": 710.3543329999998,
+      "60dee6afd71b": 723.1495829999999,
+      "69894a8ebd16": 734.9831670000003,
+      "8e6b75ae6879": 695.6986250000002,
+      "c20fd543e28b": 721.8998750000001,
+      "d72b07a9af42": 697.905291,
+      "e0a3fae4b1f5": 720.2933750000002,
+      "f442192f9da4": 725.4209579999997,
+      "f9978db64867": 722.9220419999992
     },
-    "total_ms": 6350.517959
+    "total_ms": 6452.627248999999
   }
 }

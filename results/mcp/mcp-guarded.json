@@ -339,6 +339,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x2877B81FC9f8f4667c049341557c27Ad4D12C2B6",
           "transport": "mcp",
           "valid": true
@@ -360,6 +361,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 9,
+          "terms_verified": "offered",
           "to": "0x2877B81FC9f8f4667c049341557c27Ad4D12C2B6",
           "transport": "mcp",
           "valid": true
@@ -507,6 +509,7 @@
           "route_key": "provider.test/mcp#lookup",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xdf318C77c3F6685eB2D89baa1a75aDBf1d7B8812",
           "transport": "mcp",
           "valid": true
@@ -604,6 +607,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x9ac5C54FE9A309d5Aa083B179Af5ec7001eab348",
           "transport": "mcp",
           "valid": true
@@ -733,6 +737,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0x9eF93E7d2795D88775d068c471f172235F98a502",
           "transport": "mcp",
           "valid": true
@@ -872,6 +877,7 @@
           "route_key": "provider.test/mcp#get_quote",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x832675F8ea0d0d763B0C5fe6758A2f8a14060f50",
           "transport": "mcp",
           "valid": true
@@ -1077,6 +1083,7 @@
           "route_key": "provider.test/mcp#get_forecast",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x79a4e4552483665897071Ca97a7d6231E40C1eab",
           "transport": "mcp",
           "valid": true
@@ -1709,16 +1716,16 @@
   },
   "timing": {
     "runs": {
-      "362638b2e8b9": 707.7054169999997,
-      "60dee6afd71b": 692.5019169999996,
-      "69894a8ebd16": 698.5803340000002,
-      "8e6b75ae6879": 699.5257500000002,
-      "c20fd543e28b": 764.291375,
-      "d72b07a9af42": 697.2161670000005,
-      "e0a3fae4b1f5": 713.4247499999999,
-      "f442192f9da4": 694.4985419999998,
-      "f9978db64867": 698.4777079999994
+      "362638b2e8b9": 713.9487920000001,
+      "60dee6afd71b": 689.2465420000008,
+      "69894a8ebd16": 709.1870420000005,
+      "8e6b75ae6879": 707.7075830000001,
+      "c20fd543e28b": 794.0758750000001,
+      "d72b07a9af42": 710.2938750000003,
+      "e0a3fae4b1f5": 717.8501250000002,
+      "f442192f9da4": 709.806083,
+      "f9978db64867": 696.6688750000003
     },
-    "total_ms": 6366.22196
+    "total_ms": 6448.784792000003
   }
 }

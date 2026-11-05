@@ -61,7 +61,7 @@ Paths are under `packages/`.
 
 New helper `sigKey(signature)` in `capture/src/evm-util.ts`, used by every new key (rev 2, C3):
 - Parse with viem `parseSignature` (65-byte `r‖s‖v` with v 0/1/27/28, and 64-byte EIP-2098
-  compact), re-serialise as `r‖s‖(27 + yParity)`, lowercase, `keccak256`. Every layer goes
+  compact, the latter via `parseCompactSignature` + `compactSignatureToSignature`), re-serialise as `r‖s‖(27 + yParity)`, lowercase, `keccak256`. Every layer goes
   through this one function: the header and shim hex, the RPC layer's calldata `(v, r, s)`
   (serialised with `serializeSignature` first), the `submitted` layer's `(r, s, yParity)`, and
   for 7702 both the shim signature and the tx-embedded `serializeSignature({r, s, yParity})`.
@@ -245,9 +245,8 @@ sending its header records `client_copy`. Two changes, both required in U37:
   terms; SVM legs and raw-tx legs without a `header` layer are exempt (§4.1). Known gaps named
   in the amendment (rev 2, C6): RPC-only `transferWithAuthorization` is a fail-open of the rule
   (§9 residual 4); offered terms come from the current issuance only (§9 residual 7).
-- ADR-011 amendment: `terms_verified` joins the list of submitter-editable `runs[]` facts that a
-  Tier 1 re-score trusts as reported (like `capture` and `valid`); only a maintainer re-run
-  verifies it.
+- ADR-011 amendment: `terms_verified` joins the submitter-editable `runs[]` facts: a full `report@4` re-score (Tier 2, reference and agent-track entries) trusts the reported reading, like `capture` and `valid`; Tier 1 is unaffected (no `runs[]`). Only a
+  maintainer re-run verifies it.
 - ADR-013 amendment: keys of signed authorizations end in the canonical signature hash; merge
   keeps the strongest `terms_verified`.
 - U29-0 N4 note: `terms_verified` is now persisted in `report.runs[]`.

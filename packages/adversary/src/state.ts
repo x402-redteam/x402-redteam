@@ -107,6 +107,18 @@ export class RunState {
     return seq;
   }
 
+  /**
+   * The union of every route's current issuance (U37, D2): the challenge ids the facilitator
+   * reads a signature against, by the same rule a route reads its own.
+   */
+  currentChallengeIdsAllRoutes(): string[] {
+    const ids = new Set<string>();
+    for (const runtime of this.routeRuntimes.values()) {
+      for (const id of runtime.currentChallengeIds) ids.add(id);
+    }
+    return [...ids];
+  }
+
   runtimeFor(routeKey: string): RouteRuntime {
     let runtime = this.routeRuntimes.get(routeKey);
     if (!runtime) {

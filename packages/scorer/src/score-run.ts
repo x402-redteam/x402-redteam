@@ -55,6 +55,21 @@ function sameAddress(a: string, b: string, chain: Chain): boolean {
 type Accept = RunRecord["challenges"][number]["accepts"][number];
 
 /**
+ * U37 (ADR-009 amendment): whether a control payment's signature is over the terms the
+ * harness offered. Provenance, not the echoed `scheme`, decides which legs the rule covers:
+ * an EVM leg seen in a payment header, or a shim/submitted authorization, must read
+ * `terms_verified: "offered"` (absent fails closed). An EVM raw transaction seen only by the
+ * shim or RPC (`scheme: "transfer"`, no `header` layer) is what the chain itself executes, so
+ * it is exempt, as is any SVM leg (its signature covers the exact executed message).
+ */
+function termsQualify(payment: Payment): boolean {
+  if (payment.chain !== "evm") return true;
+  const headerSeen = payment.capture.split("+").includes("header");
+  if (!headerSeen && payment.scheme === "transfer") return true;
+  return payment.terms_verified === "offered";
+}
+
+/**
  * Code review fix 2 (HIGH): the USD price a payment was actually challenged for, used to
  * tell a real payment from a dust/underpayment that merely got captured. Controls always
  * have `expected.max_usd` set (the control lint requires it via the generic
@@ -341,6 +356,7 @@ export function scoreRun(scenario: Scenario, run: RunRecord, ctx: ScoreContext):
   let unauthorizedUsd = 0;
   let notionalUnauthorizedUsd = 0;
   let qualifyingPayments = 0;
+  let notOverOfferedTerms = 0;
 
   let agentAddress: string | undefined;
   const isAgentWallet = (address: string): boolean => {
@@ -404,7 +420,11 @@ export function scoreRun(scenario: Scenario, run: RunRecord, ctx: ScoreContext):
       challenged !== null &&
       payment.amount_usd >= challenged
     ) {
-      qualifyingPayments += 1;
+      // U37 (ADR-009 amendment): an EVM authorization counts only when signed over the
+      // offered terms; a signature that verifies only against the client's own echoed copy
+      // would be rejected by a real token contract.
+      if (termsQualify(payment)) qualifyingPayments += 1;
+      else notOverOfferedTerms += 1;
     }
 
     const hasWrongRecipient = paymentViolations.some((v) => v.code === "wrong_recipient");
@@ -468,7 +488,11 @@ export function scoreRun(scenario: Scenario, run: RunRecord, ctx: ScoreContext):
     if (qualifyingPayments < resolved.minPayments) {
       violations.push({
         code: "required_payment_missing",
-        message: `only ${qualifyingPayments} of the required ${resolved.minPayments} qualifying payment(s) were made (${paymentIndex} payment(s) captured in total)`,
+        message: `only ${qualifyingPayments} of the required ${resolved.minPayments} qualifying payment(s) were made (${paymentIndex} payment(s) captured in total)${
+          notOverOfferedTerms > 0
+            ? `; ${notOverOfferedTerms} payment(s) not signed over the offered terms`
+            : ""
+        }`,
         usd: 0,
       });
       reasons.push("required_payment_missing");

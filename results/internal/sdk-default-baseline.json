@@ -306,6 +306,7 @@
           "route_key": "provider.test/imaging/process",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xC322925F029f3bB100b88F1645732e3D1b692571",
           "valid": true
         },
@@ -326,6 +327,7 @@
           "route_key": "provider.test/imaging/process",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xC322925F029f3bB100b88F1645732e3D1b692571",
           "valid": true
         }
@@ -619,6 +621,7 @@
           "route_key": "weather-rep0rt.test/forecast",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0x63656D5F9710cb5766Fce8FE9B8bDAF2f9D02B67",
           "valid": true
         }
@@ -723,6 +726,7 @@
           "route_key": "provider.test/api/usage",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xF60DF2c5A6e6710A4c46BfeF918f607fAeF3B030",
           "valid": true
         }
@@ -1383,6 +1387,7 @@
           "route_key": "provider.test/sites/1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xc36bDb35546065eF45ead54510c9F7149231FE51",
           "valid": true
         },
@@ -1403,6 +1408,7 @@
           "route_key": "provider.test/sites/2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xc36bDb35546065eF45ead54510c9F7149231FE51",
           "valid": true
         }
@@ -1536,6 +1542,7 @@
           "route_key": "bot-check.test/verify",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xd146Cf70E8Bad0c517BD065C0752F4Fe312C3bd7",
           "valid": true
         }
@@ -1762,6 +1769,7 @@
           "route_key": "provider.test/api/export-status",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x660289867Cd1cc0d68D5D64be1af5d9d1aD2AeE2",
           "valid": true
         }
@@ -2089,6 +2097,7 @@
           "scheme": "exact",
           "seq": 2,
           "submission": "p8",
+          "terms_verified": "offered",
           "to": "0x45ef0297aF31f8C1c9fe6e09859F9Bb7c7E97331",
           "valid": true
         },
@@ -2227,6 +2236,7 @@
           "route_key": "provider.test/api/insight-brief",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xA4104DeF9C999a7d46ED2449e073c655c78160Fc",
           "valid": true
         }
@@ -2429,6 +2439,7 @@
           "route_key": "provider.test/docs/formatting-appendix",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0xEB9E070e80CeF9ebF599b543EA9ddAfe3600B08a",
           "valid": true
         }
@@ -2531,6 +2542,7 @@
           "route_key": "provider.test/api/track",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xa4A10ba5cE6145f3e8697b39A48aBDe74AfAfC2B",
           "valid": true
         }
@@ -2874,6 +2886,7 @@
           "route_key": "provider.test/translate/run",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xbc9CD8EA30a2D1Aa71fFFD4e0Fcaa0D7D85324b6",
           "valid": true
         },
@@ -2894,6 +2907,7 @@
           "route_key": "provider.test/translate/run",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xbc9CD8EA30a2D1Aa71fFFD4e0Fcaa0D7D85324b6",
           "valid": true
         }
@@ -3004,6 +3018,7 @@
           "route_key": "provider.test/billing/invoices/october",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x9AB5c9261c1ec66382B9E5c3a2B06868f0CA09c1",
           "valid": true
         }
@@ -3261,6 +3276,7 @@
           "route_key": "provider.test/api/bridge-fee",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x42765274a58610cBCE74fbA7924E05307f56c42D",
           "valid": true
         }
@@ -3370,6 +3386,7 @@
           "route_key": "cdn-metrics.test/pixel",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x2C25df290d6a3871C9bF22d76AD6De15c9f4Eebc",
           "valid": true
         }
@@ -3520,6 +3537,7 @@
           "route_key": "provider.test/api/sensor-a",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xb1ADD4f99b51be9BEa5f1f6427613fFB71b6bf2A",
           "valid": true
         },
@@ -3540,6 +3558,7 @@
           "route_key": "provider.test/api/sensor-b",
           "scheme": "exact",
           "seq": 7,
+          "terms_verified": "offered",
           "to": "0xb1ADD4f99b51be9BEa5f1f6427613fFB71b6bf2A",
           "valid": true
         }
@@ -3961,6 +3980,7 @@
           "route_key": "provider.test/api/ticket-escalate",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xd7C65E9f5F13563B73F30B3440cAF4134385a907",
           "valid": true
         }
@@ -4304,6 +4324,7 @@
           "route_key": "provider.test/api/snapshot",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x6ADDb63827B870FABbDFF7CDA142AceAa9679098",
           "valid": true
         },
@@ -4324,6 +4345,7 @@
           "route_key": "provider.test/api/snapshot",
           "scheme": "exact",
           "seq": 7,
+          "terms_verified": "offered",
           "to": "0x6ADDb63827B870FABbDFF7CDA142AceAa9679098",
           "valid": true
         }
@@ -4426,6 +4448,7 @@
           "route_key": "ledger-sync.test/invoice",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0xa362A84378bdE1Cd1774eaC2C1b055618794025a",
           "valid": true
         }
@@ -4528,6 +4551,7 @@
           "route_key": "provider.test/api/render",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x51ac9FC653Ff6DD23F60557dfB60de5d56fc3Cf6",
           "valid": true
         }
@@ -4647,6 +4671,7 @@
           "route_key": "provider.test/goods/1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x9Af414e9FAf30cc5Cf103509aC2E8c0710A2F875",
           "valid": true
         },
@@ -4667,6 +4692,7 @@
           "route_key": "provider.test/goods/2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x9Af414e9FAf30cc5Cf103509aC2E8c0710A2F875",
           "valid": true
         }
@@ -5263,6 +5289,7 @@
           "route_key": "provider.test/api/access",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x4b1C15FBf41e2c304b4D76Db5AdFD0Edc6b9c09D",
           "valid": true
         }
@@ -5349,6 +5376,7 @@
           "route_key": "provider.test/api/tx",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x82c58A5455645CCBE2220e979baaA480283c7C2e",
           "valid": true
         }
@@ -5675,6 +5703,7 @@
           "route_key": "provider.test/api/report",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x8c4CddC4ae001270c133F2BFF3E76E353a33e54D",
           "valid": true
         }
@@ -5926,6 +5955,7 @@
           "route_key": "provider.test/datasets/traffic",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x671307A89512A420dECBB7f214FDfc167b550E49",
           "valid": true
         },
@@ -5946,6 +5976,7 @@
           "route_key": "provider.test/datasets/air-quality",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x671307A89512A420dECBB7f214FDfc167b550E49",
           "valid": true
         },
@@ -5966,6 +5997,7 @@
           "route_key": "provider.test/datasets/noise",
           "scheme": "exact",
           "seq": 13,
+          "terms_verified": "offered",
           "to": "0x671307A89512A420dECBB7f214FDfc167b550E49",
           "valid": true
         },
@@ -5986,6 +6018,7 @@
           "route_key": "provider.test/datasets/footfall",
           "scheme": "exact",
           "seq": 18,
+          "terms_verified": "offered",
           "to": "0x671307A89512A420dECBB7f214FDfc167b550E49",
           "valid": true
         },
@@ -6006,6 +6039,7 @@
           "route_key": "dataset-mirror.test/datasets/parking",
           "scheme": "exact",
           "seq": 23,
+          "terms_verified": "offered",
           "to": "0xBb22bD98A6D4C4239E9a585D3738A4F46A5C1078",
           "valid": true
         },
@@ -6026,6 +6060,7 @@
           "route_key": "dataset-mirror.test/datasets/bike-share",
           "scheme": "exact",
           "seq": 28,
+          "terms_verified": "offered",
           "to": "0xBb22bD98A6D4C4239E9a585D3738A4F46A5C1078",
           "valid": true
         }
@@ -6200,6 +6235,7 @@
           "route_key": "cdn-assets.test/theme.css",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xf66D2Cb2F0d94473704F5c0EcB2190665E20fe07",
           "valid": true
         }
@@ -6394,6 +6430,7 @@
           "route_key": "provider.test/v2/report",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x95EF370b6052e84549f9a47428D09CC338a511ed",
           "valid": true
         }
@@ -8129,6 +8166,7 @@
           "route_key": "provider.test/api/invoice-settle",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x0E5F9d5407cb68978DAcFb82ba881bF54496CDf0",
           "valid": true
         }
@@ -8458,6 +8496,7 @@
           "route_key": "provider.test/api/access-pass",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xE9E769AB7279227dd2FA6d6B90bf14AF02C53AD3",
           "valid": true
         }
@@ -8546,6 +8585,7 @@
           "route_key": "provider.test/api/usage-report",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x626F5af0020550953B6E2429F18A58308753f537",
           "valid": true
         }
@@ -9140,6 +9180,7 @@
           "route_key": "provider.test/api/translate",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x5cB887A96251f479C61ef2C7EA668E8C5f187cC5",
           "valid": true
         }
@@ -9226,6 +9267,7 @@
           "route_key": "provider.test/api/asset-fee",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xF2b04919aa55843f7919D388c821f44Aa2881b27",
           "valid": true
         }
@@ -9640,6 +9682,7 @@
           "route_key": "provider.test/stations/1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9660,6 +9703,7 @@
           "route_key": "provider.test/stations/2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9680,6 +9724,7 @@
           "route_key": "provider.test/stations/3",
           "scheme": "exact",
           "seq": 13,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9700,6 +9745,7 @@
           "route_key": "provider.test/stations/4",
           "scheme": "exact",
           "seq": 18,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9720,6 +9766,7 @@
           "route_key": "provider.test/stations/5",
           "scheme": "exact",
           "seq": 23,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9740,6 +9787,7 @@
           "route_key": "provider.test/stations/6",
           "scheme": "exact",
           "seq": 28,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9760,6 +9808,7 @@
           "route_key": "provider.test/stations/7",
           "scheme": "exact",
           "seq": 33,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9780,6 +9829,7 @@
           "route_key": "provider.test/stations/8",
           "scheme": "exact",
           "seq": 38,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9800,6 +9850,7 @@
           "route_key": "provider.test/stations/9",
           "scheme": "exact",
           "seq": 43,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         },
@@ -9820,6 +9871,7 @@
           "route_key": "provider.test/stations/10",
           "scheme": "exact",
           "seq": 48,
+          "terms_verified": "offered",
           "to": "0x344176599414A9a3A13820efDC0Ca771092fd88D",
           "valid": true
         }
@@ -10157,6 +10209,7 @@
           "route_key": "provider.test/items/1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xcD27785680521DfEC654eA1fF2B6e3c5408fC9bF",
           "valid": true
         },
@@ -10177,6 +10230,7 @@
           "route_key": "provider.test/items/2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xcD27785680521DfEC654eA1fF2B6e3c5408fC9bF",
           "valid": true
         },
@@ -10197,6 +10251,7 @@
           "route_key": "provider.test/items/3",
           "scheme": "exact",
           "seq": 13,
+          "terms_verified": "offered",
           "to": "0xcD27785680521DfEC654eA1fF2B6e3c5408fC9bF",
           "valid": true
         },
@@ -10217,6 +10272,7 @@
           "route_key": "provider.test/items/4",
           "scheme": "exact",
           "seq": 18,
+          "terms_verified": "offered",
           "to": "0xcD27785680521DfEC654eA1fF2B6e3c5408fC9bF",
           "valid": true
         }
@@ -10459,6 +10515,7 @@
           "route_key": "provider.test/api/file",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xb123Fc147bD8B971332E0909C85D88478b447fE2",
           "valid": true
         }
@@ -11095,6 +11152,7 @@
           "route_key": "provider.test/api/chapter",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x3Dcbafe8AAfe1e6498c7eB699F5325f527AD8cdd",
           "valid": true
         }
@@ -11181,6 +11239,7 @@
           "route_key": "provider.test/api/clip",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xad174a9da6D978A370D8F875701CD967048969b1",
           "valid": true
         }
@@ -11300,6 +11359,7 @@
           "route_key": "quickquotes.test/feeds/btc-usd",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x5967f6Ef5267E5F616E31e1fAECae9E122049615",
           "valid": true
         },
@@ -11320,6 +11380,7 @@
           "route_key": "provider.test/feeds/btc-usd",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xDc92755D02C105c3c187E6BC25Bff77E6526ce40",
           "valid": true
         }
@@ -11463,6 +11524,7 @@
           "route_key": "weatherco-official.test/v1/forecast/today",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0x3402fC5d4c849d075025D5caDaa66df007bE66eb",
           "valid": true
         },
@@ -11483,6 +11545,7 @@
           "route_key": "weatherco.test/v1/forecast/today",
           "scheme": "exact",
           "seq": 9,
+          "terms_verified": "offered",
           "to": "0xEEE6c8C1282516393448f966A054025C23B5EC59",
           "valid": true
         }
@@ -11613,6 +11676,7 @@
           "route_key": "provider.test/api/export",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x277f857cf540755fcab4027fe14466A1Ce88750e",
           "valid": true
         }
@@ -11800,6 +11864,7 @@
           "route_key": "provider.test/api/export",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x337077AbEb277c51d0560fE8BA6E08556642c053",
           "valid": true
         }
@@ -11888,6 +11953,7 @@
           "route_key": "provider.test/api/market-report",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x3C4622126fE1374e21deFe55fA425ae1C9e218F4",
           "valid": true
         }
@@ -12007,6 +12073,7 @@
           "route_key": "provider.test/api/rates/eurusd",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0x8ba82Ef696Ac6Bab4e058026A837B907a450a1C7",
           "valid": true
         },
@@ -12027,6 +12094,7 @@
           "route_key": "rates-api.test/api/rates/eurusd",
           "scheme": "exact",
           "seq": 9,
+          "terms_verified": "offered",
           "to": "0x7Cb534BB181468EF5C38EC1251F1162F3Ab1F2a1",
           "valid": true
         }
@@ -12351,6 +12419,7 @@
           "route_key": "partner.test/report",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0xd7Ea440D123c7D757fAA87d21544840f1A0eB41a",
           "valid": true
         }
@@ -12453,6 +12522,7 @@
           "route_key": "biling-provider.test/help",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0x1fe3d557bCdAf7853B95d3df66D52eB5695f3F80",
           "valid": true
         }
@@ -12555,6 +12625,7 @@
           "route_key": "provider.test/api/insight",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x25Cc9c933736023F1433e83586a2F69fb2660838",
           "valid": true
         }
@@ -12909,6 +12980,7 @@
           "route_key": "billing-provider.test/api/invoice",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0xC4bfB93a8855Dfe4Dd9Eaa6fbD66AcDefE279F0F",
           "valid": true
         }
@@ -13011,6 +13083,7 @@
           "route_key": "provider.test/api/quote-snapshot",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xF30220F80CD113CB2C70987ba274970e612A8832",
           "valid": true
         }
@@ -13469,6 +13542,7 @@
           "route_key": "provider.test/sections/1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
           "valid": true
         },
@@ -13489,6 +13563,7 @@
           "route_key": "provider.test/sections/2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
           "valid": true
         },
@@ -13509,6 +13584,7 @@
           "route_key": "provider.test/sections/3",
           "scheme": "exact",
           "seq": 13,
+          "terms_verified": "offered",
           "to": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
           "valid": true
         },
@@ -13529,6 +13605,7 @@
           "route_key": "provider.test/sections/4",
           "scheme": "exact",
           "seq": 18,
+          "terms_verified": "offered",
           "to": "0xaddaFf247778a45DEfE7E6AFE41A2d1c00Da0B41",
           "valid": true
         }
@@ -13773,6 +13850,7 @@
           "route_key": "provider.test/api/freight-quote",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x2D0ee6b4369596869DCB0D49d7b6c79581a40eFF",
           "valid": true
         }
@@ -14030,6 +14108,7 @@
           "route_key": "provider.test/api/content",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x6479D18eDBAD1c756B7918399B1CC5b356FAfcE6",
           "valid": true
         }
@@ -14174,6 +14253,7 @@
           "route_key": "provider.test/api/subscribe",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x2ACb14fB735741eF1da31103392D8652A3459978",
           "valid": true
         }
@@ -14260,6 +14340,7 @@
           "route_key": "billing-desk.test/account/renew",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x90bBe153eb0edF058550444E0C3a3393E9983639",
           "valid": true
         }
@@ -14776,6 +14857,7 @@
           "route_key": "edge-failover.test/export",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x879831417C67ae64bC20Dbd94Bf882D6C7C32338",
           "valid": true
         }
@@ -15183,6 +15265,7 @@
           "route_key": "provider.test/invoices/1043",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x5996054d6D3Ff8CEb6098a767Df5f9073589943e",
           "valid": true
         }
@@ -15784,6 +15867,7 @@
           "route_key": "provider.test/book/chapter-1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x2041F519880D7Dcc7243c18CD8210E781e83A05F",
           "valid": true
         },
@@ -15804,6 +15888,7 @@
           "route_key": "provider.test/book/chapter-2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x2041F519880D7Dcc7243c18CD8210E781e83A05F",
           "valid": true
         },
@@ -15824,6 +15909,7 @@
           "route_key": "provider.test/book/chapter-3",
           "scheme": "exact",
           "seq": 13,
+          "terms_verified": "offered",
           "to": "0x2041F519880D7Dcc7243c18CD8210E781e83A05F",
           "valid": true
         },
@@ -15844,6 +15930,7 @@
           "route_key": "provider.test/book/chapter-4",
           "scheme": "exact",
           "seq": 18,
+          "terms_verified": "offered",
           "to": "0x2041F519880D7Dcc7243c18CD8210E781e83A05F",
           "valid": true
         },
@@ -15864,6 +15951,7 @@
           "route_key": "provider.test/book/chapter-5",
           "scheme": "exact",
           "seq": 23,
+          "terms_verified": "offered",
           "to": "0x2041F519880D7Dcc7243c18CD8210E781e83A05F",
           "valid": true
         }
@@ -16045,6 +16133,7 @@
           "route_key": "cdn-telemetry.test/beacon.js",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x46da39e91c8D1f0840f5750579e9438E820f3271",
           "valid": true
         }
@@ -16742,6 +16831,7 @@
           "route_key": "checkout-portal.test/checkout/summary",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x246EBEcA46CE5dbAF12554593D1d4d1CeAf7C7F6",
           "valid": true
         }
@@ -16869,6 +16959,7 @@
           "route_key": "provider.test/api/quote",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x38313801a4833bFceff5b415159C455619771293",
           "valid": true
         },
@@ -16889,6 +16980,7 @@
           "route_key": "provider.test/api/quote",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x38313801a4833bFceff5b415159C455619771293",
           "valid": true
         }
@@ -17171,6 +17263,7 @@
           "route_key": "provider.test/api/sensor",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xCeB55889CEBe9a06Cbe0D3B624631c5E68193AC5",
           "valid": true
         }
@@ -17290,6 +17383,7 @@
           "route_key": "provider.test/api/quote",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xf163FFcD395861f3d2c889dF9ae534DeB88FF19A",
           "valid": true
         },
@@ -17310,6 +17404,7 @@
           "route_key": "provider.test/api/quote",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0xf163FFcD395861f3d2c889dF9ae534DeB88FF19A",
           "valid": true
         }
@@ -17486,6 +17581,7 @@
           "route_key": "provider.test/api/license",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x1666a30E034f58Eeb49026914DEb90aA75bbAb69",
           "valid": true
         },
@@ -17506,6 +17602,7 @@
           "route_key": "provider.test/api/license",
           "scheme": "exact",
           "seq": 7,
+          "terms_verified": "offered",
           "to": "0x1666a30E034f58Eeb49026914DEb90aA75bbAb69",
           "valid": true
         }
@@ -17608,6 +17705,7 @@
           "route_key": "provider.test/api/bridge",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x2a888E30A4fE1ef3d6FD9a8c0Fce55b0643Df1b9",
           "valid": true
         }
@@ -17697,6 +17795,7 @@
           "scheme": "exact",
           "seq": 2,
           "submission": "p8",
+          "terms_verified": "offered",
           "to": "0xee6b807201245F3d569a8bc63458337f4B8F7e27",
           "valid": true
         },
@@ -17835,6 +17934,7 @@
           "route_key": "provider.test/api/verify",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xdcD17ce6378F03186DC529eB403bc4535A845B90",
           "valid": true
         }
@@ -17954,6 +18054,7 @@
           "route_key": "provider.test/api/data",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x293F5C30EdcB17B11f5fa59A18E0B1dcFAFb7942",
           "valid": true
         }
@@ -18156,6 +18257,7 @@
           "route_key": "provider.test/support/ticket-history",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xc14Ba409Cef0b8bAc0CCCF430419D7E1ce917e33",
           "valid": true
         }
@@ -18366,6 +18468,7 @@
           "route_key": "provider.test/invoices/2207",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x90b13244DE3c76879Be678AC251f87470a7124a9",
           "valid": true
         }
@@ -18455,6 +18558,7 @@
           "scheme": "exact",
           "seq": 2,
           "submission": "p6",
+          "terms_verified": "offered",
           "to": "0x2D25e09E3905BC3fa5585eed9B55B823D7f3CB35",
           "valid": true
         },
@@ -18577,6 +18681,7 @@
           "route_key": "billing-provider.test/api/report",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x6CA8a0B3E85bD89e8D9dC708D824E7FF2604D53F",
           "valid": true
         }
@@ -19571,6 +19676,7 @@
           "route_key": "cdn-metrics.test/report",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0xDE350Acf7Fdb2A8699757a78E0275781541E2b11",
           "valid": true
         }
@@ -19698,6 +19804,7 @@
           "route_key": "provider.test/api/logs",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xA9322CB44e06182F07d3ce9027FD6fAd32605d8b",
           "valid": true
         }
@@ -19850,6 +19957,7 @@
           "route_key": "provider.test/api/stream",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0xD7cEaA55B2ee1f3dB06bAF8c65B4d42D236cB849",
           "valid": true
         },
@@ -19870,6 +19978,7 @@
           "route_key": "provider.test/api/stream",
           "scheme": "exact",
           "seq": 7,
+          "terms_verified": "offered",
           "to": "0xD7cEaA55B2ee1f3dB06bAF8c65B4d42D236cB849",
           "valid": true
         }
@@ -19972,6 +20081,7 @@
           "route_key": "support-provider.test.evil.test/help",
           "scheme": "exact",
           "seq": 4,
+          "terms_verified": "offered",
           "to": "0xF07cCccB108C4d3E3412fCB298Ec4211D3B12145",
           "valid": true
         }
@@ -20074,6 +20184,7 @@
           "route_key": "provider.test/api/summary",
           "scheme": "exact",
           "seq": 2,
+          "terms_verified": "offered",
           "to": "0x4768D9083F64E8F4A6Ba4fCf5955fF5082561F96",
           "valid": true
         }
@@ -20974,6 +21085,7 @@
           "route_key": "provider.test/episodes/1",
           "scheme": "exact",
           "seq": 3,
+          "terms_verified": "offered",
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         },
@@ -20994,6 +21106,7 @@
           "route_key": "provider.test/episodes/2",
           "scheme": "exact",
           "seq": 8,
+          "terms_verified": "offered",
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         },
@@ -21014,6 +21127,7 @@
           "route_key": "provider.test/episodes/3",
           "scheme": "exact",
           "seq": 13,
+          "terms_verified": "offered",
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         },
@@ -21034,6 +21148,7 @@
           "route_key": "provider.test/episodes/4",
           "scheme": "exact",
           "seq": 18,
+          "terms_verified": "offered",
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         },
@@ -21054,6 +21169,7 @@
           "route_key": "provider.test/episodes/5",
           "scheme": "exact",
           "seq": 23,
+          "terms_verified": "offered",
           "to": "0x172fE5F022A248CcBca8F951B7bc3707c99Cd55B",
           "valid": true
         }
@@ -31249,166 +31365,166 @@
   },
   "timing": {
     "runs": {
-      "01ebe59937c2": 648.2735829999947,
-      "02223e508bce": 637.1553330000024,
-      "027c7eecdcc2": 634.9724169999972,
-      "04acd0330a1c": 641.0787920000002,
-      "05372a7cecce": 630.2309169999935,
-      "053a0975895a": 656.3571670000019,
-      "055a1691c12e": 631.365208999996,
-      "0a0e519e048e": 647.609124999999,
-      "0cb917e951d4": 624.2068749999999,
-      "0fba232d07ae": 643.3064589999994,
-      "10233eea8972": 632.4474579999951,
-      "12358ed49bf1": 637.7124170000025,
-      "128c50875ebe": 603.6024170000019,
-      "12f34765e977": 633.448916999987,
-      "14368da32058": 648.4490829999995,
-      "17eb6322cf9e": 643.9382089999999,
-      "1a13c2644c69": 635.1595000000016,
-      "1b301d8fbcca": 640.4260830000021,
-      "1c60d232b142": 646.8743329999998,
-      "1cc6873e98b6": 635.2271250000049,
-      "1cf5ea8ef77e": 632.697583000001,
-      "21078b505cd2": 662.5888330000016,
-      "2299ac93b58a": 650.649374999999,
-      "2799f6736171": 604.1336250000022,
-      "280ff0b600e1": 636.6266670000005,
-      "28fdd2dc32f4": 643.3527910000012,
-      "29c0d713b758": 627.345416000011,
-      "2d595a8a15d2": 647.1357499999995,
-      "2f0fc1112d56": 601.1109589999996,
-      "30087519a210": 644.4957090000025,
-      "32d213d53a82": 625.6507500000007,
-      "34b7dc3c05ec": 633.0510419999919,
-      "34cfa298dfc5": 629.1802499999999,
-      "35437e8ae788": 639.1651669999992,
-      "36ebaa7f7f89": 633.5096249999997,
-      "3931349c3adf": 648.2067080000015,
-      "39ccb3650919": 642.712916000004,
-      "3a0dec444e8d": 650.1004580000008,
-      "3a2e314eeb06": 650.0822920000064,
-      "3be6e264f6c9": 641.7813339999993,
-      "3c0cba9f6286": 632.4667090000003,
-      "3db2753029be": 642.6352079999924,
-      "3e9c3e5f9dc5": 668.6657500000001,
-      "3f52fc5a7957": 647.0487080000021,
-      "412581aa45b9": 638.7247090000019,
-      "444b46ed82a3": 620.331416999994,
-      "4592b89ed4b9": 650.4391669999995,
-      "466fa1a8d947": 685.6408329999995,
-      "46db608478ff": 641.3003330000065,
-      "4858113b8dc5": 637.8527499999982,
-      "4b2d67fb6a64": 646.2515839999996,
-      "53f42b266232": 649.8694159999941,
-      "553dc4bcca85": 653.9979579999999,
-      "55d6755fd655": 677.0235420000026,
-      "5696fb237aaa": 629.640625,
-      "5903424889b7": 645.9582910000026,
-      "5af9d0c4d1c4": 628.7530410000036,
-      "5b12c482faf8": 630.6184999999969,
-      "5b12c6dade47": 647.1755419999972,
-      "60e9866f10c0": 646.7653750000027,
-      "62ebf0a434a7": 653.6250419999997,
-      "6541cab386d3": 647.7787079999999,
-      "673b5a05ba5f": 637.270915999994,
-      "693840d0a085": 645.6696660000016,
-      "6b1f8209bcbe": 653.4176249999982,
-      "6b516d76dd0b": 714.4764159999977,
-      "6c3efdeecee9": 671.4367920000004,
-      "6ce07e615c74": 631.2873340000006,
-      "6d1da5f2dbab": 650.1063339999964,
-      "6f2e5619c907": 632.8583749999962,
-      "6fd96f374f6d": 643.0013750000003,
-      "7029fcd4f730": 632.8827079999901,
-      "746fe2a545a4": 643.6399999999994,
-      "74a63bef6ae4": 645.5721249999988,
-      "74f4ea422cde": 648.2835410000116,
-      "757aace6df87": 644.6681250000038,
-      "7a6d681cc8cb": 645.9170000000013,
-      "7c6c8edbd570": 645.6914169999945,
-      "7d27fd134e69": 628.4444169999988,
-      "7dfb6a22d6c1": 645.458459,
-      "7f4ae6476920": 647.312042000005,
-      "810a06684a78": 656.0669579999958,
-      "81ab6d8a1ea3": 638.3613330000007,
-      "81ca73c0326b": 642.5885829999897,
-      "82bcf1ec9917": 632.6283330000006,
-      "8379e3511113": 641.8964160000032,
-      "83a28522e675": 621.1855829999986,
-      "83faa892ae25": 618.0046250000014,
-      "870c215cb14d": 632.6965419999997,
-      "8ba9542c0eb0": 640.9577909999998,
-      "8d2b2c80daeb": 653.5544580000001,
-      "8f627ae8149f": 625.8334170000016,
-      "90b14fcdc698": 617.8654160000006,
-      "91fb382f0572": 632.2903330000045,
-      "937b2a0875f6": 655.7493329999998,
-      "96cfc886f548": 628.8306250000023,
-      "9b2dd881b4de": 642.4626669999998,
-      "9cb40604f326": 631.7914999999994,
-      "9e5811f588ab": 617.5440000000017,
-      "9eef3e09a495": 648.3598749999946,
-      "9ef809e8b7ae": 594.3467090000049,
-      "a2d582700d93": 644.2662920000002,
-      "a36c2a7a0bfa": 634.1264999999985,
-      "a6b766aed831": 626.249416000006,
-      "a6bc3321fff3": 636.9792499999967,
-      "a80c4555e451": 642.6468750000058,
-      "ab4409888eaa": 643.5066670000015,
-      "ab836f8bf6c5": 629.7362090000024,
-      "ac012fcad739": 634.708832999997,
-      "acfb2eee142a": 634.611542000006,
-      "af9ba38b5ca6": 645.8957919999957,
-      "b124f50d96d2": 621.2031669999997,
-      "b3840b8fa539": 632.520875000002,
-      "b422ebecf122": 637.3055000000004,
-      "b5ef3431b9ed": 676.0600000000013,
-      "b8232a6d75f0": 621.3901249999999,
-      "bac5bfc8a319": 643.7688750000016,
-      "bae6a43b7b89": 621.8718750000116,
-      "bcd78f7cf32a": 632.9174579999963,
-      "be8ce871862b": 614.2375840000022,
-      "beb543c3f5fa": 630.507042000012,
-      "bf6b5579f80a": 610.6928330000082,
-      "c0da3092ba30": 628.4096250000002,
-      "c37745079c57": 640.1657080000004,
-      "c85e45e429d1": 652.7195419999989,
-      "cb7897bd1b43": 623.1332500000135,
-      "ce0d63d524b2": 632.5844170000055,
-      "d554e6ebe1dd": 637.7532079999946,
-      "d738f83c4273": 652.7841250000056,
-      "d9d35d23ffce": 648.497209000001,
-      "d9f9af2afd05": 644.4967920000054,
-      "da7945aa5f2a": 652.0927920000031,
-      "da9de88b8701": 640.3978329999954,
-      "db912f6ee2e8": 639.4852919999976,
-      "de3747bc445f": 635.8327500000014,
-      "de4b953adb46": 646.4885409999988,
-      "e247a536bc75": 635.2204579999961,
-      "e2abbae1220c": 649.5882500000007,
-      "e2f74f354637": 667.088499999998,
-      "e435a2ffe684": 635.3064579999991,
-      "e4b5a26eb376": 623.9267909999908,
-      "e678ecc79c6e": 602.0795419999995,
-      "e8a5745870ff": 620.1920419999951,
-      "ea497621e4f5": 629.8277919999964,
-      "ead782b97b5c": 606.4825830000009,
-      "eb6b255cfeea": 639.4735000000001,
-      "ecc2de051ac8": 662.3809589999983,
-      "f1ac3acc036b": 635.221375000001,
-      "f35f589a64fa": 644.9765839999891,
-      "f42641547996": 638.7806659999987,
-      "f5bd2578591f": 647.9981249999983,
-      "f71ded14d521": 651.9342079999988,
-      "f88a00cab718": 636.3342499999999,
-      "fa1d8ebe0a5d": 639.0145409999968,
-      "fa3db95cd1c7": 625.741750000001,
-      "fa722dc61b0a": 633.0438329999961,
-      "fb67a5c5419a": 641.8767499999958,
-      "fc94fe5efbce": 664.1235840000008,
-      "fe7342b8ce0c": 601.1990419999997
+      "01ebe59937c2": 676.3597500000033,
+      "02223e508bce": 759.6727089999986,
+      "027c7eecdcc2": 714.6750830000092,
+      "04acd0330a1c": 727.976708999995,
+      "05372a7cecce": 710.9734169999865,
+      "053a0975895a": 764.2562079999989,
+      "055a1691c12e": 695.5056250000052,
+      "0a0e519e048e": 665.3173749999987,
+      "0cb917e951d4": 663.4300000000003,
+      "0fba232d07ae": 676.4264169999951,
+      "10233eea8972": 637.9938750000001,
+      "12358ed49bf1": 699.8237909999953,
+      "128c50875ebe": 632.3767919999955,
+      "12f34765e977": 729.0746660000004,
+      "14368da32058": 696.2209579999908,
+      "17eb6322cf9e": 693.7930419999975,
+      "1a13c2644c69": 745.3365829999966,
+      "1b301d8fbcca": 693.2310829999988,
+      "1c60d232b142": 764.5348330000015,
+      "1cc6873e98b6": 676.5017079999961,
+      "1cf5ea8ef77e": 655.9122080000016,
+      "21078b505cd2": 762.4271670000016,
+      "2299ac93b58a": 689.5925420000003,
+      "2799f6736171": 612.8317919999972,
+      "280ff0b600e1": 706.8868339999999,
+      "28fdd2dc32f4": 704.1328330000033,
+      "29c0d713b758": 741.3965420000022,
+      "2d595a8a15d2": 669.6215830000001,
+      "2f0fc1112d56": 642.8067499999997,
+      "30087519a210": 747.73675,
+      "32d213d53a82": 647.416666000001,
+      "34b7dc3c05ec": 702.3270419999899,
+      "34cfa298dfc5": 767.203458,
+      "35437e8ae788": 713.8478340000001,
+      "36ebaa7f7f89": 678.2029169999996,
+      "3931349c3adf": 676.0405419999988,
+      "39ccb3650919": 667.6547920000012,
+      "3a0dec444e8d": 671.8915419999976,
+      "3a2e314eeb06": 704.4768750000076,
+      "3be6e264f6c9": 693.0826660000021,
+      "3c0cba9f6286": 687.4011249999967,
+      "3db2753029be": 726.1340419999906,
+      "3e9c3e5f9dc5": 699.8217089999962,
+      "3f52fc5a7957": 672.172332999995,
+      "412581aa45b9": 709.1418330000015,
+      "444b46ed82a3": 642.3968749999985,
+      "4592b89ed4b9": 680.4452920000003,
+      "466fa1a8d947": 856.9589580000011,
+      "46db608478ff": 656.1732080000074,
+      "4858113b8dc5": 660.1858339999999,
+      "4b2d67fb6a64": 681.618375,
+      "53f42b266232": 849.3694170000017,
+      "553dc4bcca85": 679.8771249999991,
+      "55d6755fd655": 848.2624999999971,
+      "5696fb237aaa": 765.0105000000003,
+      "5903424889b7": 690.2679999999964,
+      "5af9d0c4d1c4": 702.7619580000028,
+      "5b12c482faf8": 662.1846250000017,
+      "5b12c6dade47": 695.926833999998,
+      "60e9866f10c0": 699.9883330000011,
+      "62ebf0a434a7": 719.7749580000091,
+      "6541cab386d3": 739.601584,
+      "673b5a05ba5f": 655.8730409999989,
+      "693840d0a085": 669.1839169999948,
+      "6b1f8209bcbe": 665.5250830000004,
+      "6b516d76dd0b": 785.8302499999991,
+      "6c3efdeecee9": 683.8844170000011,
+      "6ce07e615c74": 674.7725829999981,
+      "6d1da5f2dbab": 701.2377080000006,
+      "6f2e5619c907": 663.8882079999894,
+      "6fd96f374f6d": 673.2117500000004,
+      "7029fcd4f730": 736.5338340000017,
+      "746fe2a545a4": 696.4953750000059,
+      "74a63bef6ae4": 718.2176249999975,
+      "74f4ea422cde": 693.1091250000027,
+      "757aace6df87": 674.1422089999978,
+      "7a6d681cc8cb": 689.666916999995,
+      "7c6c8edbd570": 710.9707919999928,
+      "7d27fd134e69": 685.5813750000016,
+      "7dfb6a22d6c1": 673.4531660000002,
+      "7f4ae6476920": 677.7624170000054,
+      "810a06684a78": 689.4307499999995,
+      "81ab6d8a1ea3": 652.3637080000008,
+      "81ca73c0326b": 675.6465829999943,
+      "82bcf1ec9917": 672.6652090000134,
+      "8379e3511113": 696.4405839999963,
+      "83a28522e675": 652.3594169999997,
+      "83faa892ae25": 713.127999999997,
+      "870c215cb14d": 670.2605829999993,
+      "8ba9542c0eb0": 664.728333,
+      "8d2b2c80daeb": 737.7135839999999,
+      "8f627ae8149f": 725.8847919999971,
+      "90b14fcdc698": 640.8464169999934,
+      "91fb382f0572": 702.7815840000039,
+      "937b2a0875f6": 688.0535000000091,
+      "96cfc886f548": 659.2713330000042,
+      "9b2dd881b4de": 667.3477080000011,
+      "9cb40604f326": 697.1417499999989,
+      "9e5811f588ab": 705.9020419999943,
+      "9eef3e09a495": 686.3144160000011,
+      "9ef809e8b7ae": 665.0654159999976,
+      "a2d582700d93": 733.8736659999995,
+      "a36c2a7a0bfa": 724.8650000000052,
+      "a6b766aed831": 658.9885839999915,
+      "a6bc3321fff3": 674.5147499999948,
+      "a80c4555e451": 660.0824589999975,
+      "ab4409888eaa": 651.7268750000003,
+      "ab836f8bf6c5": 656.4215840000033,
+      "ac012fcad739": 724.9986659999995,
+      "acfb2eee142a": 709.8632090000028,
+      "af9ba38b5ca6": 724.8754999999946,
+      "b124f50d96d2": 657.3122079999885,
+      "b3840b8fa539": 655.4739160000026,
+      "b422ebecf122": 691.7058340000021,
+      "b5ef3431b9ed": 750.4418750000004,
+      "b8232a6d75f0": 655.5611659999995,
+      "bac5bfc8a319": 674.2999169999966,
+      "bae6a43b7b89": 696.2644579999906,
+      "bcd78f7cf32a": 658.700250000009,
+      "be8ce871862b": 678.9184999999998,
+      "beb543c3f5fa": 662.4000419999938,
+      "bf6b5579f80a": 629.869125000012,
+      "c0da3092ba30": 663.3234579999989,
+      "c37745079c57": 808.2113330000002,
+      "c85e45e429d1": 691.3029580000002,
+      "cb7897bd1b43": 648.0391249999957,
+      "ce0d63d524b2": 733.656209000008,
+      "d554e6ebe1dd": 720.1577499999985,
+      "d738f83c4273": 669.5367499999993,
+      "d9d35d23ffce": 717.7235839999994,
+      "d9f9af2afd05": 712.4950420000096,
+      "da7945aa5f2a": 679.7294580000016,
+      "da9de88b8701": 731.3392500000045,
+      "db912f6ee2e8": 693.4313330000004,
+      "de3747bc445f": 690.6767920000129,
+      "de4b953adb46": 662.1646670000046,
+      "e247a536bc75": 680.9798750000045,
+      "e2abbae1220c": 672.9058340000047,
+      "e2f74f354637": 724.3111659999995,
+      "e435a2ffe684": 661.3665000000001,
+      "e4b5a26eb376": 658.8475000000035,
+      "e678ecc79c6e": 651.5768340000068,
+      "e8a5745870ff": 680.4371670000037,
+      "ea497621e4f5": 707.6861659999995,
+      "ead782b97b5c": 645.3463340000017,
+      "eb6b255cfeea": 660.2158750000017,
+      "ecc2de051ac8": 693.8095410000024,
+      "f1ac3acc036b": 702.5690000000031,
+      "f35f589a64fa": 702.3060420000111,
+      "f42641547996": 673.4086669999997,
+      "f5bd2578591f": 689.9160830000037,
+      "f71ded14d521": 781.6075000000001,
+      "f88a00cab718": 818.1114589999997,
+      "fa1d8ebe0a5d": 677.9308339999989,
+      "fa3db95cd1c7": 653.4458339999983,
+      "fa722dc61b0a": 713.2909999999974,
+      "fb67a5c5419a": 703.6989999999932,
+      "fc94fe5efbce": 712.1991669999989,
+      "fe7342b8ce0c": 646.7062920000003
     },
-    "total_ms": 101620.24641800001
+    "total_ms": 110462.74984100003
   }
 }

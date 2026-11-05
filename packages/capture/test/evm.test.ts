@@ -53,7 +53,9 @@ describe("decodeEvmPayload (real @x402/evm exact client)", () => {
     expect(decoded.to.toLowerCase()).toBe(reqs.payTo.toLowerCase());
     expect(decoded.from.toLowerCase()).toBe(agentWallet(SEED, "evm").address.toLowerCase());
     expect(decoded.amount_atomic).toBe(reqs.amount);
-    expect(decoded.dedupe_key).toMatch(/^evm:0x/);
+    expect(decoded.dedupe_key).toMatch(
+      /^eip3009:0x[0-9a-f]{40}:0x[0-9a-f]{40}:\d+:0x[0-9a-f]{64}:0x[0-9a-f]{64}$/,
+    );
   });
 
   it("becomes invalid when the signed value is tampered with", async () => {
@@ -587,7 +589,10 @@ describe("decodeEvmTx (shim, direct transfer)", () => {
     const relayer = privateKeyToAccount(
       canaries(SEED, "evm-test", "evm").get("attacker").secret as `0x${string}`,
     );
-    const { encodeFunctionData } = await import("viem");
+    const { encodeFunctionData, parseSignature } = await import("viem");
+    const headerSig = parseSignature(
+      (headerPayload as unknown as { payload: { signature: `0x${string}` } }).payload.signature,
+    );
     const transferWithAuthorizationAbi = [
       {
         type: "function",
@@ -617,9 +622,9 @@ describe("decodeEvmTx (shim, direct transfer)", () => {
         BigInt(authorization.validAfter),
         BigInt(authorization.validBefore),
         authorization.nonce as `0x${string}`,
-        27,
-        `0x${"11".repeat(32)}` as `0x${string}`,
-        `0x${"22".repeat(32)}` as `0x${string}`,
+        27 + (headerSig.yParity ?? 0),
+        headerSig.r,
+        headerSig.s,
       ],
     });
     const serialized = await relayer.signTransaction({
@@ -635,7 +640,9 @@ describe("decodeEvmTx (shim, direct transfer)", () => {
     });
     const rpcDecoded = await decodeEvmTx({ serialized });
 
+    // U37: the key also carries the payee, amount and canonical signature, and the calldata's
+    // (v, r, s) is the same signature, so the layers still merge.
     expect(rpcDecoded.dedupe_key).toBe(headerDecoded.dedupe_key);
-    expect(rpcDecoded.dedupe_key).toBe(`evm:${authorization.nonce}`);
+    expect(rpcDecoded.dedupe_key).toContain(`:${authorization.nonce.toLowerCase()}:`);
   });
 });

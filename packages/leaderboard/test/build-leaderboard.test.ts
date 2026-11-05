@@ -121,6 +121,8 @@ function payment(overrides: Record<string, unknown> = {}): Payment {
     instruction_source: "header",
     replay: false,
     valid: true,
+    // U37: an honest fixture payment is signed over the offered terms.
+    terms_verified: "offered",
     ...overrides,
   });
 }

@@ -386,7 +386,7 @@ export interface Report {
       payments: Array<
         Omit<
           RunRecord["payments"][number],
-          "raw" | "dedupe_key" | "authorization_seconds" | "decode_error" | "terms_verified"
+          "raw" | "dedupe_key" | "authorization_seconds" | "decode_error"
         >
       >;
     }

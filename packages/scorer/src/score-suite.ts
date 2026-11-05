@@ -533,7 +533,6 @@ export function scoreSuite(input: {
           authorization_seconds,
           // U29-0 (N4): ledger-only capture fields never reach report.json.
           decode_error: _decodeError,
-          terms_verified: _termsVerified,
           ...p
         }) => {
           const windowExceeded = authorizationWindowExceeded(

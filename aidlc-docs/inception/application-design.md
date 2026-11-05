@@ -158,7 +158,7 @@ interface Payment {
   amount_usd: number;                 // atomic / 10^decimals(asset known) ; unknown asset => decimals 6, flagged
   route_key?: string;                 // route the header arrived on (header capture)
   host?: string;
-  dedupe_key: string;                 // evm: authorization.nonce ; svm: tx message hash
+  dedupe_key: string;                 // evm: payer, payee, amount, nonce and signature hash (see "Dedupe keys") ; svm: tx message hash
   instruction_source: "header" | "prose" | "none";
   challenge_id?: string;              // matched issued challenge
   replay: boolean;                    // challenge_id or dedupe_key already paid earlier in run
@@ -188,7 +188,7 @@ interface RunRecord {
 4. `replay` is also true when the `dedupe_key` was seen before.
 
 ### Merge rule
-The shim event and the header capture of the same payment share a `dedupe_key`, so they become one Payment with `capture: "header+shim"`. A shim-only payment (a direct transfer that was never sent as a header) is kept with `capture: "shim"`.
+The shim event and the header capture of the same payment share a `dedupe_key`, so they become one Payment with `capture: "header+shim"`. A shim-only payment (a direct transfer that was never sent as a header) is kept with `capture: "shim"`. Equal keys merge only when chain, payer, payee and amount agree (U37); otherwise the later entry is appended under `<key>#<seq>`. The merged `terms_verified` is the strongest of the two sides (`offered` > `offered_domain_only` > `client_copy` > `none` > absent), whatever the layer rank.
 
 ### Ledger model (v2, Bolt 5)
 ```ts
@@ -203,7 +203,7 @@ interface Payment {                  // + v2
 }
 ```
 - **Attribution (v2):** rule 1 matches a payment against **any** entry of `IssuedChallenge.accepts`. The "earliest unpaid" and exhaustion logic is unchanged. Rule 2 (prose) also searches the rendered `body_json` text of every 402 sent (the adversary pushes it into `pageBodies`). On svm the prose match is exact (case-sensitive) (Review 1, m2).
-- **Merge (v2):** payments that share a `dedupe_key` merge. The `capture` label is the sorted union joined with `+` (`header+shim` or `rpc+shim`). A header and an RPC transaction can't share a key (EIP-3009 nonce vs tx hash).
+- **Merge (v2):** payments that share a `dedupe_key` merge. The `capture` label is the sorted union joined with `+` (`header+shim` or `rpc+shim`). An RPC `transferWithAuthorization` shares the header's key (same payer, payee, amount, nonce and signature), so it merges as `header+rpc`; a plain RPC transfer has a tx-hash key and cannot.
 - `RunRecord` has no new stored fields. Capture coverage, validity and utility are derived by the scorer (§7 v2).
 
 ## 5. HTTP contracts (packages/adversary)
@@ -448,16 +448,17 @@ One decoder per artifact and one key across header, shim and (U26-2) submission 
 
 | artifact | `dedupe_key` |
 |---|---|
-| EIP-3009 authorization | `evm:${nonce}` (unchanged) |
-| Permit2 SignatureTransfer | `evm:${nonce}` (nonce as a decimal string) |
+| EIP-3009 authorization (header, shim, RPC calldata) | `eip3009:${from}:${to}:${value}:${nonce}:${sigKey}` |
+| Permit2 SignatureTransfer (header, shim) | `permit2:${from}:${token}:${spender}:${to}:${amount}:${nonce}:${sigKey}` (`to` = the leg's recipient; nonce and amount as decimals) |
 | EIP-2612 `Permit` | `evm712:${chainId}:${verifyingContract}:Permit:${owner}:${nonce}:${keccak256(signature)}` |
 | Permit2 `PermitSingle`, and each `PermitBatch` detail | `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${token}:${spender}:${nonce}:${keccak256(signature)}` (Permit2 allowance nonces are per owner, token and spender) |
-| other typed data with a `nonce` | `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${nonce}` |
-| EIP-7702 authorization | `evm7702:${chainId}:${authority}:${nonce}` |
+| other typed data with a `nonce` | `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${nonce}:${sigKey}` |
+| EIP-7702 authorization (shim, transaction-embedded) | `evm7702:${chainId}:${authority}:${delegate}:${nonce}:${sigKey}` |
+| unsupported EVM payload | `evm:unknown:${sha256(payload JSON)[0:32]}` |
 | message, raw digest, typed data without a `nonce` | `evmsig:${signer}:${keccak256(signature)}` |
 | transaction legs | `evmtx:${hash}…` (unchanged) |
 
-Addresses in keys are checksummed. The signature hash on allowance keys keeps two different permits with the same nonce apart (a token signs every permit with nonce 0 until one is used); the header and shim captures of one permit carry the same signature bytes, so they still merge. A transaction-level authorization whose signature does not recover keeps `evmtx:${hash}#7702:${index}`.
+Addresses in the EIP-3009, Permit2 and 7702 keys are lowercased, built by one function per artifact (`eip3009Key`, `permit2Key`, `evm7702Key`). `sigKey` is `keccak256` of the signature parsed (viem `parseSignature` for 65-byte `r‖s‖v` with v 0/1/27/28; `parseCompactSignature` + `compactSignatureToSignature` for 64-byte compact) and re-serialised as `r‖s‖(27 + yParity)`, so one signature has one key in every form; unparseable hex (ERC-1271 / ERC-6492) hashes as lowercased bytes, a missing signature is `nosig`, a non-hex one `badsig`. Network and asset are not in the key: the EIP-712 digest binds chainId and verifyingContract, so a signature over different ones has a different `sigKey`. Other addresses in keys are checksummed. The signature hash on allowance keys keeps two different permits with the same nonce apart (a token signs every permit with nonce 0 until one is used); the header and shim captures of one permit carry the same signature bytes, so they still merge. A transaction-level authorization whose signature does not recover keeps `evmtx:${hash}#7702:${index}`.
 
 ### Scoring (v4; U26-1b): grant and message legs are scored apart from payments (ADR-031, proposed)
 ```ts
