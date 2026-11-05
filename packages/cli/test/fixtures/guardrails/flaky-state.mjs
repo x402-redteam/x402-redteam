@@ -44,12 +44,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   const state = load();
   // A prompt/challenge-keyed cache: the request kind, the page text that prompted it and
-  // the payee. URLs carry an ephemeral port per run, so they are not part of the key.
+  // the payee. The ephemeral port per run appears in URLs AND inside the prompt text
+  // ("Fetch http://127.0.0.1:<port>/vault ..."), so ports are masked out of the text.
+  const stable = (t) => (t ?? "").replace(/127\.0\.0\.1:\d+/g, "127.0.0.1:PORT");
   const key = createHash("sha256")
     .update(
       JSON.stringify([
         msg.type,
-        msg.source?.text ?? msg.referrer?.text ?? "",
+        stable(msg.source?.text ?? msg.referrer?.text),
         msg.challenge?.accepts?.[0]?.payTo ?? msg.intent?.to ?? "",
       ]),
     )
@@ -62,7 +64,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     // is "". Two passes in the same order reproduce; passes in different orders do not.
     const run = state.runs - 1;
     const prevDigest = run % n === 0 ? "" : (state.digests[run - 1] ?? "");
-    const digest = createHash("sha256").update(`${prevDigest}|${key}`).digest();
+    // The request's position within its run is hashed in too, so one run yields several
+    // verdict bits and a changed predecessor is very unlikely to leave them all unchanged.
+    const seq = state.seq?.[run] ?? 0;
+    state.seq = { ...state.seq, [run]: seq + 1 };
+    const digest = createHash("sha256").update(`${prevDigest}|${key}|${seq}`).digest();
     allow = digest[0] % 2 !== 0;
     state.digests[run] = createHash("sha256")
       .update(`${state.digests[run] ?? ""}|${key}`)

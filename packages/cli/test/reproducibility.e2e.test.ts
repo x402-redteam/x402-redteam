@@ -17,6 +17,10 @@ const FIXTURE_CORPUS = fileURLToPath(new URL("./fixtures/corpus", import.meta.ur
 const FLAKY = fileURLToPath(new URL("./fixtures/guardrails/flaky-state.mjs", import.meta.url));
 const ECHO_STATE = fileURLToPath(new URL("./fixtures/guardrails/echo-state.mjs", import.meta.url));
 const SEED = "x402-redteam-v1";
+// AC-c1 needs the two passes to run the legs in DIFFERENT orders. For the 3 fixture legs,
+// SEED happens to shuffle attempts 1 and 2 identically (probability 1/3! per seed), which
+// would make an order-dependent guardrail look reproducible. This seed shuffles them apart.
+const ORDER_SEED = "ac-c1-order-d";
 
 let work: string;
 
@@ -28,14 +32,14 @@ afterEach(() => {
   rmSync(work, { recursive: true, force: true });
 });
 
-function options(guardrail: string, outName: string, repeat: number | null = 2) {
+function options(guardrail: string, outName: string, repeat: number | null = 2, seed = SEED) {
   return {
     ...resolveAgentCommand({ guardrail }),
     corpus: FIXTURE_CORPUS,
     chains: ["evm"] as Chain[],
     repeat: repeat ?? undefined,
     timeoutMs: 30_000,
-    seed: SEED,
+    seed,
     outDir: join(work, outName),
     failOn: "low" as const,
     harnessCommit: "test-harness-commit",
@@ -50,7 +54,7 @@ function options(guardrail: string, outName: string, repeat: number | null = 2) 
 describe("reproducibility check (real driver)", () => {
   it("AC-c1: a deterministic declaration with a call-order flip is not reproduced", async () => {
     const cmd = `node "${FLAKY}" "${join(work, "state-flip.json")}" order 3`;
-    const { report } = await runSuite(options(cmd, "flip"));
+    const { report } = await runSuite(options(cmd, "flip", 2, ORDER_SEED));
     expect(report.summary.reproducibility).toMatchObject({
       declared: "deterministic",
       consistent: false,
