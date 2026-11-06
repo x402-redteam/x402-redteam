@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream, readFileSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { LOG_TRUNCATED_MARKER, MAX_LOG_BYTES } from "./limits.js";
 
 /**
  * Security review HIGH-4/LOW: uids that must never be used for `--agent-uid`, beyond
@@ -201,8 +202,26 @@ export function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       startRunClock();
     }
 
-    child.stdout?.pipe(log, { end: false });
-    child.stderr?.pipe(log, { end: false });
+    // U38 (S13): one counting writer for both streams. Bytes up to MAX_LOG_BYTES are written, then
+    // one marker line; later bytes are still read (so the child never blocks on a full pipe) and
+    // dropped. Truncation is not scored: logs are diagnostic, never report input.
+    let logged = 0;
+    let truncated = false;
+    const writeLog = (chunk: Buffer): void => {
+      if (truncated) return;
+      if (logged + chunk.length <= MAX_LOG_BYTES) {
+        logged += chunk.length;
+        log.write(chunk);
+        return;
+      }
+      const room = MAX_LOG_BYTES - logged;
+      if (room > 0) log.write(chunk.subarray(0, room));
+      logged = MAX_LOG_BYTES;
+      truncated = true;
+      log.write(`\n${LOG_TRUNCATED_MARKER}\n`);
+    };
+    child.stdout?.on("data", writeLog);
+    child.stderr?.on("data", writeLog);
 
     const finish = (exit_code: number | null): void => {
       if (settled) return;
@@ -261,18 +280,56 @@ export function scrubSecretsFromLog(logFile: string, secrets: readonly string[])
   const values = secrets.filter((s) => s.length >= 8);
   if (values.length === 0) return;
 
-  let content: string;
   try {
-    content = readFileSync(logFile, "utf8");
-  } catch {
-    return;
+    // U38 (S14): the log is at most MAX_LOG_BYTES plus the marker, so this read fits in memory.
+    const content = readFileSync(logFile, "utf8");
+    let scrubbed = content;
+    for (const value of values) {
+      scrubbed = scrubbed.split(value).join("[REDACTED]");
+    }
+    scrubbed = scrubTruncatedTail(scrubbed, values);
+    if (scrubbed !== content) {
+      writeFileSync(logFile, scrubbed);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return; // nothing was logged
+    // Fail closed: a log that cannot be scrubbed must not stay on disk, because the Action may
+    // upload it. If it cannot be deleted either, the suite stops (a harness error, exit 2).
+    console.error(
+      `x402-redteam: could not scrub the agent log ${logFile} (${err instanceof Error ? err.message : String(err)}); deleting it.`,
+    );
+    try {
+      rmSync(logFile, { force: true });
+    } catch (rmErr) {
+      throw new Error(
+        `could not scrub or delete the agent log ${logFile}: ${rmErr instanceof Error ? rmErr.message : String(rmErr)}`,
+      );
+    }
+    if (existsSync(logFile)) {
+      throw new Error(`could not scrub or delete the agent log ${logFile}`);
+    }
   }
+}
 
-  let scrubbed = content;
+/** Fewest characters of a secret's start that are still redacted when the cut falls inside it. */
+const MIN_TAIL_PREFIX = 4;
+
+/**
+ * When the log was cut, the cut may fall inside a secret: the text before the marker then ends
+ * with a prefix of it. Redacts a tail of at least `MIN_TAIL_PREFIX` characters that is a prefix of
+ * a secret (a shorter leak is accepted).
+ */
+function scrubTruncatedTail(content: string, values: readonly string[]): string {
+  const marker = `\n${LOG_TRUNCATED_MARKER}\n`;
+  if (!content.endsWith(marker)) return content;
+  let head = content.slice(0, content.length - marker.length);
   for (const value of values) {
-    scrubbed = scrubbed.split(value).join("[REDACTED]");
+    for (let k = Math.min(value.length - 1, head.length); k >= MIN_TAIL_PREFIX; k--) {
+      if (head.endsWith(value.slice(0, k))) {
+        head = `${head.slice(0, head.length - k)}[REDACTED]`;
+        break;
+      }
+    }
   }
-  if (scrubbed !== content) {
-    writeFileSync(logFile, scrubbed);
-  }
+  return head + marker;
 }

@@ -9,6 +9,7 @@ import { bodyLimit } from "hono/body-limit";
 import { evaluateCredential } from "./credential.js";
 import { fakeTransactionHash } from "./fake-hash.js";
 import { resolveHost } from "./hosts.js";
+import { LimitRefused, noteLimit, readJson, SUBMIT_MAX_BYTES } from "./limits.js";
 import { MCP_PATH, serveMcp } from "./mcp-server.js";
 import { railFor } from "./rails/index.js";
 import type { Rail } from "./rails/rail.js";
@@ -89,11 +90,8 @@ function serveSignRequest(
   return c.body(body, signRequest.status, { "content-type": "application/json" });
 }
 
-const SIGNATURE_RE = /^0x[0-9a-fA-F]{130}$/;
-const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-
-/** v4 (U26-2, review L1): the largest submission body accepted. */
-const SUBMIT_MAX_BYTES = 16 * 1024;
+export const SIGNATURE_RE = /^0x[0-9a-fA-F]{130}$/;
+export const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 /**
  * v4 (U26-2, M2): accepts a signature POSTed to a collect_signature route's submit path.
@@ -120,6 +118,8 @@ async function acceptSignature(
   const limited = await bodyLimit({
     maxSize: SUBMIT_MAX_BYTES,
     onError: (ctx) => {
+      // U38 (Q5): the submit 413 is also a limit hit.
+      noteLimit(state, "body_bytes", "submit");
       logRequest(state, { method: "POST", host, path, status: 413, paid: false });
       return ctx.json({ error: "submission_too_large" }, 413);
     },
@@ -143,27 +143,40 @@ async function recordSubmission(
     logRequest(state, { method: "POST", host, path, status: 400, paid: false });
     return c.json({ error: "invalid_signature" }, 400);
   };
-  const submission = (await c.req.json().catch(() => null)) as {
+  const submission = (await readJson(c, state, "submit")) as {
     signature?: unknown;
     address?: unknown;
   } | null;
   const signature = submission?.signature;
   if (typeof signature !== "string" || !SIGNATURE_RE.test(signature)) return reject();
-  let signer: string;
+  // U38 (D1): signature recovery and the shim decode run as one queued, budgeted decode.
+  let outcome: { signer: string; decoded: DecodedPayment } | null;
   try {
-    signer = await recoverSignRequestSigner(wire, signature);
-  } catch {
-    return reject();
+    outcome = await shared.gate.run(state, "submit", async () => {
+      let signer: string;
+      try {
+        signer = await recoverSignRequestSigner(wire, signature);
+      } catch {
+        return null;
+      }
+      const decoded = await shared.capture.decodeShimEvent(
+        signRequestEvent(wire, signature, signer),
+        { knownOwners: rendered.knownOwners },
+      );
+      return { signer, decoded };
+    });
+  } catch (err) {
+    if (err instanceof LimitRefused) return c.json({ error: "run_decode_limit" }, 429);
+    throw err;
   }
+  if (outcome === null) return reject();
+  const { signer, decoded } = outcome;
 
   const claimed = submission?.address;
   const claimedDiffers =
     typeof claimed === "string" &&
     EVM_ADDRESS_RE.test(claimed) &&
     claimed.toLowerCase() !== signer.toLowerCase();
-  const decoded = await shared.capture.decodeShimEvent(signRequestEvent(wire, signature, signer), {
-    knownOwners: rendered.knownOwners,
-  });
   const annotate = (leg: DecodedPayment): DecodedPayment =>
     claimedDiffers ? { ...leg, raw: { submitted: leg.raw, claimed_address: claimed } } : leg;
   recordDecodedLegs(
@@ -261,15 +274,19 @@ async function serveChallenge(
   }
 
   if (outcome.kind === "unmatched") {
-    const fallback = outcome.payments[0] as (typeof outcome.payments)[number];
-    const headers = rail.settle({
-      success: false,
-      errorReason: "invalid_payment",
-      transaction: "",
-      network: fallback.network,
-      payer: fallback.from,
-    });
-    for (const [name, value] of Object.entries(headers)) c.header(name, value);
+    // U38 (D4): every leg refused by the payment cap leaves no payer to name; answer the same
+    // 402 invalid_payment without a settlement header.
+    const fallback = outcome.payments[0];
+    if (fallback !== undefined) {
+      const headers = rail.settle({
+        success: false,
+        errorReason: "invalid_payment",
+        transaction: "",
+        network: fallback.network,
+        payer: fallback.from,
+      });
+      for (const [name, value] of Object.entries(headers)) c.header(name, value);
+    }
     logRequest(state, { method, host, path, status: 402, paid: false });
     return c.json({ error: "invalid_payment" }, 402);
   }

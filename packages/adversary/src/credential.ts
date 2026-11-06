@@ -1,5 +1,6 @@
 import type { Payment } from "@x402-redteam/schema";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
+import { MAX_JSON_DEPTH, noteLimit, paymentPayloadTooBig } from "./limits.js";
 import type { DecodeCtx, DecodeResult } from "./rails/rail.js";
 import { recordDecodedLegs } from "./record.js";
 import type { RenderedRoute, RenderedScenario } from "./render.js";
@@ -14,7 +15,8 @@ import type { RouteRuntime, RunState } from "./state.js";
 export type CredentialOutcome =
   /** Nothing could be read as a payment (or recording threw): answered 400 invalid_payment. */
   | { kind: "undecodable" }
-  /** Decoded and recorded, but no valid leg answers the current issuance: never delivered. */
+  /** Decoded and recorded, but no valid leg answers the current issuance: never delivered.
+   * U38 (D4): `payments` is empty when the payment cap refused every leg. */
   | { kind: "unmatched"; payments: Payment[] }
   /** A valid leg answers the current issuance. */
   | { kind: "matched"; payments: Payment[]; matchingLeg: Payment };
@@ -45,10 +47,15 @@ export async function evaluateCredential(input: CredentialInput): Promise<Creden
   const { shared, state, rendered, route, host, runtime } = input;
   const transport = input.transport !== undefined ? { transport: input.transport } : {};
 
+  // U38 (M1): set when the credential's transaction field was over its bound; its fallback record
+  // would decode the same oversized field, so none is made.
+  let fieldTooBig = false;
   let bindingMismatch: boolean;
   let payments: ReturnType<typeof recordDecodedLegs>;
   try {
-    const result = await input.decode({
+    const surface = input.transport === "mcp" ? "mcp" : "http";
+    // U38 (D1): the whole rail decode of an agent credential runs as one queued, budgeted decode.
+    const ctx: DecodeCtx = {
       capture: shared.capture,
       hints: {
         knownOwners: rendered.knownOwners,
@@ -63,7 +70,17 @@ export async function evaluateCredential(input: CredentialInput): Promise<Creden
       currentChallengeIds: runtime.currentChallengeIds,
       route,
       url: input.url,
-    });
+      payloadTooBig: (payload) => {
+        const big = paymentPayloadTooBig(state, payload, surface);
+        if (big) fieldTooBig = true;
+        return big;
+      },
+      onJson: (depth) => {
+        state.stats.maxJsonDepth = Math.max(state.stats.maxJsonDepth, depth);
+        if (depth > MAX_JSON_DEPTH) noteLimit(state, "json_depth", surface);
+      },
+    };
+    const result = await shared.gate.run(state, surface, () => input.decode(ctx));
     // U20 code review fix 6: a rail could in principle decode a credential into zero
     // legs (nothing to record) - treated the same as an undecodable credential, inside
     // this same try/catch, rather than proceeding with an empty `payments` array.
@@ -86,8 +103,11 @@ export async function evaluateCredential(input: CredentialInput): Promise<Creden
     );
   } catch {
     // U29-0: nothing received is dropped. If recording threw, record a decode_error leg.
+    if (fieldTooBig) return { kind: "undecodable" };
     try {
-      const stand = await shared.capture.decodePayload(input.fallback);
+      const stand = await shared.gate.run(state, input.transport === "mcp" ? "mcp" : "http", () =>
+        shared.capture.decodePayload(input.fallback),
+      );
       recordDecodedLegs(state, shared.capture, stand, {
         capture: "header",
         host,

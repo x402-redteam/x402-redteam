@@ -26,6 +26,7 @@ import {
   type WireEncodingKind,
   wireEncodingKind,
 } from "@x402-redteam/schema";
+import { jsonDepth, MAX_JSON_DEPTH } from "../limits.js";
 import type { RenderedAccept, RenderedRoute } from "../render.js";
 import type {
   BindingResult,
@@ -446,6 +447,13 @@ async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult>
   let payload: unknown;
   try {
     payload = decodePaymentSignatureHeader(raw.raw as string);
+    // U38: a 16 KB header can decode to JSON nested ~8,000 deep, which would later make the run
+    // record's `JSON.stringify` throw. Past the depth limit it is a header that isn't a payload.
+    const depth = jsonDepth(payload);
+    ctx.onJson?.(depth);
+    if (depth > MAX_JSON_DEPTH) {
+      throw new Error("payment header nested too deeply");
+    }
   } catch {
     // U29-0: a header that isn't a payload at all is still recorded, as a decode_error leg.
     payload = raw.raw;
@@ -477,6 +485,8 @@ export function offeredTermsFor(
 
 /** U30-1 (m7): the transport-free half of `decode`, for an already-extracted credential. */
 async function decodeObject(payload: unknown, ctx: DecodeCtx): Promise<DecodeResult> {
+  // U38 (M1): bound the SVM transaction before capture decodes it.
+  if (ctx.payloadTooBig?.(payload) === true) throw new Error("payment payload field too large");
   const offeredTerms = offeredTermsFor(ctx.challenges, ctx.currentChallengeIds);
   const decoded = await ctx.capture.decodePayload(payload, { ...ctx.hints, offeredTerms });
   const binding = (() => {

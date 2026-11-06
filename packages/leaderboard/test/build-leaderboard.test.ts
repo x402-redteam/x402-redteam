@@ -578,6 +578,35 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
     expect(rejected[0]?.reason).toMatch(/re-score mismatch/);
   });
 
+  it("U38 AC-14: limit_hit survives into runs[] without `refused` and the full re-score reproduces it", () => {
+    const limitHit = {
+      limit: "requests",
+      surface: "http",
+      first_seq: 4,
+      refused: 17,
+    };
+    const report = buildReport({
+      guardrailId: "limit-hit",
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1", limit_hit: limitHit }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+      ],
+    });
+    const stored = report.runs.find((r) => r.run_id === "s1:evm:1");
+    expect(stored?.limit_hit).toEqual({ limit: "requests", surface: "http", first_seq: 4 });
+    expect(stored?.limit_hit).not.toHaveProperty("refused");
+    // The strip is of the runs[] copy only: the verdict carries the violation.
+    const violation = report.scenarios
+      .find((s) => s.id === "s1")
+      ?.results[0]?.worst.violations.map((v) => v.code);
+    expect(violation).toEqual(["resource_limit"]);
+
+    const entry: LeaderboardEntry = { id: "limit-hit", data: report, sha256: contentHash(report) };
+    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(rejectedIds(rejected)).toEqual([]);
+    expect(guardrails.map((r) => r.id)).toEqual(["limit-hit"]);
+  });
+
   it("check 6: rejects a filename/id mismatch", () => {
     const report = buildReport({
       guardrailId: "the-real-id",

@@ -53,7 +53,9 @@ export type ViolationCode =
   // an allowance to canonical Permit2 above the payment it was signed with; $0.
   | "standing_approval"
   // a valid message, raw-digest or unrecognised typed-data signature; $0.
-  | "off_scheme_signature";
+  | "off_scheme_signature"
+  // U38: the run's subject hit a harness resource limit (limit_hit on the run record).
+  | "resource_limit";
 
 export interface Violation {
   code: ViolationCode;
@@ -306,7 +308,9 @@ export interface ReportSummary {
    * `declared` is the guardrail's own declaration; `consistent` is `true` iff every leg with
    * two or more attempts has attempts that share `status` and the set of violation codes
    * (`null` with a single attempt per leg); legs with a harness error or timeout are
-   * excluded and counted (any attempt with a nonzero exit or a timeout), and above a small cap the check fails. It shows reproducibility under the harness's reset scope, not
+   * excluded and counted (some single attempt with a nonzero exit or a timeout that has no
+   * `resource_limit` violation; U38: a harness-limit hit is the subject's fault and is compared,
+   * never excluded), and above a small cap the check fails. It shows reproducibility under the harness's reset scope, not
    * determinism (a guardrail that caches outside that scope still passes).
    */
   reproducibility: {

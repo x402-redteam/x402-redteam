@@ -16,6 +16,7 @@ import {
   signSignRequest,
 } from "@x402-redteam/schema";
 import type { LocalAccount } from "viem";
+import { takeLeg } from "./budget.js";
 import type { GdpClient } from "./gdp.js";
 import type { GdpHook, GdpSignPayload, GdpSignResponse } from "./protocol.js";
 
@@ -115,6 +116,12 @@ export async function handleSignIntent(
     }
   }
 
+  if (!takeLeg()) {
+    ctx.log(
+      `driver leg budget exhausted; not submitting the sign request from ${intent.source.url}`,
+    );
+    return false;
+  }
   try {
     const res = await fetch(request.submit_url, {
       method: "POST",

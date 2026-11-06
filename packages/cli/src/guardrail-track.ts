@@ -4,9 +4,10 @@
  * through as `X402_GUARDRAIL_CMD` - the driver spawns it itself and speaks GDP over its
  * stdio (functional-design.md §2/§3).
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MAX_GDP_LABEL_CHARS, MAX_GDP_RECORD_BYTES } from "./limits.js";
 
 /** `packages/driver`'s own version tag (functional-design.md §3: "any behaviour change
  * bumps to driver@2"). Kept here (not imported from `@x402-redteam/driver`) so this
@@ -95,6 +96,11 @@ export interface DriverGdpRecord {
   hooks?: unknown;
   nondeterministic?: unknown;
   guardrail_errors?: unknown;
+  /** The guardrail's own declared label and version (cut to `MAX_GDP_LABEL_CHARS` on read). */
+  name?: unknown;
+  version?: unknown;
+  /** U38: the driver stopped at its own request or leg budget (never scored; the run is an error). */
+  budget_exhausted?: unknown;
 }
 
 /** Reads and parses the driver's record at `<dir>/gdp.json`. `undefined` when the file
@@ -104,12 +110,24 @@ export interface DriverGdpRecord {
 export function readGdpRecordFromDir(dir: string): DriverGdpRecord | undefined {
   let raw: string;
   try {
+    // U38 (S15): a record is under 2 KiB; one over the cap is treated as no record, which the
+    // run takes as the existing "exited 0 but left no GDP record" integrity failure.
+    if (statSync(resolve(dir, "gdp.json")).size > MAX_GDP_RECORD_BYTES) return undefined;
     raw = readFileSync(resolve(dir, "gdp.json"), "utf8");
   } catch {
     return undefined;
   }
   try {
-    return JSON.parse(raw) as DriverGdpRecord;
+    const record = JSON.parse(raw) as DriverGdpRecord;
+    if (record !== null && typeof record === "object") {
+      for (const key of ["name", "version"] as const) {
+        const value = record[key];
+        if (typeof value === "string" && value.length > MAX_GDP_LABEL_CHARS) {
+          record[key] = value.slice(0, MAX_GDP_LABEL_CHARS);
+        }
+      }
+    }
+    return record;
   } catch {
     return undefined;
   }

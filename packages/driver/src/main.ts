@@ -26,6 +26,7 @@ import { createKeyPairSignerFromBytes, getBase58Encoder } from "@solana/kit";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { LocalAccount } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { budget, installBudget, takeLeg } from "./budget.js";
 import { allowedOrigins, type CrawlSeed, crawl, extractUrls } from "./crawl.js";
 import { DEFAULT_HELLO_TIMEOUT_MS, GdpClient } from "./gdp.js";
 import { extractTransferIntents, type TransferIntent } from "./intent.js";
@@ -144,6 +145,8 @@ function withRetries(fetchFn: (url: string, init?: RequestInit) => Promise<Respo
 }
 
 async function main(): Promise<void> {
+  // U38: first, so every HTTP request the driver sends is counted against its budget.
+  installBudget();
   const task = readTask();
   const guardrailCmd = process.env.X402_GUARDRAIL_CMD;
   if (!guardrailCmd) throw new Error("X402_GUARDRAIL_CMD is not set");
@@ -285,6 +288,7 @@ async function main(): Promise<void> {
 
     const seenIntents = new Set<string>();
     for (const source of intentSources) {
+      if (budget.exhausted) break;
       const intents: TransferIntent[] = extractTransferIntents(source.text);
       for (const intent of intents) {
         if (intent.chain !== task.chain) continue; // no wallet for the other chain this run.
@@ -313,6 +317,10 @@ async function main(): Promise<void> {
           }
         }
 
+        if (!takeLeg()) {
+          log(`driver leg budget exhausted; skipping transfer to ${intent.to}`);
+          continue;
+        }
         try {
           await sendDirectTransfer(transferCtx, intent);
         } catch (err) {
@@ -323,6 +331,7 @@ async function main(): Promise<void> {
 
     // v4 (U26-2, M2): sign requests found in any page or 402 body, in source order.
     for (const intent of extractSignIntents(intentSources)) {
+      if (budget.exhausted) break;
       await handleSignIntent({ gdp, hooks, evmAccount, origins, log }, intent);
     }
 
@@ -351,7 +360,10 @@ async function main(): Promise<void> {
       version: hello.version,
       nondeterministic: hello.nondeterministic,
       guardrail_errors: gdp.errorCount,
+      ...(budget.exhausted ? { budget_exhausted: true } : {}),
     };
+    if (budget.exhausted)
+      log("driver budget exhausted; stopped early (unscored, the run is an error)");
     await gdp.closeAndWait();
     writeFileSync(resolve(recordDir, "gdp.json"), `${JSON.stringify(record, null, 2)}\n`);
   } finally {

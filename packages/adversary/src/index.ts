@@ -6,6 +6,7 @@ import type {
   Chain,
   HostMode,
   IssuedChallenge,
+  LimitHit,
   Payment,
   RequestLog,
   Scenario,
@@ -14,6 +15,7 @@ import { Hono } from "hono";
 import { registerEvmRpcRoutes } from "./evm-rpc.js";
 import { registerFacilitatorRoutes } from "./facilitator.js";
 import { registerLedgerRoutes } from "./ledger-endpoint.js";
+import { DecodeQueue, hardenServer, type LimitSurface, limitMiddleware } from "./limits.js";
 import { startForwardProxy } from "./proxy.js";
 import { railFor } from "./rails/index.js";
 import { offeredAcceptsFor } from "./rails/x402v2.js";
@@ -44,6 +46,8 @@ export interface DrainedRun {
   challenges: IssuedChallenge[];
   payments: Payment[];
   delivered: boolean;
+  /** U38: the first resource limit the run's subject hit; absent when none was. */
+  limit_hit?: LimitHit;
 }
 
 export interface Adversary {
@@ -54,6 +58,12 @@ export interface Adversary {
   proxyUrl?: string;
   load(run: { scenario: Scenario; chain: Chain; run_id: string }): void;
   drain(): DrainedRun;
+  /**
+   * U38 (D1): stops admitting new requests, then resolves once every queued decode has been
+   * recorded, so a payload that arrived before the agent exited is never dropped. `run.ts`
+   * awaits it before `drain()`.
+   */
+  idle(): Promise<void>;
   /** Requests the loaded run has received so far (0 when nothing is loaded). */
   requestCount(): number;
   close(): Promise<void>;
@@ -169,14 +179,18 @@ async function bindDualStack(
 export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adversary> {
   const app = new Hono();
   const holder = new RunHolder();
+  const gate = new DecodeQueue();
   const shared: Shared = {
     seed: opts.seed,
     capture: opts.capture,
     holder,
+    gate,
     ...(opts.mcpChallengeMeta === true ? { mcpChallengeMeta: true } : {}),
   };
   const hostname = opts.host ?? "127.0.0.1";
 
+  // U38: one global middleware before every route (admission, request cap, streamed byte limit).
+  app.use("*", limitMiddleware(shared));
   registerFacilitatorRoutes(app, shared);
   registerSolanaRpcRoutes(app, shared);
   registerEvmRpcRoutes(app, shared);
@@ -184,6 +198,14 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
   registerScenarioRoutes(app, shared);
 
   const { server, port, ipv6Server } = await bindDualStack(app, hostname, opts.port);
+  const listeners: Array<{ current: number; peak: number }> = [];
+  const harden = (srv: ServerType, surface: LimitSurface): void => {
+    const connections = { current: 0, peak: 0 };
+    listeners.push(connections);
+    hardenServer(srv as Server, surface, shared, connections);
+  };
+  harden(server, "http");
+  if (ipv6Server) harden(ipv6Server, "http");
 
   // ADR-012 (full) §4: the forward proxy is an entirely separate listener (absolute-form
   // request targets, not Host-header routing) sharing this same `app`/`shared`, so
@@ -193,6 +215,7 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
   if (opts.hostMode === "proxy") {
     const proxy = await startForwardProxy(app, shared, hostname);
     proxyServer = proxy.server;
+    harden(proxy.server, "proxy");
     proxyUrl = `http://${hostname}:${proxy.port}`;
   }
 
@@ -208,7 +231,11 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
       // attributably to this scenario - rather than 500ing the first paywalled request.
       state.rail = railFor(run.scenario.rail, run.scenario.id);
       const rendered = renderScenario(run.scenario, run.chain, baseUrl, opts.seed, opts.hostMode);
+      gate.reset();
       holder.current = { state, rendered };
+    },
+    idle() {
+      return gate.idle();
     },
     drain() {
       const loaded = holder.current;
@@ -216,6 +243,26 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
         throw new Error("drain: no run loaded - call load() first");
       }
       const { state } = loaded;
+      if (process.env.X402_REDTEAM_LIMIT_TRACE === "1") {
+        // Observed maxima, stderr only, never into a report (functional-design.md section 8).
+        console.error(
+          `x402-redteam limit-trace ${JSON.stringify({
+            run_id: state.run_id,
+            inbound: state.inbound,
+            largest_body: state.stats.largestBody,
+            body_bytes: state.bodyBytes,
+            decodes: state.decodes,
+            peak_connections: Math.max(0, ...listeners.map((l) => l.peak)),
+            largest_batch: state.stats.largestBatch,
+            max_json_depth: state.stats.maxJsonDepth,
+            max_svm_instructions: state.stats.maxSvmInstructions,
+            max_7702_authorizations: state.stats.maxAuthorizations,
+            payments: state.payments.length,
+            longest_decode_ms: Math.round(gate.longestDecodeMs * 10) / 10,
+            limit_hit: state.limitHit?.limit ?? null,
+          })}`,
+        );
+      }
       return {
         run_id: state.run_id,
         scenario_id: state.scenario.id,
@@ -224,6 +271,7 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
         challenges: bySeq(state.challenges),
         payments: bySeq(state.payments),
         delivered: state.delivered,
+        ...(state.limitHit !== undefined ? { limit_hit: { ...state.limitHit } } : {}),
       };
     },
     requestCount() {

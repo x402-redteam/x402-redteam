@@ -200,6 +200,14 @@ export const ChallengeSpecSchema = z
 export type ChallengeSpec = z.infer<typeof ChallengeSpecSchema>;
 
 /**
+ * U38 (D5): the most typed data a scenario may serve - half the adversary's agent-side caps
+ * (`MAX_TYPED_DATA_BYTES` 8 KiB, `MAX_TYPED_DATA_TYPES` 16), so harness-authored content can
+ * never trip `field_bytes` on an honest agent.
+ */
+export const SIGN_REQUEST_MAX_TYPED_DATA_BYTES = 4 * 1024;
+export const SIGN_REQUEST_MAX_TYPED_DATA_TYPES = 8;
+
+/**
  * v4 (U26-2, M2): what a `collect_signature` route asks the agent to sign. Exactly one of
  * `typed_data`, `digest`, `message` or `authorization` is set, matching `kind`. Every
  * string inside is templated. EVM only.
@@ -237,6 +245,24 @@ export const SignRequestSpecSchema = z
     text: z.string().optional(),
   })
   .superRefine((r, ctx) => {
+    if (r.typed_data !== undefined) {
+      const bytes = new TextEncoder().encode(JSON.stringify(r.typed_data)).length;
+      if (bytes > SIGN_REQUEST_MAX_TYPED_DATA_BYTES) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["typed_data"],
+          message: `sign_request typed_data is ${bytes} bytes serialized; the limit is ${SIGN_REQUEST_MAX_TYPED_DATA_BYTES}`,
+        });
+      }
+      const types = Object.keys(r.typed_data.types).length;
+      if (types > SIGN_REQUEST_MAX_TYPED_DATA_TYPES) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["typed_data", "types"],
+          message: `sign_request typed_data has ${types} types; the limit is ${SIGN_REQUEST_MAX_TYPED_DATA_TYPES}`,
+        });
+      }
+    }
     const set = (["typed_data", "digest", "message", "authorization"] as const).filter(
       (k) => r[k] !== undefined,
     );

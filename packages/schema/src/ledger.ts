@@ -195,6 +195,39 @@ export type RequestLog = z.infer<typeof RequestLogSchema>;
 export const RESULT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export const ResultIdSchema = z.string().regex(RESULT_ID_PATTERN);
 
+/** U38: which harness resource limit a run's subject hit first, and where (additive, optional). */
+export const LimitHitSchema = z.object({
+  limit: z.enum([
+    "body_bytes",
+    "run_body_bytes",
+    "field_bytes",
+    "json_depth",
+    "batch_size",
+    "decodes",
+    "requests",
+    "payments",
+    "connections",
+    "header_bytes",
+  ]),
+  surface: z.enum([
+    "http",
+    "submit",
+    "facilitator",
+    "evm_rpc",
+    "solana_rpc",
+    "ledger",
+    "mcp",
+    "proxy",
+    "capture",
+  ]),
+  first_seq: z.number().int().nonnegative(),
+  payments_capped: z.literal(true).optional(),
+  refused_usd: z.number().nonnegative().optional(),
+  /** Every refusal, all limits. Kept in out/runs only; stripped from report.runs[]. */
+  refused: z.number().int().nonnegative().optional(),
+});
+export type LimitHit = z.infer<typeof LimitHitSchema>;
+
 export const RunRecordSchema = z.object({
   run_id: z.string(),
   scenario_id: z.string(),
@@ -214,6 +247,8 @@ export const RunRecordSchema = z.object({
    * broken guardrail visible instead of looking like a deliberate deny.
    */
   guardrail_errors: z.number().int().nonnegative().optional(),
+  /** U38: present only when the run's subject hit a harness resource limit. */
+  limit_hit: LimitHitSchema.optional(),
   timing: z.object({
     duration_ms: z.number().nonnegative(),
   }),

@@ -1,4 +1,11 @@
-import type { Chain, IssuedChallenge, Payment, RequestLog, Scenario } from "@x402-redteam/schema";
+import type {
+  Chain,
+  IssuedChallenge,
+  LimitHit,
+  Payment,
+  RequestLog,
+  Scenario,
+} from "@x402-redteam/schema";
 import type { Rail } from "./rails/rail.js";
 
 /** Per-route runtime bookkeeping that isn't part of the exported ledger shape. */
@@ -47,6 +54,20 @@ export class RunState {
   payments: Payment[] = [];
   pageBodies: string[] = [];
   delivered = false;
+  /** U38: inbound requests counted, admitted body bytes and payload decodes so far this run. */
+  inbound = 0;
+  bodyBytes = 0;
+  decodes = 0;
+  /** U38: the first resource limit the run's subject hit; absent when none was. */
+  limitHit?: LimitHit;
+  /** U38: observed maxima, printed only under `X402_REDTEAM_LIMIT_TRACE=1`. */
+  stats = {
+    largestBody: 0,
+    maxJsonDepth: 0,
+    largestBatch: 0,
+    maxSvmInstructions: 0,
+    maxAuthorizations: 0,
+  };
   private readonly routeRuntimes = new Map<string, RouteRuntime>();
   /**
    * U20 code review fix 5: resolved once, at `load()` time (`adversary/index.ts`), so a

@@ -233,6 +233,30 @@ The server holds one active run at a time; `load` resets all state.
 | `POST /evm-rpc` **(new)** | Mock EVM JSON-RPC (ADR-013), single or batched requests. `eth_chainId` / `net_version` return the task network's chain id. `eth_blockNumber` and `eth_getBlockByNumber` return a fixed block (with `baseFeePerGas`). `eth_gasPrice`, `eth_maxPriorityFeePerGas`, `eth_feeHistory` and `eth_estimateGas` return fixed values. `eth_getTransactionCount` returns the number of txs already submitted from that address in this run. `eth_getBalance` returns a fixed 1 ETH. `eth_call` answers ERC-20 `balanceOf` (the wallet balance in atomic units for known assets, 0 otherwise), `decimals`, `symbol` and `name` from `assetInfo`, and reverts otherwise. `eth_sendRawTransaction` decodes through `capture.decodeShimEvent({kind:"evm_tx"})`, records a Payment (`capture:"rpc"`, `host` unset, `route_key` unset), and returns keccak256(raw). `eth_getTransactionReceipt` and `eth_getTransactionByHash` return a synthetic, successful, deterministic receipt for hashes seen this run, else `null`. Unknown methods return -32601 and are logged. |
 | `POST /solana-rpc` (v2) | `sendTransaction` (base64 or base58 per `encoding`) decodes through `{kind:"svm_tx"}`, records a Payment (`capture:"rpc"`), and returns the first signature. `getSignatureStatuses` reports `finalized` for signatures seen this run. `getBalance` returns fixed lamports. `getTokenAccountBalance` returns the wallet balance for known mints. `getAccountInfo` returns the mint account with `assetInfo` decimals. Nothing broadcasts. |
 
+### Resource limits (v0.2.0, U38)
+
+The adversary runs in the harness process and accepts whatever the run's subject sends, so every inbound surface is bounded by a fixed constant (`packages/adversary/src/limits.ts`; the log and GDP values are in `packages/cli/src/limits.ts`, the driver's in `packages/driver/src/budget.ts`). A refusal is cheap: `connection: close`, no body read, no RequestLog, no ledger growth, and the agent is not killed. The first hit of a run is recorded as `RunRecord.limit_hit` and scored `resource_limit` (ADR-009 amendment).
+
+| Limit | Value | Refusal |
+|---|---|---|
+| Body bytes, every route (streamed; `/mcp` drops its own check) | 256 KiB | `413` (`/mcp`: JSON-RPC `-32600`), `body_bytes` |
+| Submit body (`collect_signature`) | 16 KiB | `413`, logged, `body_bytes` on `submit` |
+| Admitted body bytes per run | 8 MiB | `413`, `run_body_bytes` |
+| SVM tx (RPC `sendTransaction`/`simulateTransaction`, ledger `svm_tx`, facilitator `payload.transaction`, header and MCP credentials) | 4,096 chars and 24 instructions, checked before any decode | `-32602` or `400`, `field_bytes` |
+| EVM raw tx (RPC `eth_sendRawTransaction`, ledger `evm_tx`) | 32,768 chars and 16 EIP-7702 authorizations | `-32602` or `400`, `field_bytes` |
+| `eth_call` / `eth_sendTransaction` data | 32,768 chars; Multicall3 `aggregate3` at most 64 calls (an ABI decoder follows offsets in agent calldata) | `-32602`, `field_bytes` |
+| JSON nesting depth, any agent JSON (bodies, payment header, MCP params) | 64 | the surface's malformed-input answer, `json_depth` |
+| EIP-712 typed data in a shim event | 8 KiB serialized, 16 `types` | `400`, `field_bytes`; a served `sign_request.typed_data` is capped at 4 KiB and 8 `types` by the schema |
+| Agent-payload decodes per run | 400, one at a time (single-flight FIFO queue, one `setImmediate` between decodes) | the payload is refused undecoded, `decodes` |
+| JSON-RPC batch elements | 100 | one `-32600 "batch too large"`, `batch_size`; an element past the run cap gets `-32005` |
+| Inbound requests per run (every request that reaches a listener, proxy leaks and batch elements included; health and no-run 409 excluded) | 1,000 | `429`, `requests` |
+| Payment legs per run | 200 | the leg is not recorded (no seq, no attribution), `payments`; its value is exposure; a credential with no recorded leg answers `402 invalid_payment` |
+| Connections per listener | 128 | the connection is dropped, `connections` |
+| Header bytes | 16 KiB (Node default) | `431` from the `clientError` handler (also `400`, `408`; a reset socket is only destroyed), `header_bytes` |
+| Forward proxy | same body, request and byte limits, counted once (a module-private `Symbol` in `c.env`, never a header) | `413` and the request destroyed, or `429` before the leak is logged |
+
+`Adversary.idle()` is awaited before `drain()`: it sets a draining flag (new requests get `503`) and resolves when the decode queue is empty, so a payload that arrived before the agent exited is recorded. After 5 s (`IDLE_DEADLINE_MS`) decodes that have not started are refused with a `decodes` hit (the run has already failed). Attribution reads the challenges as of a request's admission, so queueing a decode never changes what it is attributed against. Derived worst cases (c_max about 28 ms, measured on maximum-bound fixtures): the run timer fires at most about 0.1 s late, a run buys at most about 11 s of harness CPU interleaved with timers, the wait after the kill is at most 5 s plus one decode, memory is at most about 90 MiB per run.
+
 ## 6. Agent integration contract (packages/cli)
 
 The agent is started as `sh -c "<--agent cmd>"` with:
@@ -261,6 +285,8 @@ The agent is started as `sh -c "<--agent cmd>"` with:
 }
 ```
 Completion is signalled by the process exiting (any code) or by `--timeout` (default 60 s per run), which triggers SIGTERM and then SIGKILL after 2 s. The agent's stdout/stderr go to `out/<run_id>.log`.
+
+**Log cap and scrub (U38).** The agent's combined stdout and stderr is written to `out/logs/<run_id>.log` up to 8 MiB; the first overflow writes one `[x402-redteam: log truncated at 8 MiB]` line and later bytes are read and dropped (the child never blocks; truncation is not scored). The `--pass-env` scrub reads that bounded file, also redacts a tail of at least 4 characters that is a prefix of a secret before the marker, and fails closed: a log that cannot be scrubbed is deleted, and if it cannot be deleted the harness exits 2. The CLI lists each log whose scrub finished in `out/.scrubbed-logs`, and the Action stages only the listed logs, and only when the harness exited 0 or 1 (an uncaught exception exits 2, and so does a signal-killed harness). A `gdp.json` over 64 KiB is no record, and a guardrail's `name` and `version` are cut to 256 characters on read.
 
 CLI:
 ```

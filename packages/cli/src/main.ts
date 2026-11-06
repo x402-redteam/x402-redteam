@@ -9,6 +9,15 @@ import { runSuite } from "./run.js";
 import { validateAgentUid } from "./spawn.js";
 import { validate } from "./validate.js";
 
+// U38: an uncaught exception or unhandled rejection is a harness error (2). Node's own exit code
+// for both is 1, which means "findings" and tells the Action the harness finished normally.
+for (const event of ["uncaughtException", "unhandledRejection"] as const) {
+  process.on(event, (err) => {
+    console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+    process.exit(2);
+  });
+}
+
 function splitList(value: string | undefined): string[] {
   if (!value) return [];
   return value

@@ -296,14 +296,33 @@ runs:
       env:
         OUT_DIR: ${{ inputs.out }}
         INCLUDE_AGENT_LOGS: ${{ inputs.include-agent-logs }}
+        EXIT_CODE: ${{ steps.run.outputs.exit-code }}
       run: |
         staging="$RUNNER_TEMP/x402-redteam-artifact"
         rm -rf "$staging"
         mkdir -p "$staging"
         if [ -d "$OUT_DIR" ]; then
           cp -r "$OUT_DIR" "$staging/out"
-          if [ "$INCLUDE_AGENT_LOGS" != "true" ]; then
-            rm -rf "$staging/out/logs"
+          # U38 (D2): logs/ is never copied wholesale. The harness lists in .scrubbed-logs each log
+          # whose --pass-env scrub finished; only those are staged, and only when the harness exited
+          # 0 or 1. An exit code alone cannot prove a scrub (an uncaught exception or a signal kill
+          # can look like "findings"), so a run that crashed before its scrub leaves its log out.
+          rm -rf "$staging/out/logs"
+          case "$EXIT_CODE" in
+            0 | 1) harness_finished=true ;;
+            *) harness_finished=false ;;
+          esac
+          manifest="$OUT_DIR/.scrubbed-logs"
+          if [ "$INCLUDE_AGENT_LOGS" = "true" ] && [ "$harness_finished" = "true" ] && [ -f "$manifest" ]; then
+            mkdir -p "$staging/out/logs"
+            while IFS= read -r name; do
+              case "$name" in
+                "" | */* | .*) continue ;;
+              esac
+              if [ -f "$OUT_DIR/logs/$name" ]; then
+                cp "$OUT_DIR/logs/$name" "$staging/out/logs/$name"
+              fi
+            done < "$manifest"
           fi
         fi
         echo "dir=$staging/out" >> "$GITHUB_OUTPUT"

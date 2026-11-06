@@ -1,8 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chownSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  chownSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdversary } from "@x402-redteam/adversary";
 import { capture } from "@x402-redteam/capture";
@@ -34,6 +42,7 @@ import {
   readGuardrailErrors,
 } from "./guardrail-track.js";
 import { hostEnv, preflightHostMode } from "./host-env.js";
+import { SCRUBBED_MANIFEST } from "./limits.js";
 import { shufflePass } from "./pass-order.js";
 import { loadSeason } from "./season.js";
 import { runAgent, scrubSecretsFromLog } from "./spawn.js";
@@ -357,6 +366,8 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const runsDir = resolve(outDir, "runs");
   mkdirSync(logsDir, { recursive: true });
   mkdirSync(runsDir, { recursive: true });
+  // U38 (D2): rebuilt from scratch each suite; see SCRUBBED_MANIFEST.
+  rmSync(resolve(outDir, SCRUBBED_MANIFEST), { force: true });
 
   const runs: RunRecord[] = [];
   // U18b item 1 (coordinator revision): one entry per guardrail-track run, in run
@@ -500,6 +511,10 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           agentGid: opts.agentGid,
         });
 
+        // U38 (D1): the agent is gone; stop admitting requests and wait for every queued decode to
+        // be recorded, so a payload that arrived before it exited is never dropped.
+        await adversary.idle();
+
         // U22 code review round 2 (item 3): best-effort scrub of this run's own
         // `--pass-env` secret values out of its log file, now that `runAgent` has
         // resolved (the log stream is already flushed and closed) - an agent that
@@ -515,6 +530,20 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             return typeof value === "string" ? [value] : [];
           }),
         );
+        if (process.env.X402_REDTEAM_LIMIT_TRACE === "1") {
+          // stderr only, never into a report (functional-design.md section 8).
+          const log_bytes = (() => {
+            try {
+              return statSync(logFile).size;
+            } catch {
+              return 0;
+            }
+          })();
+          console.error(`x402-redteam limit-trace-log ${JSON.stringify({ run_id, log_bytes })}`);
+        }
+        // U38 (D2): only now is this log known to be scrubbed (or deleted). The Action stages
+        // exactly the logs listed here, so a crash before this line leaves the run's log out.
+        appendFileSync(resolve(outDir, SCRUBBED_MANIFEST), `${basename(logFile)}\n`);
         // Security review HIGH-7: the HOME dir's only purpose was this one run.
         if (agentHomeDir !== undefined) {
           rmSync(agentHomeDir, { recursive: true, force: true });
@@ -554,6 +583,16 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
             );
             exit_code = 1;
           }
+          // U38 (D3): the driver stopped at its own budget, so later stages (for example a
+          // signature-request lure) may never have been shown to the guardrail. An attack must
+          // not pass on that: treat it like the missing-record integrity path (attack -> error,
+          // control -> agent_failed). Never scored as a resource-limit hit.
+          if (driverExitedCleanly && record?.budget_exhausted === true) {
+            console.error(
+              `x402-redteam: guardrail track run ${run_id} stopped at the driver's request/leg budget - treating as a harness error, not a pass.`,
+            );
+            exit_code = 1;
+          }
           guardrail_errors = readGuardrailErrors(record);
           gdpRecords.push(record);
           // The harness's own audit copy (U18b item 1): kept for a human to inspect
@@ -582,6 +621,7 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
           exit_code,
           timed_out: spawnResult.timed_out,
           ...(guardrail_errors !== undefined ? { guardrail_errors } : {}),
+          ...(drained.limit_hit !== undefined ? { limit_hit: drained.limit_hit } : {}),
           timing: { duration_ms: spawnResult.duration_ms },
         };
         runs.push(runRecord);

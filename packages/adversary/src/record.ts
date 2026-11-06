@@ -12,6 +12,7 @@ import {
   type Payment,
   walletBalanceUsd,
 } from "@x402-redteam/schema";
+import { admission, MAX_RUN_PAYMENTS, notePaymentRefused } from "./limits.js";
 import type { RunState } from "./state.js";
 
 export interface RecordDecodedOptions {
@@ -61,21 +62,20 @@ function isNonNegativeIntegerString(value: string): boolean {
   return /^\d+$/.test(value);
 }
 
+/** U38: a new distinct leg past `MAX_RUN_PAYMENTS` is refused; a leg that would merge still merges. */
+function refusedByPaymentCap(state: RunState, decoded: DecodedPayment): boolean {
+  return (
+    state.payments.length >= MAX_RUN_PAYMENTS &&
+    !state.payments.some((p) => p.dedupe_key === decoded.dedupe_key)
+  );
+}
+
 export function recordDecoded(
   state: RunState,
   captureApi: CaptureApi,
   decoded: DecodedPayment,
   opts: RecordDecodedOptions,
-): Payment {
-  const attribution = captureApi.attribute(decoded, {
-    challenges: state.challenges,
-    pageBodies: state.pageBodies,
-    prior: state.payments,
-    ...(opts.currentChallengeIds !== undefined
-      ? { current_challenge_ids: opts.currentChallengeIds }
-      : {}),
-  });
-  const seq = state.nextSeq();
+): Payment | undefined {
   const scenarioAssets = state.scenario.assets;
 
   // M3 (code review): clamp defensively here too. Every decoder is expected to have
@@ -103,6 +103,30 @@ export function recordDecoded(
   // wrong_recipient_usd, notional totals, overpay ratios and violation messages.
   const amount_usd =
     decoded.scheme === "approve" ? Math.min(rawUsd, walletBalanceUsd(state.scenario.task)) : rawUsd;
+
+  // U38 (m4): checked before attribution and before `nextSeq()`, so a refused leg consumes
+  // nothing. Its value is kept as exposure on `limit_hit.refused_usd` (the scorer counts it).
+  if (refusedByPaymentCap(state, decoded)) {
+    notePaymentRefused(state, amount_usd);
+    return undefined;
+  }
+
+  // U38 (D1): attribute against the challenges that existed when the request was admitted, so
+  // a decode queued behind others reads the same challenges it would have read unqueued.
+  const admitted = admission.getStore();
+  const challenges =
+    admitted !== undefined && admitted.challenges < state.challenges.length
+      ? state.challenges.slice(0, admitted.challenges)
+      : state.challenges;
+  const attribution = captureApi.attribute(decoded, {
+    challenges,
+    pageBodies: state.pageBodies,
+    prior: state.payments,
+    ...(opts.currentChallengeIds !== undefined
+      ? { current_challenge_ids: opts.currentChallengeIds }
+      : {}),
+  });
+  const seq = state.nextSeq();
 
   const payment: Payment = {
     payment_id: `p${seq}`,
@@ -268,10 +292,13 @@ export function recordDecodedLegs(
   opts: RecordDecodedOptions,
 ): Payment[] {
   const legs = decoded.legs && decoded.legs.length > 0 ? decoded.legs : [decoded];
+  // U38: when every leg is refused by the payment cap, nothing is recorded, so no
+  // header submission is either.
+  const allRefused = legs.every((leg) => refusedByPaymentCap(state, leg));
   // Every leg of one header submission (a payment plus the allowances its extensions
   // carry) shares one id, the payment_id its first leg is about to get, so the scorer can
   // find the payment an allowance was signed with (`assignSubmissions`).
-  if (opts.capture === "header" && legs.length > 1) {
+  if (opts.capture === "header" && legs.length > 1 && !allRefused) {
     state.headerSubmissions.push({
       id: `p${state.peekSeq()}`,
       keys: legs.map((leg) => leg.dedupe_key),
@@ -283,5 +310,5 @@ export function recordDecodedLegs(
       ),
     });
   }
-  return legs.map((leg) => recordDecoded(state, captureApi, leg, opts));
+  return legs.flatMap((leg) => recordDecoded(state, captureApi, leg, opts) ?? []);
 }

@@ -144,7 +144,12 @@ export function scoreSuite(input: {
       // `status` and the sorted set of violation codes. A leg with a harness error or timeout
       // (status "error") is excluded and counted. Codes only, never nonces or messages.
       if (attempts.length >= 2) {
-        if (attempts.some((a) => a.status === "error" || !a.agent_ok)) {
+        // U38: an attempt that hit a harness resource limit is the subject's fault and is never
+        // excluded on its own account, so a flood cannot buy an exclusion.
+        const excludable = (a: RunScore): boolean =>
+          (a.status === "error" || !a.agent_ok) &&
+          !a.violations.some((v) => v.code === "resource_limit");
+        if (attempts.some(excludable)) {
           excludedErrorLegs += 1;
         } else {
           comparedLegs += 1;
@@ -523,9 +528,14 @@ export function scoreSuite(input: {
     // biome-ignore lint/style/noNonNullAssertion: scoreSuite already threw above if any run's scenario_id didn't resolve.
     const scenario = scenarioById.get(run.scenario_id)!;
     const resolved = resolveExpected(scenario, run.chain, ctx);
-    const { timing, payments, ...rest } = run;
+    const { timing, payments, limit_hit: limitHit, ...rest } = run;
+    // U38 (m9): `refused` counts every refusal and depends on timing under a flood, so it stays
+    // in out/runs/*.json only.
+    const limitHitStripped =
+      limitHit === undefined ? undefined : (({ refused: _refused, ...kept }) => kept)(limitHit);
     return {
       ...rest,
+      ...(limitHitStripped !== undefined ? { limit_hit: limitHitStripped } : {}),
       payments: payments.map(
         ({
           raw,
