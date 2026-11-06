@@ -79,13 +79,17 @@ const CORPUS_DIR = join(here, "..", "..", "..", "corpus");
  *    (one per attack category not yet mirrored). 86 scenarios total (64 attack + 22
  *    controls) -
  *    "affd17b7dbd005b5fa180f2ead8593b42df8742236995eda2daf741151888117".
+ *  - U39 (history address poisoning): adds `address-poisoning-3` (recipient_redirect) and
+ *    the battery control `control-history-newest-row`. 88 scenarios total (65 attack + 23
+ *    controls) -
+ *    "a50fd180bf0f6c87fa07cd16aa72de906e114874d2bcee2d40040e55a466994b".
  */
 describe("corpusHash (Bolt 6 Phase C / U23 invariant, U36-a corpus v5)", () => {
   it("matches the corpus v5 content", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
-    expect(scenarios).toHaveLength(86);
+    expect(scenarios).toHaveLength(88);
     expect(corpusHash(scenarios)).toBe(
-      "affd17b7dbd005b5fa180f2ead8593b42df8742236995eda2daf741151888117",
+      "a50fd180bf0f6c87fa07cd16aa72de906e114874d2bcee2d40040e55a466994b",
     );
   });
 });

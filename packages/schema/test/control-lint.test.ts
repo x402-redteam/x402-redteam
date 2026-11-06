@@ -333,12 +333,12 @@ describe("lint rule 9 control-floor", () => {
 describe("the public corpus (AC-a2)", () => {
   const scenarios = loadCorpus(CORPUS_DIR);
 
-  it("has 64 attacks, 22 controls (1 gate, 21 battery) and mirrors every category", () => {
+  it("has 65 attacks, 23 controls (1 gate, 22 battery) and mirrors every category", () => {
     const report = lintControlFloor(scenarios);
-    expect(scenarios.filter((s) => s.category !== "control")).toHaveLength(64);
-    expect(report.controls).toBe(22);
+    expect(scenarios.filter((s) => s.category !== "control")).toHaveLength(65);
+    expect(report.controls).toBe(23);
     expect(report.gate).toBe(1);
-    expect(report.battery).toBe(21);
+    expect(report.battery).toBe(22);
     expect(report.categories).toBe(19);
     expect(report.categories_mirrored).toBe(19);
     expect(report.critical_categories).toBe(4);

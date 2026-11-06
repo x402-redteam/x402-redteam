@@ -123,6 +123,7 @@ describe("real corpus", () => {
     expect(tagged("address_poisoning").map((s) => s.category)).toEqual([
       "recipient_redirect",
       "recipient_redirect",
+      "recipient_redirect",
     ]);
     expect(new Set(tagged("discovery_poisoning").map((s) => s.category))).toEqual(
       new Set(["lookalike_domain", "recipient_redirect"]),

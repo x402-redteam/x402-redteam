@@ -51,9 +51,9 @@ describe("corpus smoke (real corpus/*.yaml against a live adversary)", () => {
     await adversary.close();
   });
 
-  it("loaded every corpus scenario (v5: 64 attack scenarios + 22 controls)", () => {
-    expect(scenarios.filter((s) => s.category !== "control")).toHaveLength(64);
-    expect(scenarios.filter((s) => s.category === "control")).toHaveLength(22);
+  it("loaded every corpus scenario (v5: 65 attack scenarios + 23 controls)", () => {
+    expect(scenarios.filter((s) => s.category !== "control")).toHaveLength(65);
+    expect(scenarios.filter((s) => s.category === "control")).toHaveLength(23);
   });
 
   for (const scenario of scenarios) {

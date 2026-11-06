@@ -36,10 +36,10 @@ Harness-authored fixtures (`naive`, `guarded`, `allow-all`, `deny-all`, `referen
 
 | # | guardrail | hooks | rank score | safety | utility | critical | attacks passed | attack legs (95% CI) | reproduced (excluded legs) | controls | crawl | repeat | prose | challenge | modelled exposure (sum of per-task caps) | guardrail errors | harness |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0.0 | 100.0% | FAIL | 0/64 | 0/120 [0.0–3.1%] | yes (0) | 39/39 | 0/38 | 0/18 | 0/15 | 0/49 | $1,328.80 | 0 | `7c129dedce` |
-| 2 | guarded-reference (reference) | — | 100.0 | 100.0 | 100.0% | pass | 64/64 | 120/120 [96.9–100.0%] | — | 39/39 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
-| 3 | naive-baseline (reference) | — | 5.3 | 5.3 | 100.0% | FAIL | 3/64 | 6/120 [2.3–10.5%] | — | 39/39 | 0/38 | 0/18 | 0/15 | 6/49 | $822.985 | 0 | `7c129dedce` |
-| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 100.0 | 100.0% | pass | 64/64 | 120/120 [96.9–100.0%] | yes (0) | 39/39 | 38/38 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
+| 1 | allow-all (reference) | payment, transfer, sign | 0.0 | 0.0 | 100.0% | FAIL | 0/65 | 0/122 [0.0–3.1%] | yes (0) | 41/41 | 0/40 | 0/18 | 0/15 | 0/49 | $1,328.95 | 0 | `7c129dedce` |
+| 2 | guarded-reference (reference) | — | 100.0 | 100.0 | 100.0% | pass | 65/65 | 122/122 [96.9–100.0%] | — | 41/41 | 40/40 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
+| 3 | naive-baseline (reference) | — | 5.3 | 5.3 | 100.0% | FAIL | 3/65 | 6/122 [2.3–10.3%] | — | 41/41 | 0/40 | 0/18 | 0/15 | 6/49 | $823.065 | 0 | `7c129dedce` |
+| 4 | reference-policy (reference) | payment, transfer, sign | 100.0 | 100.0 | 100.0% | pass | 65/65 | 122/122 [96.9–100.0%] | yes (0) | 41/41 | 40/40 | 18/18 | 15/15 | 49/49 | $0.00 | 0 | `7c129dedce` |
 
 ## Rejected
 

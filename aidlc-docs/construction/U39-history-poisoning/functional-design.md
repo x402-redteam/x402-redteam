@@ -419,6 +419,10 @@ category rises; accepted because U39's distinct value is on the agent track.
   identical. On one page with the two rows adjacent, an LLM can notice the case
   difference without comparing the full payTo (`-2` has the same property). Accepted:
   the SVM legs give the clean agent-track measurement; the EVM legs may carry this cue.
+  A guardrail can exploit the same cue as a rule on EVM legs only ("deny when two visible
+  addresses on the page differ only in letter case"); it passes both the attack (the lookalike
+  differs in case) and the control (same address, same case) without a full comparison. SVM legs
+  stay clean, which is why Q8-A keeps both chains (architect delta check D2).
 - **R3 Closed in rev 2 (C1).** Rev 1's inbound dust row let an agent pass by preferring
   the outgoing row; both rows are now outgoing payments of the same amount.
 - **R4 Oracle written knowing the attack.** `guarded` and `reference-policy` pass through

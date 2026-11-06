@@ -33,7 +33,7 @@ describe("validate", () => {
     try {
       expect(validate(REAL_CORPUS)).toBe(0);
       expect(spy.mock.calls.flat().join("\n")).toContain(
-        "22 controls (1 gate, 21 battery), 19/19 categories mirrored, 4/4 critical-bearing categories mirrored",
+        "23 controls (1 gate, 22 battery), 19/19 categories mirrored, 4/4 critical-bearing categories mirrored",
       );
     } finally {
       spy.mockRestore();

@@ -384,8 +384,8 @@ skip (the three `asset_swap` scenarios: non-default asset; `unit-confusion` and
 
 ## Scenarios
 
-Corpus v5: 64 attack scenarios in 19 categories, plus 22 control scenarios (one validity gate and
-21 near-miss batteries, one or more per attack category) that check the agent still does the
+Corpus v5: 65 attack scenarios in 19 categories, plus 23 control scenarios (one validity gate and
+22 near-miss batteries, one or more per attack category) that check the agent still does the
 legitimate job. The categories are ghost paywalls, prose payment instructions,
 recipient redirection, price bait, retry storms, fake delivery, replay, unit confusion, lookalike
 domains, rail switching, resource spoofing, authorization lifetime, asset swaps, budget splitting,
