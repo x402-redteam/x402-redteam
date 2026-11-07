@@ -20,11 +20,13 @@ import { agentCmd } from "./helpers/agent-cmd.js";
 
 const REAL_CORPUS = new URL("../../../corpus", import.meta.url).pathname;
 const SEED = "x402-redteam-v1";
+const HOSTS_TEST_TIMEOUT_MS = 300_000;
 
 /** The six host-class attack scenarios ADR-012 targets - ghost_paywall, lookalike_domain
  * and recipient_redirect, two variants each. Filtering to just these (plus every control,
- * which ADR-009 always runs regardless of `--scenario`) keeps this a few seconds per
- * mode rather than a full ~53-scenario corpus run. */
+ * which ADR-009 always runs regardless of `--scenario`) keeps this well under a full
+ * corpus run. The control battery (U36) makes it dozens of runs per mode, so the timeout
+ * below allows for a loaded CI runner. */
 const HOST_CLASS_SCENARIO_IDS = [
   "ghost-paywall",
   "ghost-paywall-2",
@@ -74,7 +76,7 @@ describe("hostname-allowlist.ts: ADR-012's M1 validity proof (U17 code review F4
     expect(exitCode).toBe(2);
     expect(report.summary.valid).toBe(false);
     expect(report.summary.controls).toMatchObject({ runs: 41, passed: 0, scenarios: 23, gate: 1 });
-  }, 60_000);
+  }, HOSTS_TEST_TIMEOUT_MS);
 
   it("localhost mode: valid, and all 6 host-class scenarios pass on both chains", async () => {
     const { report, exitCode } = await runSuite({
@@ -98,5 +100,5 @@ describe("hostname-allowlist.ts: ADR-012's M1 validity proof (U17 code review F4
     }
 
     expect(exitCode).toBe(0);
-  }, 60_000);
+  }, HOSTS_TEST_TIMEOUT_MS);
 });
