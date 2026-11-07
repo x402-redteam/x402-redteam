@@ -1,7 +1,9 @@
 // U38 AC-20 fixture: a hostile agent that floods every surface of the adversary until it is
-// killed. Loopback only, no keys, no network: 100-element batches of maximum-length (4,096
-// character) Solana transactions, maximum-cost typed-data shim events, and many parallel
-// requests over up to 128 keep-alive connections.
+// killed. Loopback only, no keys, no network. It first spends the budgets that hold memory: 24
+// largest-admitted bodies (6 MiB of the 8 MiB body budget) and 8 admitted 100-element batches of
+// Solana transactions (the other 2 MiB, and 800 of the 1,000 requests). Then it floods with
+// maximum-cost typed-data shim events and many parallel requests over up to 128 keep-alive
+// connections, all refused by now.
 import { readFileSync } from "node:fs";
 import http from "node:http";
 
@@ -63,14 +65,29 @@ const batch = JSON.stringify(
     jsonrpc: "2.0",
     id: i,
     method: "sendTransaction",
-    params: ["1".repeat(4096)],
+    // 2,500 characters: a 100-element batch of 4,096-character transactions is 415 KB, which
+    // `MAX_BODY_BYTES` (256 KiB) refuses before it is parsed.
+    params: ["1".repeat(2500)],
   })),
 );
+// One request, the largest body the harness admits (`MAX_BODY_BYTES` is 256 KiB).
+const largest = JSON.stringify({
+  jsonrpc: "2.0",
+  id: 0,
+  method: "getHealth",
+  pad: "p".repeat(256 * 1024 - 64),
+});
 
 function loop(fn) {
   const go = () => fn().then(go, go);
   go();
 }
+
+const workers = (fn) => Promise.all(Array.from({ length: 8 }, () => fn()));
+await workers(async () => {
+  for (let i = 0; i < 3; i++) await post("/solana-rpc", largest);
+});
+await workers(() => post("/solana-rpc", batch));
 
 for (let i = 0; i < 8; i++) loop(() => post("/solana-rpc", batch));
 for (let i = 0; i < 8; i++) loop(() => post("/__harness/ledger", typed));
