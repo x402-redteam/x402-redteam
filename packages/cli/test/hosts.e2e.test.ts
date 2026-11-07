@@ -66,39 +66,52 @@ describe("hostname-allowlist.ts: ADR-012's M1 validity proof (U17 code review F4
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  it("path mode: the plain hostname check can't complete any control (every hostname is 127.0.0.1) - INVALID, not merely a failing attack run", async () => {
-    const { report, exitCode } = await runSuite({
-      ...baseOptions(outDir),
-      hostMode: "path",
-    });
+  it(
+    "path mode: the plain hostname check can't complete any control (every hostname is 127.0.0.1) - INVALID, not merely a failing attack run",
+    async () => {
+      const { report, exitCode } = await runSuite({
+        ...baseOptions(outDir),
+        hostMode: "path",
+      });
 
-    expect(report.config.host_mode).toBe("path");
-    expect(exitCode).toBe(2);
-    expect(report.summary.valid).toBe(false);
-    expect(report.summary.controls).toMatchObject({ runs: 41, passed: 0, scenarios: 23, gate: 1 });
-  }, HOSTS_TEST_TIMEOUT_MS);
+      expect(report.config.host_mode).toBe("path");
+      expect(exitCode).toBe(2);
+      expect(report.summary.valid).toBe(false);
+      expect(report.summary.controls).toMatchObject({
+        runs: 41,
+        passed: 0,
+        scenarios: 23,
+        gate: 1,
+      });
+    },
+    HOSTS_TEST_TIMEOUT_MS,
+  );
 
-  it("localhost mode: valid, and all 6 host-class scenarios pass on both chains", async () => {
-    const { report, exitCode } = await runSuite({
-      ...baseOptions(outDir),
-      hostMode: "localhost",
-    });
+  it(
+    "localhost mode: valid, and all 6 host-class scenarios pass on both chains",
+    async () => {
+      const { report, exitCode } = await runSuite({
+        ...baseOptions(outDir),
+        hostMode: "localhost",
+      });
 
-    expect(report.config.host_mode).toBe("localhost");
-    expect(report.summary.valid).toBe(true);
-    expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
+      expect(report.config.host_mode).toBe("localhost");
+      expect(report.summary.valid).toBe(true);
+      expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
 
-    const hostClassScenarios = report.scenarios.filter((s) =>
-      HOST_CLASS_SCENARIO_IDS.includes(s.id),
-    );
-    expect(hostClassScenarios).toHaveLength(HOST_CLASS_SCENARIO_IDS.length);
-    for (const scenario of hostClassScenarios) {
-      expect(scenario.results.length).toBeGreaterThan(0);
-      for (const result of scenario.results) {
-        expect(result.pass, `${scenario.id} [${result.chain}] should pass`).toBe(true);
+      const hostClassScenarios = report.scenarios.filter((s) =>
+        HOST_CLASS_SCENARIO_IDS.includes(s.id),
+      );
+      expect(hostClassScenarios).toHaveLength(HOST_CLASS_SCENARIO_IDS.length);
+      for (const scenario of hostClassScenarios) {
+        expect(scenario.results.length).toBeGreaterThan(0);
+        for (const result of scenario.results) {
+          expect(result.pass, `${scenario.id} [${result.chain}] should pass`).toBe(true);
+        }
       }
-    }
 
-    expect(exitCode).toBe(0);
-  }, HOSTS_TEST_TIMEOUT_MS);
+      expect(exitCode).toBe(0);
+    },
+    HOSTS_TEST_TIMEOUT_MS,
+  );
 });
