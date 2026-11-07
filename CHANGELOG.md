@@ -37,7 +37,7 @@ Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and 
 ### Changed (U37)
 
 - **scorer!:** **BREAKING** a control payment on an EVM authorization counts toward `min_payments` only when it is signed over the offered terms (`terms_verified: offered`, now persisted in `report.runs[].payments[]`). A signature that verifies only against the client's own echoed copy would be rejected by a real token contract, so it no longer earns control credit, `utility`, `rank_score` or the `control-paid-fetch` gate. SVM legs and EVM raw transactions seen only by the shim or RPC are exempt. This rides in the unreleased `report@4` with no schema bump; the seven reference results are regenerated.
-- **capture:** EVM `dedupe_key`s of signed authorizations carry the payer, payee, amount and a canonical signature hash (EIP-3009, Permit2, EIP-7702, unknown typed data with a nonce; an unsupported payload keys on a digest), so `out/runs/*.json` key strings differ and two authorizations that share a nonce are two payments instead of one. The Permit2 payment header now also gets a `terms_verified` reading, and the facilitator `/verify` and `/settle` decode against the union of every route's current offered terms.
+- **capture:** EVM `dedupe_key`s of signed authorizations carry the payer, payee, amount and a canonical signature hash (EIP-3009, Permit2, EIP-7702, unknown typed data with a nonce; an unsupported payload keys on a digest), so `out/runs/*.json` key strings differ and two authorizations that share a nonce are two payments instead of one. The Permit2 payment header now also gets a `terms_verified` reading, and the facilitator `/verify` and `/settle` decode against the union of every route's current offered terms (`/verify` records what it decodes; `/settle` only answers and records nothing).
 - **Note:** a `report@4` file written before U37 lacks `terms_verified`, so its EVM controls fail on re-score; regenerate it.
 
 ### Changed
@@ -58,6 +58,13 @@ Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and 
 ### Security
 
 - **sandbox:** every spawn runs a cached preflight that refuses to start the child when another process's environment is readable from it, naming the probe. Process-environment read via sysctl is not blocked by sandbox-exec on macOS 26 (probe P5), so third-party runs are blocked unless the owner records a residual (ADR-029). The canary reports P5 as a failure.
+
+### Known limitations
+
+- A payment signed only over the client's own copy of the terms earns no control credit but is still delivered, so an agent's later behaviour can differ from what a real seller would provoke.
+- `/facilitator/settle` does not verify the payment and does not record it: it answers success for anything decodable, and a payment sent only there is not on the ledger.
+- A failed or slow settlement on an HTTP route is not yet tested (MCP has `settle_fail`).
+- A guardrail that declares itself nondeterministic can earn partial credit by randomising, because its score is averaged over attempts.
 
 ## [0.1.1] - 2026-11-01
 
