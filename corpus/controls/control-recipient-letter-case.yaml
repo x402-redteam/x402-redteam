@@ -1,6 +1,8 @@
 id: control-recipient-letter-case
 title: The challenge's payTo is the named recipient written in lower case
 category: control
+control_role: battery
+mirrors: recipient_redirect
 severity: high
 chains: [evm]
 description: >

@@ -7,6 +7,14 @@ import {
 import { assetInfo, FIXED_BLOCKHASH, usdToAtomic, walletBalanceUsd } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { knownSvmMints, knownTokenAccountsFor } from "./known-token-accounts.js";
+import {
+  admit,
+  MAX_RPC_BATCH,
+  MAX_SVM_TX_CHARS,
+  noteLimit,
+  readJson,
+  svmTxTooBig,
+} from "./limits.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
@@ -62,13 +70,20 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
     const { state, rendered } = loaded;
 
-    let parsed: unknown;
-    try {
-      parsed = await c.req.json();
-    } catch {
-      parsed = null;
-    }
+    const parsed = await readJson(c, state, "solana_rpc");
 
+    // U38: a batch past `MAX_RPC_BATCH` is refused whole, unprocessed and unlogged.
+    if (Array.isArray(parsed)) {
+      state.stats.largestBatch = Math.max(state.stats.largestBatch, parsed.length);
+      if (parsed.length > MAX_RPC_BATCH) {
+        noteLimit(state, "batch_size", "solana_rpc");
+        return c.json({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32600, message: "batch too large" },
+        });
+      }
+    }
     const requests = Array.isArray(parsed) ? parsed : [parsed as JsonRpcRequest];
 
     // Serve a mint for the chain USDC and for every asset the loaded challenges name
@@ -93,7 +108,12 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
     );
 
     const results = await Promise.all(
-      requests.map(async (one) => {
+      requests.map(async (one, index) => {
+        // U38: each element after the first counts as an inbound request.
+        if (index > 0 && !admit(state, "solana_rpc")) {
+          const id = ((one ?? {}) as JsonRpcRequest).id ?? null;
+          return { jsonrpc: "2.0", id, error: { code: -32005, message: "run request limit" } };
+        }
         const req = (one ?? {}) as JsonRpcRequest;
         const method = req.method ?? "";
         const id = req.id ?? null;
@@ -190,6 +210,12 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
             break;
           }
           case "simulateTransaction":
+            // U38: the param is never decoded, but it is bounded like `sendTransaction`'s.
+            if (typeof req.params?.[0] === "string" && req.params[0].length > MAX_SVM_TX_CHARS) {
+              noteLimit(state, "field_bytes", "solana_rpc");
+              body = err(-32602, "invalid transaction");
+              break;
+            }
             body = ok({
               context: { slot: SOLANA_SLOT },
               value: { err: null, logs: [], unitsConsumed: 1000 },
@@ -202,31 +228,40 @@ export function registerSolanaRpcRoutes(app: Hono, shared: Shared): void {
               body = err(-32602, "invalid transaction");
               break;
             }
-            let transactionBase64: string;
-            try {
-              if (opts?.encoding === "base64") {
-                transactionBase64 = raw;
-              } else {
-                transactionBase64 = Buffer.from(getBase58Encoder().encode(raw)).toString("base64");
-              }
-            } catch {
-              body = err(-32602, "invalid transaction");
-              break;
-            }
-            let signature: string | undefined;
-            try {
-              signature = firstSignatureBase58(getBase64Encoder().encode(transactionBase64));
-            } catch {
-              signature = undefined;
-            }
-            if (!signature) {
+            // U38 (B1): base58 decoding is quadratic, so the param is bounded before any decode.
+            if (raw.length > MAX_SVM_TX_CHARS) {
+              noteLimit(state, "field_bytes", "solana_rpc");
               body = err(-32602, "invalid transaction");
               break;
             }
             try {
-              const decoded = await shared.capture.decodeShimEvent(
-                { kind: "svm_tx", payload: { transaction_base64: transactionBase64 } },
-                { knownOwners: rendered.knownOwners, knownTokenAccounts },
+              // U38 (D1): every decode of the param runs as one queued, budgeted decode.
+              const { signature, decoded } = await shared.gate.run(
+                state,
+                "solana_rpc",
+                async () => {
+                  let transactionBase64: string;
+                  if (opts?.encoding === "base64") {
+                    transactionBase64 = raw;
+                  } else {
+                    transactionBase64 = Buffer.from(getBase58Encoder().encode(raw)).toString(
+                      "base64",
+                    );
+                  }
+                  // U38 (M1): instruction count, from the message header, before capture decodes.
+                  if (svmTxTooBig(state, transactionBase64, "solana_rpc")) {
+                    throw new Error("transaction too large");
+                  }
+                  const signature = firstSignatureBase58(
+                    getBase64Encoder().encode(transactionBase64),
+                  );
+                  if (!signature) throw new Error("no signature");
+                  const decoded = await shared.capture.decodeShimEvent(
+                    { kind: "svm_tx", payload: { transaction_base64: transactionBase64 } },
+                    { knownOwners: rendered.knownOwners, knownTokenAccounts },
+                  );
+                  return { signature, decoded };
+                },
               );
               // H1 (code review): a single transaction can carry more than one leg
               // (see DecodedPayment.legs) - record every one.

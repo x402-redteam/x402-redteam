@@ -13,9 +13,13 @@ import { recoverAuthorizationAddress } from "viem/utils";
 import {
   amountString,
   authorizationSeconds,
+  eip3009Key,
+  evm7702Key,
   isNonNegativeIntegerString,
   nonceString,
   normalizeAddress,
+  permit2Key,
+  sigKey,
   toBigIntOrUndefined,
 } from "./evm-util.js";
 
@@ -25,8 +29,10 @@ import {
  * same `DecodedPayment` and the same `dedupe_key`.
  *
  * Dedupe keys:
- * - EIP-3009 and Permit2 SignatureTransfer keep `evm:${nonce}` (their nonces are random
- *   and unique per owner), so header, shim and on-chain captures merge.
+ * - EIP-3009 and Permit2 SignatureTransfer: `eip3009:${from}:${to}:${value}:${nonce}:${sigKey}`
+ *   and `permit2:${from}:${token}:${spender}:${to}:${amount}:${nonce}:${sigKey}` (U37), built
+ *   by `eip3009Key` / `permit2Key` in evm-util.ts, so header, shim and on-chain captures of
+ *   one signature merge while two authorizations that share a nonce stay apart.
  * - Allowances (EIP-2612 `Permit`, Permit2 `PermitSingle`, `PermitBatch`):
  *   `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${nonce}:${keccak256(signature)}`.
  *   The signature hash keeps two different permits that share a nonce apart (a token that
@@ -34,9 +40,9 @@ import {
  *   captures of one permit carry the same signature bytes, so they still merge. Permit2
  *   allowance nonces are per (owner, token, spender), so for `PermitSingle` and each
  *   `PermitBatch` detail the nonce part is `${token}:${spender}:${nonce}`.
- * - Other typed data with a `nonce`: `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${nonce}`;
+ * - Other typed data with a `nonce`: `evm712:${chainId}:${verifyingContract}:${primaryType}:${owner}:${nonce}:${sigKey}`;
  *   without one, the signature key below.
- * - EIP-7702 authorizations: `evm7702:${chainId}:${authority}:${nonce}`.
+ * - EIP-7702 authorizations: `evm7702:${chainId}:${authority}:${delegate}:${nonce}:${sigKey}`.
  * - Messages and raw digests: `evmsig:${signer}:${keccak256(signature)}`. Signing is
  *   deterministic, so this is equivalent to keying on the signed digest.
  */
@@ -177,7 +183,13 @@ function eip3009Leg(input: TypedDataInput): TypedLeg {
     from: String(message.from ?? ""),
     to: String(message.to ?? ""),
     amount_atomic: amountString(message.value),
-    dedupe_key: `evm:${String(message.nonce ?? "")}`,
+    dedupe_key: eip3009Key({
+      from: message.from,
+      to: message.to,
+      value: message.value,
+      nonce: message.nonce,
+      signature: input.signature,
+    }),
     authorization_seconds: authorizationSeconds(message.validAfter, message.validBefore),
   };
 }
@@ -200,13 +212,22 @@ function permit2TransferLeg(input: TypedDataInput): TypedLeg {
     sameAddress(spender, X402_EXACT_PERMIT2_PROXY) ||
     (sameAddress(spender, X402_UPTO_PERMIT2_PROXY) && witness?.facilitator !== undefined);
   const enforcedWitness = withWitness && trustedProxy && witness?.to !== undefined;
+  const to = enforcedWitness ? normalizeAddress(witness?.to) : spender;
   return {
     scheme: "exact",
     asset: normalizeAddress(permitted.token),
     from: normalizeAddress(input.signer),
-    to: enforcedWitness ? normalizeAddress(witness?.to) : spender,
+    to,
     amount_atomic: amountString(permitted.amount),
-    dedupe_key: `evm:${nonceString(message.nonce)}`,
+    dedupe_key: permit2Key({
+      from: input.signer,
+      token: permitted.token,
+      spender,
+      to,
+      amount: permitted.amount,
+      nonce: message.nonce,
+      signature: input.signature,
+    }),
     authorization_seconds: authorizationSeconds(witness?.validAfter ?? 0, message.deadline),
     deadline: deadlineString(message.deadline),
     postCheck: () => (withWitness && !trustedProxy ? "untrusted_permit2_spender" : undefined),
@@ -280,13 +301,13 @@ function unknownTypedDataLeg(input: TypedDataInput, chainId: number | undefined)
     dedupe_key:
       message.nonce === undefined
         ? signatureKey(input.signer, input.signature)
-        : typedKey(
+        : `${typedKey(
             chainId,
             verifyingContract,
             input.primaryType,
             input.signer,
             nonceString(message.nonce),
-          ),
+          )}:${sigKey(input.signature)}`,
   };
 }
 
@@ -466,7 +487,6 @@ export async function decodeEvmAuthorization(
 ): Promise<DecodedPayment> {
   const chainId = safeIntegerOf(input.chainId);
   const nonceNumber = safeIntegerOf(input.nonce);
-  const nonce = nonceString(input.nonce);
   const malformed = chainId === undefined || nonceNumber === undefined;
   let recovered = "";
   if (!malformed) {
@@ -490,7 +510,13 @@ export async function decodeEvmAuthorization(
     from: authority,
     to: normalizeAddress(input.address),
     amount_atomic: "0",
-    dedupe_key: `evm7702:${chainId ?? ""}:${authority}:${nonce}`,
+    dedupe_key: evm7702Key({
+      chainId,
+      authority,
+      delegate: input.address,
+      nonce: input.nonce,
+      signature: input.signature,
+    }),
     valid: verified,
     authority_grant: true,
     raw,

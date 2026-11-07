@@ -120,7 +120,7 @@ describe("season-seed-env + redact probe (ADR-011, U19)", () => {
 
     const redactedPath = resolve(outDir, "report.redacted.json");
     const redacted = JSON.parse(readFileSync(redactedPath, "utf8"));
-    expect(redacted.schema).toBe("x402-redteam/report@3-redacted");
+    expect(redacted.schema).toBe("x402-redteam/report@4-redacted");
     expect("runs" in redacted).toBe(false);
     // Security review CRITICAL-2: scenarios[] (every held-out scenario id/title/
     // description) is dropped entirely too, not merely blanked.

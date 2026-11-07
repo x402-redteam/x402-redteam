@@ -71,6 +71,10 @@ export interface DecodeCtx {
    * (route, url) - identical both times this exact route is hit). */
   route: RenderedRoute;
   url: string;
+  /** U38: reports the JSON nesting depth of a decoded payment header. */
+  onJson?: (depth: number) => void;
+  /** U38 (M1): true (and recorded) when the payload's transaction field is over its bound. */
+  payloadTooBig?: (payload: unknown) => boolean;
 }
 
 /**

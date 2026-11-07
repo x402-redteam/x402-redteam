@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { RequestLog } from "@x402-redteam/schema";
 import type { Hono } from "hono";
+import { admit, MAX_BODY_BYTES, noteLimit, PROXIED, reserveBody } from "./limits.js";
 import type { Shared } from "./shared.js";
 
 /** Host header values that always reach this same `app` regardless of which scenario is
@@ -37,14 +38,44 @@ function allowedHosts(shared: Shared): Set<string> {
   return hosts;
 }
 
-function readBody(req: IncomingMessage): Promise<Buffer | undefined> {
+/** Thrown by `readBody` once the body passes `MAX_BODY_BYTES` or the run's byte budget. */
+class BodyRefused extends Error {}
+
+/**
+ * U38: reads the request body through the same byte limits as the main listeners
+ * (`MAX_BODY_BYTES` per request, `MAX_RUN_BODY_BYTES` per run), counted chunk by chunk and
+ * never buffered past the limit.
+ */
+function readBody(req: IncomingMessage, shared: Shared): Promise<Buffer | undefined> {
   if (req.method === "GET" || req.method === "HEAD") return Promise.resolve(undefined);
+  const loaded = shared.holder.current;
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let size = 0;
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (loaded) {
+        if (size > MAX_BODY_BYTES) {
+          noteLimit(loaded.state, "body_bytes", "proxy");
+          reject(new BodyRefused());
+          return;
+        }
+        if (!reserveBody(loaded.state, chunk.length, "proxy")) {
+          reject(new BodyRefused());
+          return;
+        }
+        loaded.state.stats.largestBody = Math.max(loaded.state.stats.largestBody, size);
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(chunks.length > 0 ? Buffer.concat(chunks) : undefined));
     req.on("error", reject);
   });
+}
+
+function writeRefusal(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, { "content-type": "application/json", connection: "close" });
+  res.end(body);
 }
 
 function writeError(res: ServerResponse, status: number, message: string): void {
@@ -68,6 +99,19 @@ async function handleRequest(
   app: Hono,
   shared: Shared,
 ): Promise<void> {
+  // U38: a request is counted before anything is logged, so a flood of disallowed-host
+  // requests cannot grow `requests[]` past the run's cap.
+  const loaded = shared.holder.current;
+  if (loaded) {
+    if (shared.gate.draining) {
+      writeRefusal(res, 503, '{"error":"draining"}');
+      return;
+    }
+    if (!admit(loaded.state, "proxy")) {
+      writeRefusal(res, 429, '{"error":"run_request_limit"}');
+      return;
+    }
+  }
   const rawUrl = req.url ?? "";
   let target: URL;
   try {
@@ -95,7 +139,17 @@ async function handleRequest(
   }
   headers.set("host", target.port ? `${hostname}:${target.port}` : hostname);
 
-  const body = await readBody(req);
+  let body: Buffer | undefined;
+  try {
+    body = await readBody(req, shared);
+  } catch (err) {
+    if (err instanceof BodyRefused) {
+      res.once("finish", () => req.destroy());
+      writeRefusal(res, 413, '{"error":"request_too_large"}');
+      return;
+    }
+    throw err;
+  }
   const method = req.method ?? "GET";
   const forwarded = new Request(`http://${headers.get("host")}${target.pathname}${target.search}`, {
     method,
@@ -104,7 +158,7 @@ async function handleRequest(
     duplex: body !== undefined ? "half" : undefined,
   });
 
-  const response = await app.fetch(forwarded);
+  const response = await app.fetch(forwarded, { [PROXIED]: true });
   const responseHeaders: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     responseHeaders[key] = value;
@@ -134,6 +188,9 @@ export function createForwardProxy(app: Hono, shared: Shared): Server {
     });
   });
   server.on("connect", (_req, socket) => {
+    // Node removes its own socket error listener for CONNECT, so a client reset after the 405
+    // would be an uncaught ECONNRESET that ends the whole suite. Refuse and destroy instead.
+    socket.on("error", () => socket.destroy());
     socket.end("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n");
   });
   return server;

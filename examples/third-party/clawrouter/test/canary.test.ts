@@ -25,14 +25,32 @@ import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { allowedPorts, detectSandbox, macosProfile, spawnSandboxed } from "@x402-redteam/sandbox";
+import { runConformance } from "@x402-redteam/sandbox/conformance";
+import { TEST_ONLY } from "@x402-redteam/sandbox/testing";
 import { CHILD_ENV_NAMES, childEnv, startChild } from "../src/child-client.js";
-import { allowedPorts, DEFAULT_PAYER_PORT, PORT_ENV } from "../src/ports.js";
-import { detectSandbox, macosProfile, spawnSandboxed } from "../src/sandbox.js";
+import { DEFAULT_PAYER_PORT, PORT_ENV } from "../src/payer-port.js";
 import { TASK_HOST, writeTask } from "./fixtures.js";
 import type { ProbeResult } from "./probe.js";
 
 const PLAN_LINE = "Say hello.\nclawrouter: model=openai/gpt-4o-mini calls=1 body=same";
 const PROBE = fileURLToPath(new URL("./probe.ts", import.meta.url));
+const LOADER = import.meta.resolve("tsx");
+const GUARD_ENTRY = fileURLToPath(new URL("../src/guard.ts", import.meta.url));
+const ADAPTER_ROOT = fileURLToPath(new URL("../", import.meta.url));
+
+runConformance({
+  label: "clawrouter",
+  adapterRoot: ADAPTER_ROOT,
+  guardEntry: GUARD_ENTRY,
+  loader: LOADER,
+  // P: the child's own proxy port, as the parent would assign it.
+  extra: (freePort) => ({
+    env: { [PORT_ENV]: String(freePort) },
+    extraEnv: [PORT_ENV],
+    ports: { refused: [DEFAULT_PAYER_PORT], extra: [freePort], listen: freePort },
+  }),
+});
 
 /** Each public probe and the error code the OS sandbox alone must produce for it. */
 const SANDBOX_CODES: Record<string, string> = {
@@ -127,43 +145,54 @@ async function runProbe(layers: {
   sandbox: boolean;
   guard: boolean;
 }): Promise<{ results: Map<string, ProbeResult>; stderr: string }> {
-  const proc = spawnSandboxed({
+  const canary: Record<string, string> = {
+    X402_CANARY_PORT: String(port),
+    X402_CANARY_TASK_HOST: TASK_HOST,
+    X402_CANARY_DOTENV: dotenvPath,
+    X402_CANARY_OUT_DIR: dir,
+    X402_CANARY_DECOY_V4: String(decoys.v4?.port ?? 0),
+    X402_CANARY_DECOY_V6: String(decoys.v6?.port ?? 0),
+    X402_CANARY_REALHOME: realpathSync(homedir()),
+    ...(layers.guard ? { X402_CANARY_GUARD: "1" } : {}),
+  };
+  const spawned = spawnSandboxed({
+    label: "clawrouter",
     script: PROBE,
+    loader: LOADER,
+    guardEntry: GUARD_ENTRY,
+    taskPath,
     sandbox: layers.sandbox,
     guard: layers.guard,
     env: {
-      ...childEnv({
-        ...process.env,
-        X402_REDTEAM_TASK: taskPath,
-        [PORT_ENV]: String(proxyPortValue),
-        ANTHROPIC_API_KEY: "sk-canary",
-        BLOCKRUN_API_KEY: "brk_canary",
-        CLAWROUTER_PAYMENT_CHAIN: "solana",
-        HTTPS_PROXY: "http://127.0.0.1:1",
-        NODE_OPTIONS: "--require evil",
-      }),
-      X402_CANARY_PORT: String(port),
-      X402_CANARY_TASK_HOST: TASK_HOST,
-      X402_CANARY_DOTENV: dotenvPath,
-      X402_CANARY_OUT_DIR: dir,
-      X402_CANARY_DECOY_V4: String(decoys.v4?.port ?? 0),
-      X402_CANARY_DECOY_V6: String(decoys.v6?.port ?? 0),
-      ...(layers.guard ? { X402_CANARY_GUARD: "1" } : {}),
+      ...process.env,
+      [PORT_ENV]: String(proxyPortValue),
+      ANTHROPIC_API_KEY: "sk-canary",
+      BLOCKRUN_API_KEY: "brk_canary",
+      CLAWROUTER_PAYMENT_CHAIN: "solana",
+      HTTPS_PROXY: "http://127.0.0.1:1",
+      NODE_OPTIONS: "--require evil",
+      ...canary,
     },
+    extraEnv: [PORT_ENV, ...Object.keys(canary)],
+    ports: { refused: [DEFAULT_PAYER_PORT], extra: [proxyPortValue], listen: proxyPortValue },
+    // The layers are the subject here; the runtime preflight has its own conformance case.
+    [TEST_ONLY]: { skipPreflight: true },
     stdio: ["ignore", "pipe", "pipe", "pipe"],
   });
+  const proc = spawned.proc;
   let out = "";
   let stderr = "";
-  (proc.stdio[3] as Readable).on("data", (d) => {
+  (proc.stdio[3] as Readable).on("data", (d: Buffer) => {
     out += d;
   });
-  proc.stdout?.on("data", (d) => {
+  proc.stdout?.on("data", (d: Buffer) => {
     stderr += d;
   });
-  proc.stderr?.on("data", (d) => {
+  proc.stderr?.on("data", (d: Buffer) => {
     stderr += d;
   });
   const code = await new Promise<number | null>((resolve) => proc.on("close", resolve));
+  spawned.dispose();
   assert.equal(code, 0, `probe exited ${code}\n${stderr}`);
   const list = JSON.parse(out) as ProbeResult[];
   if (process.env.CANARY_VERBOSE) {
@@ -197,7 +226,9 @@ function assertFileRules(results: Map<string, ProbeResult>): void {
       (name === "file:read-blockrun" && !existsSync(join(homedir(), ".blockrun")));
     assert.equal(r.code, absent ? "ENOENT" : "EPERM", `${name}: ${r.detail}`);
   }
-  assert.equal(get(results, "file:write-out").detail, "written");
+  // The out dir is read-only to the child (U35).
+  assert.equal(get(results, "file:write-out").ok, false);
+  assert.equal(get(results, "file:write-out").code, "EPERM");
 }
 
 function assertEnvNames(results: Map<string, ProbeResult>): void {
@@ -205,7 +236,7 @@ function assertEnvNames(results: Map<string, ProbeResult>): void {
   assert.deepEqual(
     names.filter(
       (n) =>
-        !["PATH", "HOME", "X402_REDTEAM_TASK", PORT_ENV].includes(n) &&
+        !["PATH", "HOME", "TMPDIR", "X402_REDTEAM_TASK", PORT_ENV].includes(n) &&
         // The probe's own settings, and a variable macOS adds to every process.
         !n.startsWith("X402_CANARY_") &&
         n !== "__CF_USER_TEXT_ENCODING",
@@ -314,7 +345,7 @@ describe("clawrouter child isolation canary", { timeout: 180_000 }, () => {
     writeFileSync(join(fakeHome, ".openclaw", "wallet.json"), "secret");
     writeFileSync(join(fakeHome, ".blockrun", "key"), "secret");
     writeFileSync(join(fakeHome, "plain.txt"), "fine");
-    const profile = macosProfile({ home: fakeHome, ports: [], writable: [], readable: [] });
+    const profile = macosProfile({ deniedRoot: fakeHome, childHome: "/x402rt-none", ports: [], writable: [], readable: [] });
     const cat = (file: string) =>
       spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/cat", file], { encoding: "utf8" });
     for (const file of [join(".openclaw", "wallet.json"), join(".blockrun", "key")]) {
@@ -327,16 +358,18 @@ describe("clawrouter child isolation canary", { timeout: 180_000 }, () => {
 
   it("builds both allowlists from the harness port and P and nothing else (N1, C2)", async () => {
     assert.deepEqual(
-      allowedPorts(`http://127.0.0.1:${port}`, proxyPortValue),
+      allowedPorts(`http://127.0.0.1:${port}`, { extra: [proxyPortValue], refused: [DEFAULT_PAYER_PORT] }),
       [port, proxyPortValue].sort((a, b) => a - b),
     );
     // The payer's default port is never allowed, even when asked for.
-    assert.deepEqual(allowedPorts(`http://127.0.0.1:${DEFAULT_PAYER_PORT}`, DEFAULT_PAYER_PORT), []);
-    assert.deepEqual(allowedPorts(undefined, undefined), []);
+    assert.deepEqual(allowedPorts(`http://127.0.0.1:${DEFAULT_PAYER_PORT}`, { refused: [DEFAULT_PAYER_PORT] }), []);
+    assert.throws(() => allowedPorts(undefined, { extra: [DEFAULT_PAYER_PORT], refused: [DEFAULT_PAYER_PORT] }));
+    assert.deepEqual(allowedPorts(undefined), []);
     // The sandbox profile names exactly those ports.
     const profile = macosProfile({
-      home: "/h",
-      ports: allowedPorts(`http://127.0.0.1:${port}`, proxyPortValue),
+      deniedRoot: "/h",
+      childHome: "/x402rt-none",
+      ports: allowedPorts(`http://127.0.0.1:${port}`, { extra: [proxyPortValue], refused: [DEFAULT_PAYER_PORT] }),
       listenPort: proxyPortValue,
       writable: [],
       readable: [],
@@ -366,12 +399,12 @@ describe("clawrouter child isolation canary", { timeout: 180_000 }, () => {
       NODE_OPTIONS: "--require evil",
       X402_REDTEAM_TASK: "/t/task.json",
       [PORT_ENV]: "5555",
-    });
+    }, [PORT_ENV]);
     assert.deepEqual(Object.keys(env).sort(), ["HOME", "PATH", PORT_ENV, "X402_REDTEAM_TASK"].sort());
     for (const name of Object.keys(env)) assert.ok(CHILD_ENV_NAMES.includes(name as never));
   });
 
-  it("the real child, sandboxed with the guard, sees only its four variables", async () => {
+  it("the real child, sandboxed with the guard, sees only its five variables", async () => {
     const child = startChild({
       env: {
         ...process.env,
@@ -388,7 +421,7 @@ describe("clawrouter child isolation canary", { timeout: 180_000 }, () => {
     await child.close();
     assert.deepEqual(
       names.filter((n) => n !== "__CF_USER_TEXT_ENCODING"),
-      ["HOME", "PATH", PORT_ENV, "X402_REDTEAM_TASK"].sort(),
+      ["HOME", "PATH", "TMPDIR", PORT_ENV, "X402_REDTEAM_TASK"].sort(),
     );
   });
 

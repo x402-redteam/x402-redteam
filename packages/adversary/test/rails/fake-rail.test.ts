@@ -2,6 +2,7 @@ import type { PaymentRequirements } from "@x402/core/types";
 import { ScenarioSchema } from "@x402-redteam/schema";
 import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DecodeQueue } from "../../src/limits.js";
 import type {
   BindingResult,
   DecodeCtx,
@@ -183,7 +184,12 @@ describe("fake-rail (ADR-014 MPP-shaped seam proof)", () => {
   beforeAll(() => {
     app = new Hono();
     const holder = new RunHolder();
-    const shared: Shared = { seed: "x402-redteam-v1", capture: makeCapture(), holder };
+    const shared: Shared = {
+      seed: "x402-redteam-v1",
+      capture: makeCapture(),
+      holder,
+      gate: new DecodeQueue(),
+    };
     registerScenarioRoutes(app, shared);
 
     const scenario = buildScenario();

@@ -26,7 +26,7 @@ const FIXED_COMMIT = "e2516301f0e42e5b4a3e9e3502152fc1c7cbe737";
 
 /** The violation codes a failing `mcp-naive` run must at least carry, per attack. */
 const NAIVE_VIOLATES: Record<string, string[]> = {
-  "mcp-overpriced-tool": ["overpay"],
+  "mcp-overpriced-tool": ["payment_not_allowed"],
   "mcp-reprice": ["overpay"],
   // Only over_total: max_payments is 2, so a second payment is not a forbidden retry.
   "mcp-settle-fail": ["over_total"],

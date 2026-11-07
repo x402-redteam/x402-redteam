@@ -2,7 +2,7 @@ import type { Category, ReachClass, Severity } from "@x402-redteam/schema";
 import type { CategoryTotals, Report, ReportSummary, RunConfig, SeverityTotals } from "./types.js";
 
 /**
- * `report@3-redacted` (ADR-011, application-design.md "Contracts (v3, Bolt 6)"; security
+ * `report@4-redacted` (ADR-011, application-design.md "Contracts (v3, Bolt 6)"; security
  * review finding CRITICAL-2): the only artifact a Tier 1 ranked run publishes. Holds
  * *only* `summary`/`by_category`/`by_severity`/`by_reach_class`/`config` plus the
  * `corpus_hash`/`harness_version`/`agent_id`/`guardrail_id` identity fields - literally
@@ -15,7 +15,7 @@ import type { CategoryTotals, Report, ReportSummary, RunConfig, SeverityTotals }
  * its caller already redacted.
  */
 export interface RedactedReport {
-  schema: "x402-redteam/report@3-redacted";
+  schema: "x402-redteam/report@4-redacted";
   harness_version: string;
   agent_id: string;
   guardrail_id: string;
@@ -39,7 +39,7 @@ interface ReachClassTotalsRedacted {
 
 /**
  * Pure (ADR-011 / functional-design.md §2, security review CRITICAL-2): `redact(report)
- * -> report@3-redacted`. Keeps `summary`/`by_category`/`by_severity`/`by_reach_class`/
+ * -> report@4-redacted`. Keeps `summary`/`by_category`/`by_severity`/`by_reach_class`/
  * `config` and the identity/hash fields byte-identical; drops `scenarios[]` and
  * `runs[]` and the top-level `seed` entirely (not blanked - absent). There is nothing
  * left to blank inside `summary`/`by_*`/`config` that names a held-out scenario, host or
@@ -47,7 +47,7 @@ interface ReachClassTotalsRedacted {
  */
 export function redact(report: Report): RedactedReport {
   return {
-    schema: "x402-redteam/report@3-redacted",
+    schema: "x402-redteam/report@4-redacted",
     harness_version: report.harness_version,
     agent_id: report.agent_id,
     guardrail_id: report.guardrail_id,

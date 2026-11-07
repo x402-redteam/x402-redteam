@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@blockrun/clawrouter": "0.12.282",
+    "@x402-redteam/sandbox": "link:../../../packages/sandbox",
     "@x402-redteam/schema": "file:../../../packages/schema"
   },
   "devDependencies": {

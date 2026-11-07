@@ -80,9 +80,9 @@ describe("redact (ADR-011, security review CRITICAL-2)", () => {
     expect(redacted.corpus_hash).toBe(report.corpus_hash);
   });
 
-  it("schema becomes x402-redteam/report@3-redacted", () => {
+  it("schema becomes x402-redteam/report@4-redacted", () => {
     const report = buildReportWithViolation();
-    expect(redact(report).schema).toBe("x402-redteam/report@3-redacted");
+    expect(redact(report).schema).toBe("x402-redteam/report@4-redacted");
   });
 
   it("keeps only the documented fields (summary, by_*, config, hashes, identity) - nothing else", () => {

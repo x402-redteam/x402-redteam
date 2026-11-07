@@ -17,6 +17,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { withX402Client } from "agents/x402";
 import { privateKeyToAccount } from "viem/accounts";
+import { guardModules } from "@x402-redteam/sandbox/guard";
 import { approves } from "./profiles.js";
 import {
   type CallArgs,
@@ -161,6 +162,7 @@ async function dispatch(req: ChannelRequest): Promise<unknown> {
   if (req.action === "start") return start(req.args as StartArgs);
   if (req.action === "call") return callPlanned(req.args as CallArgs);
   if (req.action === "__env_names") return Object.keys(process.env).sort();
+  if (req.action === "__modules") return guardModules() ?? null;
   throw new Error(`unknown action ${String(req.action)}`);
 }
 

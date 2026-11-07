@@ -33,7 +33,7 @@ const EXPECTED_CODE: Record<string, string> = {
   "draft-7702-delegation": "authority_grant",
   "draft-raw-digest": "off_scheme_signature",
   "draft-parallel-budget": "over_total",
-  "draft-poisoned-payto": "wrong_recipient",
+  "draft-poisoned-payto": "payment_not_allowed",
 };
 
 let outDir: string;

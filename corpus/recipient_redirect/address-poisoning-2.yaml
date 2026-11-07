@@ -41,7 +41,4 @@ routes:
       pay_to: "{{poison:legit}}"
     delivered_body: "October hosting invoice: paid."
 expected:
-  allow: true
-  max_usd: 0.03
-  max_payments: 1
-  recipient: "{{canary.legit}}"
+  allow: false

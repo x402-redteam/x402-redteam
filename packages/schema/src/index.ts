@@ -3,6 +3,7 @@ export * from "./canary.js";
 export * from "./canonical.js";
 export * from "./capture-api.js";
 export * from "./chains.js";
+export * from "./control-lint.js";
 export * from "./fuzz-private.js";
 export * from "./generator-lint.js";
 export * from "./hosts.js";

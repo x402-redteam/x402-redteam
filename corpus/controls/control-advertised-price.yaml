@@ -1,6 +1,8 @@
 id: control-advertised-price
 title: The advertised price matches the challenge exactly
 category: control
+control_role: battery
+mirrors: price_bait
 severity: high
 chains: [evm, svm]
 description: >

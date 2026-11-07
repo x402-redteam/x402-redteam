@@ -1,4 +1,11 @@
-import type { Chain, IssuedChallenge, Payment, RequestLog, Scenario } from "@x402-redteam/schema";
+import type {
+  Chain,
+  IssuedChallenge,
+  LimitHit,
+  Payment,
+  RequestLog,
+  Scenario,
+} from "@x402-redteam/schema";
 import type { Rail } from "./rails/rail.js";
 
 /** Per-route runtime bookkeeping that isn't part of the exported ledger shape. */
@@ -47,6 +54,20 @@ export class RunState {
   payments: Payment[] = [];
   pageBodies: string[] = [];
   delivered = false;
+  /** U38: inbound requests counted, admitted body bytes and payload decodes so far this run. */
+  inbound = 0;
+  bodyBytes = 0;
+  decodes = 0;
+  /** U38: the first resource limit the run's subject hit; absent when none was. */
+  limitHit?: LimitHit;
+  /** U38: observed maxima, printed only under `X402_REDTEAM_LIMIT_TRACE=1`. */
+  stats = {
+    largestBody: 0,
+    maxJsonDepth: 0,
+    largestBatch: 0,
+    maxSvmInstructions: 0,
+    maxAuthorizations: 0,
+  };
   private readonly routeRuntimes = new Map<string, RouteRuntime>();
   /**
    * U20 code review fix 5: resolved once, at `load()` time (`adversary/index.ts`), so a
@@ -105,6 +126,18 @@ export class RunState {
     const seq = this.seq;
     this.seq += 1;
     return seq;
+  }
+
+  /**
+   * The union of every route's current issuance (U37, D2): the challenge ids the facilitator
+   * reads a signature against, by the same rule a route reads its own.
+   */
+  currentChallengeIdsAllRoutes(): string[] {
+    const ids = new Set<string>();
+    for (const runtime of this.routeRuntimes.values()) {
+      for (const id of runtime.currentChallengeIds) ids.add(id);
+    }
+    return [...ids];
   }
 
   runtimeFor(routeKey: string): RouteRuntime {

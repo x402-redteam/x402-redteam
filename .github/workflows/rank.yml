@@ -59,7 +59,7 @@ jobs:
   run:
     name: run
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # U34 (A8): a fixed ceiling, not derived from a local run
+    timeout-minutes: 90 # U34 (A8): a fixed ceiling, not derived from a local run; U36-c: 30 -> 90 for 3 passes (a nondeterministic guardrail; 2 for a deterministic one)
     permissions:
       contents: read # checkouts of the submitter's repo, the harness and its allowlist
     env:

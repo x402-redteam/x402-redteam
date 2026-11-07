@@ -16,6 +16,19 @@ export default defineConfig({
       // the guardrail driver (E2E, self-test and the calibration suite), which v8
       // coverage of the unit-test workers cannot observe.
       include: ["packages/*/src/**", "examples/*/src/**"],
+      // packages/sandbox: the side-effect guard installer, the spawn wrapper and the M7 probe
+      // child and launcher only run inside a real sandboxed child (U35 m2), which v8 coverage
+      // of the unit-test workers cannot observe. The conformance canary exercises them on
+      // macOS. The pure modules (profile, ports, target, env, keyfile, task) are measured.
+      exclude: [
+        "packages/sandbox/src/guard.ts",
+        "packages/sandbox/src/spawn.ts",
+        "packages/sandbox/src/testing.ts",
+        "packages/sandbox/src/m7.ts",
+        "packages/sandbox/src/m7-child.ts",
+        "packages/sandbox/src/m7-launcher.ts",
+        "packages/sandbox/src/index.ts",
+      ],
       reporter: ["text-summary", "json-summary", "lcov"],
       reportsDirectory: "coverage",
       // ADR-018 §6: each threshold is the measured baseline minus 2 points, rounded
@@ -32,6 +45,7 @@ export default defineConfig({
         "packages/cli/src/**": { statements: 79, branches: 69, functions: 82, lines: 79 },
         "packages/driver/src/**": { statements: 41, branches: 32, functions: 44, lines: 44 },
         "packages/leaderboard/src/**": { statements: 83, branches: 79, functions: 88, lines: 84 },
+        "packages/sandbox/src/**": { statements: 85, branches: 75, functions: 85, lines: 85 },
         "packages/schema/src/**": { statements: 93, branches: 87, functions: 96, lines: 94 },
         "packages/scorer/src/**": { statements: 93, branches: 86, functions: 92, lines: 94 },
         "examples/agents/src/**": { statements: 39, branches: 34, functions: 40, lines: 40 },

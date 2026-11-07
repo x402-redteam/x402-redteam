@@ -31,6 +31,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 
 // Untyped on purpose: its generic types recurse too deeply over AgentKit's zod schemas.
 const toJsonSchema = zodToJsonSchema as unknown as (schema: unknown) => unknown;
+import { guardModules } from "@x402-redteam/sandbox/guard";
 import { agentkitEntry, loadedVersions } from "./loaded-versions.js";
 import { readTask } from "./task.js";
 
@@ -77,6 +78,7 @@ async function handle(actions: Map<string, Action>, req: Request): Promise<unkno
   }
   if (req.action === "__provenance") return loadedVersions(agentkitEntry());
   if (req.action === "__env_names") return Object.keys(process.env).sort();
+  if (req.action === "__modules") return guardModules() ?? null;
   const action = typeof req.action === "string" ? actions.get(req.action) : undefined;
   if (!action) throw new Error(`unknown action ${String(req.action)}`);
   // Parse like AgentKit's framework extensions do, so schema defaults apply.

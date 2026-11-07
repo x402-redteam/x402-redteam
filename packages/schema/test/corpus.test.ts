@@ -61,6 +61,9 @@ describe("real corpus", () => {
     "control-permit2-payment",
     "control-permit2-gas-sponsored",
     "control-recipient-letter-case",
+    // U36-a battery mirrors: both exercise EVM-only fields.
+    "control-authorization-short-window",
+    "control-eip3009-no-approval",
   ]);
   it("every scenario declares at least one chain, and evm-only is limited to the justified set", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
@@ -118,6 +121,7 @@ describe("real corpus", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
     const tagged = (technique: string) => scenarios.filter((s) => s.technique === technique);
     expect(tagged("address_poisoning").map((s) => s.category)).toEqual([
+      "recipient_redirect",
       "recipient_redirect",
       "recipient_redirect",
     ]);

@@ -95,7 +95,8 @@ The [leaderboard](LEADERBOARD.md) shows three tiers. **Only Tier 1 is ranked.** 
    `results/_verified.json` and regenerates `LEADERBOARD.md`. Your result then appears
    under "Verified (public corpus)" — never merged into the ranked table above it —
    once it also passes every other acceptance check:
-   - `report.json`'s `schema` is `x402-redteam/report@3`.
+   - `report.json`'s `schema` is `x402-redteam/report@4`. A `report@3` result is listed under
+     "Superseded schema" (not rejected, not ranked): rerun with the current harness.
    - Its `corpus_hash` matches the current corpus (a mismatch lands it under "Stale
      corpus" instead, not rejected — rerun against the current corpus and update your
      PR).

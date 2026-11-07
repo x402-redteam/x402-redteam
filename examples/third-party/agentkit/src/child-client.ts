@@ -1,33 +1,33 @@
 /**
  * Parent side of the JSON-lines channel to the AgentKit child (fd 3, U25 §3.5.1).
- * Imports no AgentKit code. The child gets a clean environment: PATH, HOME, the task
- * path and the harness's mock URLs, never an API key.
+ * Imports no AgentKit code. The child gets a clean environment: PATH, a fresh HOME, TMPDIR,
+ * the task path and the harness's mock URLs, never an API key.
  */
 import type { ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { spawnSandboxed } from "./sandbox.js";
+import { BASE_ENV_NAMES, childEnv, spawnSandboxed } from "@x402-redteam/sandbox";
 
 const CHILD_SCRIPT = fileURLToPath(new URL("./child.ts", import.meta.url));
+/** The adapter's own tsx and guard entry (U35 M1): the shared spawn resolves neither. In the
+ * bracket install the resolve hook sends the bare `tsx` to the bracket's node_modules. */
+const LOADER = import.meta.resolve("tsx");
+const GUARD_ENTRY = fileURLToPath(new URL("./guard.ts", import.meta.url));
+
+/** Set by bracket-2.0.0/resolve.mjs when the parent runs against the bracket install; the
+ * child must resolve its dependencies the same way. */
+function depsHook(): string[] {
+  const hook = (globalThis as { __x402AgentkitDepsHook?: unknown }).__x402AgentkitDepsHook;
+  return typeof hook === "string" ? [hook] : [];
+}
+
+/** The harness's mock URLs, besides the shared base names. */
+const EXTRA_ENV_NAMES = ["X402_REDTEAM_BASE_URL", "X402_REDTEAM_CHAIN"] as const;
 
 /** The only variables the child may see (ADR-029: no API key, nothing ambient). */
-export const CHILD_ENV_NAMES = [
-  "PATH",
-  "HOME",
-  "X402_REDTEAM_TASK",
-  "X402_REDTEAM_BASE_URL",
-  "X402_REDTEAM_CHAIN",
-] as const;
-
-export function childEnv(from: NodeJS.ProcessEnv): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const name of CHILD_ENV_NAMES) {
-    const value = from[name];
-    if (value !== undefined) env[name] = value;
-  }
-  return env;
-}
+export const CHILD_ENV_NAMES: readonly string[] = [...BASE_ENV_NAMES, ...EXTRA_ENV_NAMES];
+export { childEnv };
 
 export class ChildCrashedError extends Error {}
 
@@ -49,12 +49,23 @@ interface Pending {
 export function startChild(
   opts: { env?: NodeJS.ProcessEnv; sandbox?: boolean; guard?: boolean } = {},
 ): AgentKitChild {
-  const proc: ChildProcess = spawnSandboxed({
+  const env = opts.env ?? process.env;
+  const taskPath = env.X402_REDTEAM_TASK;
+  const spawned = spawnSandboxed({
+    label: "agentkit",
     script: CHILD_SCRIPT,
-    env: childEnv(opts.env ?? process.env),
+    loader: LOADER,
+    guardEntry: GUARD_ENTRY,
+    ...(taskPath ? { taskPath } : {}),
+    env,
+    extraEnv: [...EXTRA_ENV_NAMES],
+    preImports: depsHook(),
     sandbox: opts.sandbox,
     guard: opts.guard,
   });
+  const proc: ChildProcess = spawned.proc;
+  // The fresh HOME goes when the child does.
+  proc.once("close", () => spawned.dispose());
   const channel = proc.stdio[3] as (Readable & Writable) | null | undefined;
   if (!channel) throw new Error("child has no fd 3 channel");
 

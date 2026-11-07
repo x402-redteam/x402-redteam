@@ -1,6 +1,7 @@
 import type { ShimEvent } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
+import { noteLimit, readJson, shimTxTooBig, typedDataTooBig } from "./limits.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
@@ -10,11 +11,24 @@ export function registerLedgerRoutes(app: Hono, shared: Shared): void {
     const loaded = shared.holder.current;
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
     const { state, rendered } = loaded;
-    const evt = (await c.req.json().catch(() => null)) as ShimEvent | null;
+    const evt = (await readJson(c, state, "ledger")) as ShimEvent | null;
     if (!evt) return c.json({ error: "invalid_shim_event" }, 400);
+    // U38: agent-supplied EIP-712 `types` decode super-linearly; refuse oversized typed data
+    // before capture sees it.
+    if (
+      evt.kind === "evm_typed_data" &&
+      typeof evt.payload === "object" &&
+      evt.payload !== null &&
+      typedDataTooBig(evt.payload)
+    ) {
+      noteLimit(state, "field_bytes", "ledger");
+      return c.json({ error: "invalid_shim_event" }, 400);
+    }
 
+    // U38 (M1): the same transaction bounds as the RPC routes.
+    if (shimTxTooBig(state, evt, "ledger")) return c.json({ error: "invalid_shim_event" }, 400);
     try {
-      const decoded = await shared.capture.decodeShimEvent(evt, {
+      const hints = {
         knownOwners: rendered.knownOwners,
         knownTokenAccounts: await knownTokenAccountsFor(
           rendered,
@@ -22,7 +36,10 @@ export function registerLedgerRoutes(app: Hono, shared: Shared): void {
           shared.seed,
           state.scenario.assets,
         ),
-      });
+      };
+      const decoded = await shared.gate.run(state, "ledger", () =>
+        shared.capture.decodeShimEvent(evt, hints),
+      );
       // H1 (code review): a single shim-reported event can carry more than one leg
       // (see DecodedPayment.legs) - record every one.
       const payments = recordDecodedLegs(state, shared.capture, decoded, { capture: "shim" });

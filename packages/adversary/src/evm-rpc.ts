@@ -18,6 +18,16 @@ import {
   recoverTransactionAddress,
   type TransactionSerialized,
 } from "viem";
+import {
+  admit,
+  aggregate3Length,
+  evmTxTooBig,
+  MAX_ETH_CALL_CHARS,
+  MAX_MULTICALL_CALLS,
+  MAX_RPC_BATCH,
+  noteLimit,
+  readJson,
+} from "./limits.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 import type { RunState, SeenEvmTx } from "./state.js";
@@ -347,17 +357,29 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
     const { state, rendered } = loaded;
 
-    let parsed: unknown;
-    try {
-      parsed = await c.req.json();
-    } catch {
-      parsed = null;
-    }
+    const parsed = await readJson(c, state, "evm_rpc");
 
+    // U38: a batch past `MAX_RPC_BATCH` is refused whole, unprocessed and unlogged.
+    if (Array.isArray(parsed)) {
+      state.stats.largestBatch = Math.max(state.stats.largestBatch, parsed.length);
+      if (parsed.length > MAX_RPC_BATCH) {
+        noteLimit(state, "batch_size", "evm_rpc");
+        return c.json({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32600, message: "batch too large" },
+        });
+      }
+    }
     const requests = Array.isArray(parsed) ? parsed : [parsed as JsonRpcRequest];
 
     const results = await Promise.all(
-      requests.map(async (one) => {
+      requests.map(async (one, index) => {
+        // U38: each element after the first counts as an inbound request.
+        if (index > 0 && !admit(state, "evm_rpc")) {
+          const id = ((one ?? {}) as JsonRpcRequest).id ?? null;
+          return { jsonrpc: "2.0", id, error: { code: -32005, message: "run request limit" } };
+        }
         const req = (one ?? {}) as JsonRpcRequest;
         const method = req.method ?? "";
         const id = req.id ?? null;
@@ -413,10 +435,32 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
             const callParams = req.params?.[0] as EthCallParams | undefined;
             const to = typeof callParams?.to === "string" ? callParams.to : undefined;
             const data = typeof callParams?.data === "string" ? callParams.data : "0x";
-            const answer =
-              to?.toLowerCase() === MULTICALL3_ADDRESS
-                ? multicallAggregate3(state, data)
-                : tokenCall(state, to, data);
+            // U38 (H1): viem's ABI decoder follows offsets in agent calldata, so many offsets to
+            // one large `bytes` multiply work and memory. Bound the data and the array before any
+            // decode, and run the decode in the queue.
+            if (data.length > MAX_ETH_CALL_CHARS) {
+              noteLimit(state, "field_bytes", "evm_rpc");
+              body = err(-32602, "invalid call data");
+              break;
+            }
+            let answer: string | undefined;
+            if (to?.toLowerCase() === MULTICALL3_ADDRESS) {
+              const calls = aggregate3Length(data);
+              if (calls !== undefined && calls > MAX_MULTICALL_CALLS) {
+                noteLimit(state, "field_bytes", "evm_rpc");
+                body = err(-32602, "invalid call data");
+                break;
+              }
+              try {
+                answer = await shared.gate.run(state, "evm_rpc", () =>
+                  multicallAggregate3(state, data),
+                );
+              } catch {
+                answer = undefined;
+              }
+            } else {
+              answer = tokenCall(state, to, data);
+            }
             body = answer === undefined ? err(-32000, "execution reverted") : ok(answer);
             break;
           }
@@ -431,21 +475,33 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
               body = err(-32602, "invalid transaction");
               break;
             }
+            // U38 (B1, M1): bound the field before any decode.
+            if (evmTxTooBig(state, serialized, "evm_rpc")) {
+              body = err(-32602, "invalid transaction");
+              break;
+            }
             try {
               // L1 (code review): nonce/seen-tx bookkeeping is keyed on the tx's actual
               // signer (who owns the nonce and pays gas), not `decoded.from` - which, for
               // a transferFrom/transferWithAuthorization leg, is the *token owner* being
               // moved from, a different account entirely.
-              const serializedTx = serialized as TransactionSerialized;
-              const signer = await recoverTransactionAddress({
-                serializedTransaction: serializedTx,
-              });
-              const txHash = keccak256(serializedTx);
-              const parsedTx = parseTransaction(serializedTx);
-
-              const decoded = await shared.capture.decodeShimEvent(
-                { kind: "evm_tx", payload: { serialized } },
-                { knownOwners: rendered.knownOwners },
+              // U38 (D1): the whole decode runs as one queued, budgeted decode.
+              const { signer, txHash, parsedTx, decoded } = await shared.gate.run(
+                state,
+                "evm_rpc",
+                async () => {
+                  const serializedTx = serialized as TransactionSerialized;
+                  const signer = await recoverTransactionAddress({
+                    serializedTransaction: serializedTx,
+                  });
+                  const txHash = keccak256(serializedTx);
+                  const parsedTx = parseTransaction(serializedTx);
+                  const decoded = await shared.capture.decodeShimEvent(
+                    { kind: "evm_tx", payload: { serialized } },
+                    { knownOwners: rendered.knownOwners },
+                  );
+                  return { signer, txHash, parsedTx, decoded };
+                },
               );
               const payments = recordDecodedLegs(state, shared.capture, decoded, {
                 capture: "rpc",
@@ -484,6 +540,15 @@ export function registerEvmRpcRoutes(app: Hono, shared: Shared): void {
             // *attempt* is itself worth recording (an agent trying to get a "node" it
             // doesn't control to sign a payment on its behalf).
             const txParams = req.params?.[0] as UnsignedTxParams | undefined;
+            if (
+              txParams &&
+              ((typeof txParams.data === "string" && txParams.data.length > MAX_ETH_CALL_CHARS) ||
+                (typeof txParams.value === "string" && txParams.value.length > 100))
+            ) {
+              noteLimit(state, "field_bytes", "evm_rpc");
+              body = err(-32602, "invalid transaction");
+              break;
+            }
             if (txParams) {
               const hasValue = !!txParams.value && BigInt(txParams.value) > 0n;
               const hasCalldata = !!txParams.data && txParams.data !== "0x";

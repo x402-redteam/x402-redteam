@@ -25,14 +25,20 @@ import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { allowedPorts, detectSandbox, macosProfile, spawnSandboxed } from "@x402-redteam/sandbox";
+import { runConformance } from "@x402-redteam/sandbox/conformance";
+import { TEST_ONLY } from "@x402-redteam/sandbox/testing";
 import { CHILD_ENV_NAMES, childEnv, startChild } from "../src/child-client.js";
-import { allowedPorts } from "../src/ports.js";
-import { detectSandbox, macosProfile, spawnSandboxed } from "../src/sandbox.js";
 import { TASK_HOST, writeTask } from "./fixtures.js";
 import type { ProbeResult } from "./probe.js";
 
 const PLAN_LINE = "Get it.\ncloudflare: server=provider.test tools=get_item price=0.01 role=run";
 const PROBE = fileURLToPath(new URL("./probe.ts", import.meta.url));
+const LOADER = import.meta.resolve("tsx");
+const GUARD_ENTRY = fileURLToPath(new URL("../src/guard.ts", import.meta.url));
+const ADAPTER_ROOT = fileURLToPath(new URL("../", import.meta.url));
+
+runConformance({ label: "cloudflare", adapterRoot: ADAPTER_ROOT, guardEntry: GUARD_ENTRY, loader: LOADER });
 
 /** Each public probe and the error code the OS sandbox alone must produce for it. */
 const SANDBOX_CODES: Record<string, string> = {
@@ -125,35 +131,45 @@ async function runProbe(
   layers: { sandbox: boolean; guard: boolean },
   task: { path: string; host: string } = { path: taskPath, host: TASK_HOST },
 ): Promise<{ results: Map<string, ProbeResult>; stderr: string }> {
-  const proc = spawnSandboxed({
+  const canary: Record<string, string> = {
+    X402_CANARY_PORT: String(port),
+    X402_CANARY_TASK_HOST: task.host,
+    X402_CANARY_DOTENV: dotenvPath,
+    X402_CANARY_DEVVARS: devVarsPath,
+    X402_CANARY_OUT_DIR: dir,
+    X402_CANARY_DECOY_V4: String(decoys.v4?.port ?? 0),
+    X402_CANARY_DECOY_V6: String(decoys.v6?.port ?? 0),
+    X402_CANARY_REALHOME: realpathSync(homedir()),
+    ...(layers.guard ? { X402_CANARY_GUARD: "1" } : {}),
+  };
+  const spawned = spawnSandboxed({
+    label: "cloudflare",
     script: PROBE,
+    loader: LOADER,
+    guardEntry: GUARD_ENTRY,
+    taskPath: task.path,
     sandbox: layers.sandbox,
     guard: layers.guard,
-    env: {
-      ...childEnv({ ...process.env, X402_REDTEAM_TASK: task.path, ...AMBIENT }),
-      X402_CANARY_PORT: String(port),
-      X402_CANARY_TASK_HOST: task.host,
-      X402_CANARY_DOTENV: dotenvPath,
-      X402_CANARY_DEVVARS: devVarsPath,
-      X402_CANARY_OUT_DIR: dir,
-      X402_CANARY_DECOY_V4: String(decoys.v4?.port ?? 0),
-      X402_CANARY_DECOY_V6: String(decoys.v6?.port ?? 0),
-      ...(layers.guard ? { X402_CANARY_GUARD: "1" } : {}),
-    },
+    env: { ...process.env, ...AMBIENT, ...canary },
+    extraEnv: Object.keys(canary),
+    // The layers are the subject here; the runtime preflight has its own conformance case.
+    [TEST_ONLY]: { skipPreflight: true },
     stdio: ["ignore", "pipe", "pipe", "pipe"],
   });
+  const proc = spawned.proc;
   let out = "";
   let stderr = "";
-  (proc.stdio[3] as Readable).on("data", (d) => {
+  (proc.stdio[3] as Readable).on("data", (d: Buffer) => {
     out += d;
   });
-  proc.stdout?.on("data", (d) => {
+  proc.stdout?.on("data", (d: Buffer) => {
     stderr += d;
   });
-  proc.stderr?.on("data", (d) => {
+  proc.stderr?.on("data", (d: Buffer) => {
     stderr += d;
   });
   const code = await new Promise<number | null>((resolve) => proc.on("close", resolve));
+  spawned.dispose();
   assert.equal(code, 0, `probe exited ${code}\n${stderr}`);
   const list = JSON.parse(out) as ProbeResult[];
   if (process.env.CANARY_VERBOSE) {
@@ -185,7 +201,9 @@ function assertFileRules(results: Map<string, ProbeResult>): void {
     const absent = name === "file:read-wrangler" && !existsSync(join(homedir(), ".wrangler"));
     assert.equal(r.code, absent ? "ENOENT" : "EPERM", `${name}: ${r.detail}`);
   }
-  assert.equal(get(results, "file:write-out").detail, "written");
+  // The out dir is read-only to the child (U35).
+  assert.equal(get(results, "file:write-out").ok, false);
+  assert.equal(get(results, "file:write-out").code, "EPERM");
 }
 
 function assertEnvNames(results: Map<string, ProbeResult>): void {
@@ -193,7 +211,7 @@ function assertEnvNames(results: Map<string, ProbeResult>): void {
   assert.deepEqual(
     names.filter(
       (n) =>
-        !["PATH", "HOME", "X402_REDTEAM_TASK"].includes(n) &&
+        !["PATH", "HOME", "TMPDIR", "X402_REDTEAM_TASK"].includes(n) &&
         // The probe's own settings, and a variable macOS adds to every process.
         !n.startsWith("X402_CANARY_") &&
         n !== "__CF_USER_TEXT_ENCODING",
@@ -306,7 +324,7 @@ describe("cloudflare child isolation canary", { timeout: 180_000 }, () => {
     mkdirSync(join(fakeHome, ".wrangler"), { recursive: true });
     writeFileSync(join(fakeHome, ".wrangler", "config.toml"), "secret");
     writeFileSync(join(fakeHome, "plain.txt"), "fine");
-    const profile = macosProfile({ home: fakeHome, ports: [], writable: [], readable: [] });
+    const profile = macosProfile({ deniedRoot: fakeHome, childHome: "/x402rt-none", ports: [], writable: [], readable: [] });
     const cat = (file: string) =>
       spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/cat", file], { encoding: "utf8" });
     const r = cat(join(fakeHome, ".wrangler", "config.toml"));
@@ -320,7 +338,8 @@ describe("cloudflare child isolation canary", { timeout: 180_000 }, () => {
     assert.deepEqual(allowedPorts(undefined), []);
     // The sandbox profile names exactly that port and grants no bind or inbound rule.
     const profile = macosProfile({
-      home: "/h",
+      deniedRoot: "/h",
+      childHome: "/x402rt-none",
       ports: allowedPorts(`http://127.0.0.1:${port}`),
       writable: [],
       readable: [],
@@ -350,13 +369,13 @@ describe("cloudflare child isolation canary", { timeout: 180_000 }, () => {
     for (const name of Object.keys(env)) assert.ok(CHILD_ENV_NAMES.includes(name as never));
   });
 
-  it("the real child, sandboxed with the guard, sees only its three variables", async () => {
+  it("the real child, sandboxed with the guard, sees only its four variables", async () => {
     const child = startChild({ env: { ...process.env, X402_REDTEAM_TASK: taskPath, ...AMBIENT } });
     const names = (await Promise.race([child.call("__env_names"), child.crashed])) as string[];
     await child.close();
     assert.deepEqual(
       names.filter((n) => n !== "__CF_USER_TEXT_ENCODING"),
-      ["HOME", "PATH", "X402_REDTEAM_TASK"],
+      ["HOME", "PATH", "TMPDIR", "X402_REDTEAM_TASK"],
     );
   });
 
