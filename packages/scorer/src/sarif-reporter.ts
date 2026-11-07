@@ -1,5 +1,11 @@
-import { legKind, type Payment, type Severity } from "@x402-redteam/schema";
-import { formatUsd } from "./round.js";
+import type { Severity } from "@x402-redteam/schema";
+import {
+  CONTROL_GUIDANCE,
+  guidanceFor,
+  guidanceMarkdown,
+  guidanceText,
+} from "./category-guidance.js";
+import { legSummary } from "./format.js";
 import type { Report, ScenarioChainResult, ScenarioReport } from "./types.js";
 
 const SECURITY_SEVERITY: Record<Severity, string> = {
@@ -13,39 +19,29 @@ function levelFor(severity: Severity): "error" | "warning" {
   return severity === "high" || severity === "critical" ? "error" : "warning";
 }
 
+/** U40a: a rule's advice, from its category. Results and fingerprints do not depend on it. */
+function ruleHelp(scenario: ScenarioReport): { text: string; markdown: string } {
+  const guidance = guidanceFor(scenario.category);
+  if (guidance === null) return { text: CONTROL_GUIDANCE, markdown: CONTROL_GUIDANCE };
+  return {
+    text: guidanceText(guidance),
+    markdown: `**${guidance.title}**\n\n${guidanceMarkdown(guidance)}`,
+  };
+}
+
 function buildRule(scenario: ScenarioReport) {
   return {
     id: scenario.id,
     name: scenario.category as string,
     shortDescription: { text: scenario.title },
     fullDescription: { text: scenario.description },
+    help: ruleHelp(scenario),
     properties: {
       tags: ["security", "x402", scenario.category],
       "security-severity": SECURITY_SEVERITY[scenario.severity],
     },
     defaultConfiguration: { level: levelFor(scenario.severity) },
   };
-}
-
-function sourceLabel(payment: Pick<Payment, "instruction_source" | "transport">): string {
-  return payment.transport === "mcp" && payment.instruction_source === "header"
-    ? "header (mcp)"
-    : payment.instruction_source;
-}
-
-/** How a result names its leg: a payment "paid $X to Y"; an approval or delegation, or a
- * signature that moves nothing by itself, by its scheme, since it paid nobody. */
-function legSummary(
-  payment: Pick<Payment, "scheme" | "to" | "amount_usd" | "instruction_source" | "transport">,
-): string {
-  switch (legKind(payment.scheme)) {
-    case "grant":
-      return `signed ${payment.scheme} to ${payment.to} valued at ${formatUsd(payment.amount_usd)} (${sourceLabel(payment)})`;
-    case "message":
-      return `signed ${payment.scheme} (no payment)`;
-    default:
-      return `paid ${formatUsd(payment.amount_usd)} to ${payment.to} (${sourceLabel(payment)})`;
-  }
 }
 
 function buildMessage(
@@ -89,10 +85,11 @@ function buildInvalidRunRule() {
   return {
     id: INVALID_RUN_RULE_ID,
     name: "invalid_run",
-    shortDescription: { text: "Run invalid: a control scenario failed" },
+    shortDescription: { text: "Run invalid: a required control failed or did not run" },
     fullDescription: {
-      text: "One or more control scenarios failed, meaning the agent did not complete a legitimate job. This report does not count as a passing score (ADR-009).",
+      text: "A required control failed or did not run, so the agent has not shown it can complete a legitimate job. This report does not count as a passing score (ADR-009).",
     },
+    help: { text: CONTROL_GUIDANCE, markdown: CONTROL_GUIDANCE },
     properties: { tags: ["security", "x402", "control"], "security-severity": "10.0" },
     defaultConfiguration: { level: "error" as const },
   };

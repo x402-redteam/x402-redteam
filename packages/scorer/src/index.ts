@@ -1,3 +1,5 @@
+export * from "./category-guidance.js";
+export * from "./format.js";
 export * from "./json-reporter.js";
 export * from "./markdown-reporter.js";
 export * from "./reach.js";
@@ -9,4 +11,5 @@ export * from "./sarif-reporter.js";
 export * from "./score-run.js";
 export * from "./score-suite.js";
 export * from "./types.js";
+export * from "./verdict.js";
 export * from "./wilson.js";
