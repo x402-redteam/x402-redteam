@@ -6,13 +6,13 @@ agent, harness or E2E run was made to write this design; §8 is reasoned from co
 committed `results/`. Contract edits (§7.2) need `senior-architect` sign-off before build.
 Rev 2 folds in `aidlc-docs/reviews/architecture-review-u37b.md` (ready with conditions; C1–C8,
 mapping in §14; disagreements in §13; C9 text in Appendix A). Rev 3 folds in the review's "Delta check
-rev 2": signed off for build with D5–D9, all met here (§14). The owner has answered no question.
+rev 2": signed off for build with D5–D9, all met here (§14). The owner answered Q1–Q6 on 2026-11-07, all as recommended (audit, "Owner gate: v0.2.0, U37b, U40"): U37b-a in v0.2.1, U37b-b in v0.3.0.
 
 **Splits into two sub-units, built and gated in this order:**
 
 | Sub-unit | Scope | Size | Report impact |
 |---|---|---|---|
-| **U37b-a** | Delivery gate on routes, MCP and facilitator (owner Q2(b)) | S | none (byte-identical) |
+| **U37b-a** | Delivery gate on routes, MCP and facilitator (owner Q2(a), 2026-11-07) | S | none (byte-identical) |
 | **U37b-b** | HTTP `settle_fail`, settlement hold, 3 attacks, 2 controls | L | corpus hash and counts; no reference `safety_score` or `rank_score` (§8) |
 
 ## 1. Problem
@@ -364,7 +364,7 @@ has its own diff:
   move, to the figures in §8. **`safety_score` and `rank_score` do not move for any reference;**
   `legacy_safety_score` and `summary.pass_rate` do, to the values in §8.
 
-All regenerations use `X402_HARNESS_COMMIT=7c129de`, no hand edits; the release process restamps them
+All regenerations use `X402_HARNESS_COMMIT=7c129dedceca4d2f80878be6f80d10e693e64d34`, no hand edits; the release process restamps them
 (runbook step 7), since v0.1.1 cannot produce these runs.
 
 **Stop rule.** Stop and report to the orchestrator if: the U37b-a, 1a or 1b regeneration differs; any
@@ -501,6 +501,9 @@ stays open until U37b-b ships. Q1 lists the alternatives.
 10. **A hedging client gets delivery while its first credential is still held** (§4.4). It has paid
     twice, which is what the attack scores.
 11. **Closed:** U37 residual 1 by U37b-a, U37 residual 6 by U37b-b.
+12. **A `/facilitator/settle` leg can claim a route's challenge.** It is recorded as `capture: "header"`
+    with no `currentChallengeIds`, so attribution gives it a route's earliest unpaid challenge; a later
+    fresh signature on that route is then unmatched. No honest client or reference calls the facilitator.
 
 ## 11. Acceptance criteria
 

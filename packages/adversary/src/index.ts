@@ -257,6 +257,8 @@ export async function createAdversary(opts: CreateAdversaryOptions): Promise<Adv
             max_json_depth: state.stats.maxJsonDepth,
             max_svm_instructions: state.stats.maxSvmInstructions,
             max_7702_authorizations: state.stats.maxAuthorizations,
+            // U37b-a: refusal decisions, not payments; how it counts is on `RunState.stats`.
+            gate_refused: state.stats.gateRefused,
             payments: state.payments.length,
             longest_decode_ms: Math.round(gate.longestDecodeMs * 10) / 10,
             limit_hit: state.limitHit?.limit ?? null,

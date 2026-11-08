@@ -5,6 +5,7 @@ import {
   CANONICAL_PERMIT2_ADDRESS,
   legKind,
   parseAtomicToUsd,
+  termsQualify,
   walletBalanceUsd,
 } from "@x402-redteam/schema";
 import { computeReached } from "./reach.js";
@@ -53,21 +54,6 @@ function sameAddress(a: string, b: string, chain: Chain): boolean {
 }
 
 type Accept = RunRecord["challenges"][number]["accepts"][number];
-
-/**
- * U37 (ADR-009 amendment): whether a control payment's signature is over the terms the
- * harness offered. Provenance, not the echoed `scheme`, decides which legs the rule covers:
- * an EVM leg seen in a payment header, or a shim/submitted authorization, must read
- * `terms_verified: "offered"` (absent fails closed). An EVM raw transaction seen only by the
- * shim or RPC (`scheme: "transfer"`, no `header` layer) is what the chain itself executes, so
- * it is exempt, as is any SVM leg (its signature covers the exact executed message).
- */
-function termsQualify(payment: Payment): boolean {
-  if (payment.chain !== "evm") return true;
-  const headerSeen = payment.capture.split("+").includes("header");
-  if (!headerSeen && payment.scheme === "transfer") return true;
-  return payment.terms_verified === "offered";
-}
 
 /**
  * Code review fix 2 (HIGH): the USD price a payment was actually challenged for, used to

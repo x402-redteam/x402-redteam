@@ -67,6 +67,15 @@ export class RunState {
     largestBatch: 0,
     maxSvmInstructions: 0,
     maxAuthorizations: 0,
+    /**
+     * U37b-a: delivery-gate refusals, for the stderr limit trace only (never a report). It
+     * counts refusal decisions, not distinct payments: each credential evaluation that ends
+     * `refused` counts once (an MCP call carrying both a `PAYMENT-SIGNATURE` header and a
+     * `_meta` payment is two evaluations and counts both), and each facilitator `/verify` or
+     * `/settle` of a valid payload that does not qualify counts once (so `/verify` then
+     * `/settle` of one signature counts 2).
+     */
+    gateRefused: 0,
   };
   private readonly routeRuntimes = new Map<string, RouteRuntime>();
   /**

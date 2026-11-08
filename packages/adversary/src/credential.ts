@@ -1,4 +1,4 @@
-import type { Payment } from "@x402-redteam/schema";
+import { type Payment, termsQualify } from "@x402-redteam/schema";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
 import { MAX_JSON_DEPTH, noteLimit, paymentPayloadTooBig } from "./limits.js";
 import type { DecodeCtx, DecodeResult } from "./rails/rail.js";
@@ -18,7 +18,11 @@ export type CredentialOutcome =
   /** Decoded and recorded, but no valid leg answers the current issuance: never delivered.
    * U38 (D4): `payments` is empty when the payment cap refused every leg. */
   | { kind: "unmatched"; payments: Payment[] }
-  /** A valid leg answers the current issuance. */
+  /** U37b-a (ADR-009): a valid leg answers the current issuance but is not signed over the
+   * offered terms (`termsQualify` false): never delivered, answered like a failed settlement
+   * with a fresh issuance, and no route behaviour sees it. */
+  | { kind: "refused"; payments: Payment[]; matchingLeg: Payment }
+  /** A valid leg answers the current issuance and is signed over the offered terms. */
   | { kind: "matched"; payments: Payment[]; matchingLeg: Payment };
 
 export interface CredentialInput {
@@ -154,5 +158,13 @@ export async function evaluateCredential(input: CredentialInput): Promise<Creden
   // (including a valid-but-non-matching one, e.g. an attacker's) is still recorded
   // above and scored on its own merits.
   if (!matchingLeg?.valid) return { kind: "unmatched", payments };
+  // U37b-a (ADR-009 amendment): the delivery gate, the same predicate as control credit. It
+  // reads this credential's own (pre-merge) leg, whose `capture` is "header", so the merged
+  // ledger entry's strongest reading cannot launder a client-copy signature, and it runs
+  // before every route behaviour (no_delivery, 402_forever, replay, settle_fail).
+  if (!termsQualify(matchingLeg)) {
+    state.stats.gateRefused += 1;
+    return { kind: "refused", payments, matchingLeg };
+  }
   return { kind: "matched", payments, matchingLeg };
 }

@@ -137,6 +137,9 @@ async function decode(raw: RawCredential, ctx: DecodeCtx): Promise<DecodeResult>
         amount_atomic: payload.amount_atomic,
         dedupe_key: payload.nonce,
         valid: true,
+        // U37b-a: an EVM header leg is delivered only with an offered-terms reading
+        // (`termsQualify`); this fake rail's credential names the issued terms by id.
+        terms_verified: "offered",
         raw: payload,
       },
     ],

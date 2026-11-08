@@ -12,7 +12,7 @@ import { resolveHost } from "./hosts.js";
 import { LimitRefused, noteLimit, readJson, SUBMIT_MAX_BYTES } from "./limits.js";
 import { MCP_PATH, serveMcp } from "./mcp-server.js";
 import { railFor } from "./rails/index.js";
-import type { Rail } from "./rails/rail.js";
+import type { Rail, SettleCtx } from "./rails/rail.js";
 import { recordDecodedLegs } from "./record.js";
 import {
   findRoute,
@@ -221,7 +221,8 @@ async function serveChallenge(
 ): Promise<Response> {
   const runtime = state.runtimeFor(route.route_key);
 
-  const issueChallenge = (paid: boolean): Response => {
+  /** A fresh issuance. U37b-a: `settlement`, when given, is sent as `PAYMENT-RESPONSE`. */
+  const issueChallenge = (paid: boolean, settlement?: SettleCtx): Response => {
     runtime.challengeCounter += 1;
     const challenge_id = `${route.route_key}#${runtime.challengeCounter}`;
     const result = rail.issue({
@@ -238,6 +239,9 @@ async function serveChallenge(
     // may have several - so a credential answering any of them can deliver.
     runtime.currentChallengeIds = result.issued.map((issued) => issued.challenge_id);
     for (const [name, value] of Object.entries(result.headers)) c.header(name, value);
+    if (settlement !== undefined) {
+      for (const [name, value] of Object.entries(rail.settle(settlement))) c.header(name, value);
+    }
     logRequest(state, { method, host, path, status: 402, paid });
     // v2 (challenge_injection): a scenario-supplied body_json replaces the default 402
     // body wholesale and, like any other page-visible text, is searched by prose
@@ -247,6 +251,17 @@ async function serveChallenge(
     }
     // U29-1: `wire.body: none` serves a 402 with no body.
     if (result.body === undefined) return c.body(null, 402);
+    // U37b-a (review L1): a refusal's default body says `invalid_payment`, so it is told apart
+    // from a first unpaid 402. A scenario's `body_json` is served as written.
+    if (
+      settlement !== undefined &&
+      route.challenge?.body_json === undefined &&
+      typeof result.body === "object" &&
+      result.body !== null &&
+      !Array.isArray(result.body)
+    ) {
+      return c.json({ ...(result.body as Record<string, unknown>), error: "invalid_payment" }, 402);
+    }
     return c.json(result.body, 402);
   };
 
@@ -289,6 +304,19 @@ async function serveChallenge(
     }
     logRequest(state, { method, host, path, status: 402, paid: false });
     return c.json({ error: "invalid_payment" }, 402);
+  }
+
+  // U37b-a: accepted by no seller (not signed over the offered terms). Answered like a failed
+  // settlement, with a fresh issuance so a client that corrects itself is not a replay of the
+  // refused leg's challenge. `paid: false`: the credential was not accepted.
+  if (outcome.kind === "refused") {
+    return issueChallenge(false, {
+      success: false,
+      errorReason: "invalid_payment",
+      transaction: "",
+      network: outcome.matchingLeg.network,
+      payer: outcome.matchingLeg.from,
+    });
   }
 
   const { matchingLeg } = outcome;

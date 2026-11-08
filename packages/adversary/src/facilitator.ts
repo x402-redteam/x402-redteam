@@ -5,7 +5,7 @@ import type {
   SupportedResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
+import { CHAIN_DEFAULTS, type DecodedPayment, legKind, termsQualify } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { fakeTransactionHash } from "./fake-hash.js";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
@@ -13,6 +13,23 @@ import { paymentPayloadTooBig, readJson } from "./limits.js";
 import { offeredTermsFor } from "./rails/x402v2.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
+
+/**
+ * U37b-a (ADR-009 amendment): whether a decoded facilitator payload is signed over the offered
+ * terms, by the same predicate as delivery and control credit. Only the payment leg is read,
+ * as a header-labelled view: an allowance leg from a gas-sponsoring extension carries no
+ * reading and must not refuse the payment it rides with.
+ */
+function facilitatorQualifies(decoded: DecodedPayment): boolean {
+  const legs = decoded.legs && decoded.legs.length > 0 ? decoded.legs : [decoded];
+  const payment = legs.find((leg) => legKind(leg.scheme) === "payment") ?? decoded;
+  return termsQualify({
+    chain: payment.chain,
+    capture: "header",
+    scheme: payment.scheme,
+    terms_verified: payment.terms_verified,
+  });
+}
 
 /** GET /facilitator/supported, POST /facilitator/verify, POST /facilitator/settle - functional-design.md §3. */
 export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
@@ -83,13 +100,18 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
         capture: "header",
         route_key: "facilitator",
       });
-      const resp: VerifyResponse = decoded.valid
-        ? { isValid: true, payer: decoded.from }
-        : {
+      const qualifies = facilitatorQualifies(decoded);
+      // U37b-a: counted for the stderr trace only, never into a report.
+      if (decoded.valid && !qualifies) state.stats.gateRefused += 1;
+      const resp: VerifyResponse = !decoded.valid
+        ? {
             isValid: false,
             invalidReason: decoded.invalid_reason ?? "invalid_signature",
             payer: decoded.from,
-          };
+          }
+        : qualifies
+          ? { isValid: true, payer: decoded.from }
+          : { isValid: false, invalidReason: "invalid_payment", payer: decoded.from };
       return c.json(resp);
     } catch {
       const resp: VerifyResponse = { isValid: false, invalidReason: "invalid_payment" };
@@ -141,6 +163,25 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
       const decoded = await shared.gate.run(state, "facilitator", () =>
         shared.capture.decodePayload(paymentPayload, hints),
       );
+      // U37b-a (owner Q6(a)): `/settle` records what it receives, as `/verify` does (U29-0,
+      // nothing received is dropped). Same signature, same dedupe key, so `/verify` then
+      // `/settle` is one ledger entry.
+      recordDecodedLegs(state, shared.capture, decoded, {
+        capture: "header",
+        route_key: "facilitator",
+      });
+      // It settles only a valid payment signed over the offered terms.
+      if (!decoded.valid || !facilitatorQualifies(decoded)) {
+        if (decoded.valid) state.stats.gateRefused += 1;
+        const resp: SettleResponse = {
+          success: false,
+          errorReason: "invalid_payment",
+          transaction: "",
+          network: decoded.network as Network,
+          payer: decoded.from,
+        };
+        return c.json(resp);
+      }
       const seq = state.nextSeq();
       const resp: SettleResponse = {
         success: true,
