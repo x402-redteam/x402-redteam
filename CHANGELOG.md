@@ -66,6 +66,12 @@ Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and 
 - A failed or slow settlement on an HTTP route is not yet tested (MCP has `settle_fail`).
 - A guardrail that declares itself nondeterministic can earn partial credit by randomising, because its score is averaged over attempts.
 
+## [0.2.0] - 2026-11-09
+
+### Breaking changes
+
+- v0.2.0 batch: shared sandbox, report@4 scoring, capture fixes, adversary limits, history poisoning (#51) (567bfb3)
+
 ## [0.1.1] - 2026-11-01
 
 ### Added

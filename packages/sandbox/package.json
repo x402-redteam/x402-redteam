@@ -1,6 +1,6 @@
 {
   "name": "@x402-redteam/sandbox",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The shared ADR-029 boundary for running third-party code: OS sandbox profile, egress guard, spawn wrapper, conformance canary. No runtime dependencies (U35).",
