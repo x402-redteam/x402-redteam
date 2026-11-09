@@ -440,12 +440,12 @@ describe("rank.yml / ranked-run.yml / verify-results.yml / ranked Dockerfile (AD
 
   // ---- U34 (H1, M6): the attested report is the one the run produced; hardened containers
   const U34_FILES: Array<{ file: string; job: string; report: string; timeout: number }> = [
-    { file: ".github/workflows/rank.yml", job: "run", report: "report.json", timeout: 30 },
+    { file: ".github/workflows/rank.yml", job: "run", report: "report.json", timeout: 90 },
     {
       file: ".github/workflows/ranked-run.yml",
       job: "ranked-run",
       report: "report.redacted.json",
-      timeout: 45,
+      timeout: 135,
     },
   ];
 

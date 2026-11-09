@@ -4,6 +4,25 @@ Runs the published `@coinbase/agentkit@0.10.4` x402 and wallet actions under the
 (U25-B, ADR-028, ADR-029). This directory sits outside the pnpm workspace, biome and CI,
 and has its own lockfile. Only run it by hand.
 
+**Key-file mode.** Put the key in a regular file of mode 0600 (it may live under
+`~/x402-redteam-private/`) and set `X402_ANTHROPIC_KEY_FILE` to its path. The script refuses to
+start if `ANTHROPIC_API_KEY` is also exported (unset it, and do not export it in your shell) or if
+the file is not a 0600 regular file. Only the path goes through the environment; the adapter's
+parent reads the file into memory and never copies it into `process.env`, so the key is in no
+process's exec environment.
+
+The sandbox, the guard and the child launcher are not in this adapter: they are the shared
+  `@x402-redteam/sandbox` package (`packages/sandbox`, linked with `link:`), which this
+  adapter configures in `src/guard.ts` and `src/child-client.ts` (U35). The child's only
+  writable path is its own fresh `HOME` (`TMPDIR=<home>/tmp`), where nothing can be executed;
+  the run's out dir is read-only to it, and the C1-C9 conformance canary runs from
+  `test/canary.test.ts`. Before every run the launcher runs a one-shot check that other
+  processes' environments are hidden from the child and refuses to start if one of the
+  checks leaks, naming the probe: process-environment read via sysctl is not blocked by
+  sandbox-exec on macOS 26, so third-party runs are blocked unless the owner records a
+  residual (ADR-029). Do not export `ANTHROPIC_API_KEY` in the shell that runs the harness.
+
+
 Results go outside the repository, to `~/x402-redteam-private/bolt8/agentkit/<label>/`.
 Never point `--out` inside the repo tree.
 
@@ -11,29 +30,32 @@ Never point `--out` inside the repo tree.
 
 - `src/agent.ts` is the **parent**. It is our code only and imports no AgentKit code.
   It reads `X402_REDTEAM_TASK`, starts the child and drives it. In llm mode it also
-  holds `ANTHROPIC_API_KEY` and runs the Claude loop.
+  holds the Anthropic key (read from a 0600 key file, see below) and runs the Claude loop.
 - `src/child.ts` is the **child**, the AgentKit tool server. It speaks JSON lines over
   fd 3: `{"id","action","args"}` in, `{"id","ok","result"|"error"}` out. Its stdout
   and console output go to stderr. It builds a local `ViemWalletProvider` from the task's
   key, on Base Sepolia, with `http(task.evm_rpc_url)`. The account is wrapped with the
   capture shim's `wrapEvmAccount`. It loads exactly three action providers:
   `x402ActionProvider`, `walletActionProvider` and `erc20ActionProvider`.
-- The child gets a clean environment: `PATH`, `HOME`, `X402_REDTEAM_TASK`,
-  `X402_REDTEAM_BASE_URL` and `X402_REDTEAM_CHAIN`. No API key, no `NODE_OPTIONS`,
+- The child gets a clean environment: `PATH`, a fresh `HOME`, `TMPDIR`,
+  `X402_REDTEAM_TASK`, `X402_REDTEAM_BASE_URL` and `X402_REDTEAM_CHAIN`. No API key, no `NODE_OPTIONS`,
   no `RPC_URL`.
 - The child is isolated in two layers:
-  1. **OS sandbox** (`src/sandbox.ts`). On macOS this is `sandbox-exec`, with a profile
-     that allows everything except network, and outbound network only to localhost.
+  1. **OS sandbox** (shared `profile.ts` and `spawn.ts`). On macOS this is `sandbox-exec`, with a
+     profile that allows everything except network, and outbound network only to
+     `localhost:<harness port>` (the port of `task.base_url`).
      That also denies DNS. The profile also denies reads of `~/.ssh`, `~/.aws`,
-     `~/.config/gh`, `~/.gnupg`, `~/.npmrc`, `~/.netrc`, `~/x402-redteam-heldout`,
+     `~/.config/gh`, `~/.gnupg`, `~/.npmrc`, `~/.netrc`, `~/.openclaw`, `~/.blockrun`,
+     `~/.wrangler`, `~/x402-redteam-heldout`,
      `~/x402-redteam-private` (except the run's own out dir),
      `~/x402-redteam-prepublish`, `~/Library/Keychains` and any `.env` file. It allows
-     writes only to the temp dir and the run's out dir (the parent of the task file's
-     directory). On Linux it is `unshare -rn` with loopback up. If neither works, the
+     writes only to the child's own fresh `HOME`; the run's out dir (the parent of the task
+     file's directory) is readable and not writable. On Linux it is `unshare -rn` with loopback up. If neither works, the
      adapter refuses to start.
-  2. **Guard** (`src/guard.ts`, preloaded with `--import`). It wraps `net`, `tls`,
+  2. **Guard** (`src/guard.ts` is configuration only; the shared guard is preloaded with
+     `--import`). It wraps `net`, `tls`,
      `dgram`, `dns`, `fetch`, `WebSocket` and `child_process`. It lets through
-     127.0.0.1, ::1, `*.localhost` and the host names the task declares, and resolves
+     127.0.0.1, `*.localhost` and the host names the task declares, and resolves
      those names to 127.0.0.1 itself. No other IP literal passes, even when the task
      declares it. AgentKit's analytics endpoint gets a local 204. Everything else
      is refused and logged to stderr as `EGRESS_BLOCKED <target>`. An unhandled
@@ -135,7 +157,7 @@ actions (`src/llm-mode.ts`):
   facilitator's discovery endpoint, Coinbase CDP by default, rather than a task host.
 - Every tool call runs in the sandboxed child over fd 3, and the result goes back to the
   model exactly as AgentKit returned it.
-- The parent holds `ANTHROPIC_API_KEY` and never passes it on. At start-up it asks the
+- The parent holds the key in memory only and never passes it on. At start-up it asks the
   child for the names in its environment and stops if any begins with `ANTHROPIC_`.
 - `provenance.json` records mode `llm` and the model, so runs with different models need
   different out dirs.
@@ -153,9 +175,10 @@ examples/third-party/agentkit/scripts/run-llm.sh --chains evm \
   --scenario control-paid-fetch --out ~/x402-redteam-private/bolt8/agentkit/<label>
 ```
 
-Like `examples/agents/scripts/run-llm.sh`, it prints `SKIPPED` and exits 0 without a key,
-creates a session spend file, sets `X402_AGENTKIT_MODE=llm`, passes the key and the
-`X402_LLM_*` variables with `--pass-env`, and runs with `--agent-id agentkit-llm`,
+Like `examples/agents/scripts/run-llm.sh`, it prints `SKIPPED` and exits 0 without a key file,
+creates a session spend file in its own 0700 directory (removed on exit), sets
+`X402_AGENTKIT_MODE=llm`, passes the key file's path and the `X402_LLM_*` variables with
+`--pass-env`, and runs with `--agent-id agentkit-llm`,
 `--guardrail-id none-llm-judgement` and `--timeout 180`. Only run it by hand.
 
 `corepack pnpm test:llm` runs `test/llm-mode.test.ts` against a live mock adversary with a
@@ -190,7 +213,7 @@ of a task host exits 3. It needs the harness's root install.
     rejection, a refused or failed transfer) and a refusal of a host outside the task are
     measured and go to the model unchanged;
   - the provenance check failed.
-- `2`: llm mode without `ANTHROPIC_API_KEY`.
+- `2`: llm mode without a usable Anthropic key.
 - `1`: anything else, such as a scripted-mode child crash or a bad mode.
 
 The adapter supports EVM only (`--chains evm`) and `localhost` or `path` host mode.

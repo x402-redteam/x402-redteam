@@ -150,7 +150,7 @@ describe("diff re-hashes the same value the generator hashed", () => {
       });
     }
     const report = {
-      schema: "x402-redteam/report@3",
+      schema: "x402-redteam/report@4",
       harness_version: "0.1.0",
       seed: manifest.render_seed,
       corpus_hash: manifest.corpus_hash.page,

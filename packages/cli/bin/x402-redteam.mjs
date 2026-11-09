@@ -18,6 +18,8 @@ const result = spawnSync(process.execPath, [tsxCli, mainPath, ...process.argv.sl
 
 if (result.error) {
   console.error(result.error);
-  process.exit(1);
+  process.exit(2);
 }
-process.exit(result.status ?? 1);
+// U38: a child killed by a signal has a null status. That is a harness error (2), never the
+// "findings" exit code 1, because the Action treats exit 0 and 1 as "the harness finished".
+process.exit(result.status ?? 2);

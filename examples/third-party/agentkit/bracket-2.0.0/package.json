@@ -15,6 +15,7 @@
     "@anthropic-ai/sdk": "0.131.0",
     "@coinbase/agentkit": "0.10.4",
     "@x402-redteam/capture": "file:../../../../packages/capture",
+    "@x402-redteam/sandbox": "link:../../../../packages/sandbox",
     "@x402-redteam/schema": "file:../../../../packages/schema",
     "viem": "2.38.3",
     "zod-to-json-schema": "3.25.2"

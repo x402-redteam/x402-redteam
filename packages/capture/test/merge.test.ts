@@ -125,6 +125,7 @@ describe("merge", () => {
     const shim = shimPayment({
       seq: 0,
       dedupe_key: "evmtx:0xdeadbeef",
+      amount_atomic: "500",
       instruction_source: "none",
     });
     const rpc = rpcPayment({ seq: 1, dedupe_key: "evmtx:0xdeadbeef", instruction_source: "prose" });
@@ -147,6 +148,7 @@ describe("merge", () => {
     const shim = shimPayment({
       seq: 1,
       dedupe_key: "evmtx:0xcafebabe",
+      amount_atomic: "500",
       instruction_source: "none",
       replay: true,
     });
@@ -197,5 +199,63 @@ describe("merge: submitted captures (v4, U26-2)", () => {
     expect(merged[0]?.route_key).toBe("provider.test/claim");
     // Order of arrival does not matter.
     expect(merge([submitted], shim)[0]?.capture).toBe("shim+submitted");
+  });
+
+  // U37 (C4): a key collision between different payments must never hide one.
+  it("appends under a disambiguated, unique key when equal keys disagree on payee or amount", () => {
+    const first = headerPayment({ seq: 0 });
+    const otherPayee = shimPayment({
+      seq: 1,
+      to: "0x9999999999999999999999999999999999999999",
+    });
+    const otherAmount = shimPayment({ seq: 2, amount_atomic: "2000" });
+    const result = merge(merge(merge([], first), otherPayee), otherAmount);
+    expect(result).toHaveLength(3);
+    expect(new Set(result.map((p) => p.dedupe_key)).size).toBe(3);
+    expect(result[1]?.dedupe_key).toBe("evm:0xnonce1#1");
+    expect(result[2]?.dedupe_key).toBe("evm:0xnonce1#2");
+  });
+
+  it("compares EVM addresses case-insensitively and amounts by value", () => {
+    const header = headerPayment({ seq: 0, amount_atomic: "1000000" });
+    const shim = shimPayment({
+      seq: 1,
+      to: "0xabcdef0000000000000000000000000000001234",
+      amount_atomic: "0x0f4240",
+    });
+    expect(merge([header], shim)).toHaveLength(1);
+  });
+
+  it("keeps the strongest terms_verified in both orders and at equal and unequal ranks", () => {
+    const readings: Array<
+      [Payment["terms_verified"], Payment["terms_verified"], Payment["terms_verified"]]
+    > = [
+      ["client_copy", "offered", "offered"],
+      ["offered", "client_copy", "offered"],
+      ["offered_domain_only", "client_copy", "offered_domain_only"],
+      ["none", "client_copy", "client_copy"],
+      [undefined, "none", "none"],
+      ["offered", undefined, "offered"],
+    ];
+    for (const [a, b, want] of readings) {
+      const withA = (cap: Payment["capture"], seq: number) =>
+        cap === "header"
+          ? headerPayment({ seq, ...(a ? { terms_verified: a } : {}) })
+          : shimPayment({ seq, ...(a ? { terms_verified: a } : {}) });
+      const withB = (cap: Payment["capture"], seq: number) =>
+        cap === "header"
+          ? headerPayment({ seq, ...(b ? { terms_verified: b } : {}) })
+          : shimPayment({ seq, ...(b ? { terms_verified: b } : {}) });
+      // Equal rank (both header), then A at the higher-priority rank, then at the lower.
+      for (const [capA, capB] of [
+        ["header", "header"],
+        ["header", "shim"],
+        ["shim", "header"],
+      ] as const) {
+        const result = merge([withA(capA, 0)], withB(capB, 1));
+        expect(result).toHaveLength(1);
+        expect(result[0]?.terms_verified).toBe(want);
+      }
+    }
   });
 });

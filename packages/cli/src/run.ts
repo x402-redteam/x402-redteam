@@ -1,8 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chownSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  chownSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdversary } from "@x402-redteam/adversary";
 import { capture } from "@x402-redteam/capture";
@@ -12,6 +20,7 @@ import {
   type HostMode,
   loadCorpus,
   type RunRecord,
+  type Scenario,
   type Severity,
   SeveritySchema,
   scenarioTransport,
@@ -33,6 +42,8 @@ import {
   readGuardrailErrors,
 } from "./guardrail-track.js";
 import { hostEnv, preflightHostMode } from "./host-env.js";
+import { SCRUBBED_MANIFEST } from "./limits.js";
+import { shufflePass } from "./pass-order.js";
 import { loadSeason } from "./season.js";
 import { runAgent, scrubSecretsFromLog } from "./spawn.js";
 import { buildTask, writeTaskFile } from "./task.js";
@@ -103,7 +114,14 @@ export interface RunSuiteOptions {
   chains?: Chain[];
   /** Defaults to every scenario in the corpus. */
   scenarioIds?: string[];
-  repeat: number;
+  /**
+   * Attempts per scenario x chain. `undefined` is only meaningful on the guardrail track
+   * (U36-c, review M3): the run starts with 2 passes and, once pass 1 has shown the
+   * guardrail's own `hello` declaration, extends to 3 for a guardrail that declares itself
+   * nondeterministic or declares nothing (the canonical minimum), so the ranked containers,
+   * which pass no `--repeat`, produce a rankable result either way. Elsewhere it is 1.
+   */
+  repeat?: number;
   timeoutMs: number;
   /** Time an agent gets to make its first request before the run clock starts (default 120 s). */
   startupTimeoutMs?: number;
@@ -249,6 +267,8 @@ function quietSummaryLine(report: Report, exitCode: number): string {
     exit_code: exitCode,
     valid: report.summary.valid,
     safety_score: report.summary.safety_score,
+    rank_score: report.summary.rank_score,
+    critical_all_pass: report.summary.critical_all_pass,
     unauthorized_usd: report.summary.unauthorized_usd,
     pass_rate: report.summary.pass_rate,
     reach_rate: report.summary.reach_rate,
@@ -284,6 +304,9 @@ export function assertScenarioFilterKnown(
  * per run, drives it sequentially over (scenario, chain, attempt), scores the runs and
  * writes every report artifact. Exported for tests as well as `main.ts`'s `run` command.
  */
+/** Canonical minimum attempts for a nondeterministic guardrail (leaderboard canonical.ts). */
+const MIN_REPEAT_NONDETERMINISTIC = 3;
+
 export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const allScenarios = loadCorpus(opts.corpus);
   assertScenarioFilterKnown(allScenarios, opts.scenarioIds);
@@ -343,6 +366,8 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   const runsDir = resolve(outDir, "runs");
   mkdirSync(logsDir, { recursive: true });
   mkdirSync(runsDir, { recursive: true });
+  // U38 (D2): rebuilt from scratch each suite; see SCRUBBED_MANIFEST.
+  rmSync(resolve(outDir, SCRUBBED_MANIFEST), { force: true });
 
   const runs: RunRecord[] = [];
   // U18b item 1 (coordinator revision): one entry per guardrail-track run, in run
@@ -351,210 +376,269 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
   // afterwards (unlike the old `<runsDir>/<run_id>.gdp.json` sidecar scheme).
   const gdpRecords: Array<DriverGdpRecord | undefined> = [];
 
+  // U36-c (M5): attempt k is its own full pass over every scenario x chain leg, in a
+  // seed-derived shuffled order, so no run directly follows its own earlier attempt.
+  const legs: Array<{ scenario: Scenario; chain: (typeof CHAIN_ORDER)[number] }> = [];
   for (const scenario of scenarios) {
     for (const chain of CHAIN_ORDER) {
       if (!chainFilter.includes(chain) || !scenario.chains.includes(chain)) continue;
+      legs.push({ scenario, chain });
+    }
+  }
 
-      for (let attempt = 1; attempt <= opts.repeat; attempt++) {
-        const run_id = computeRunId(effectiveSeed, scenario.id, chain, attempt);
+  const autoRepeat = opts.repeat === undefined;
+  let repeat = opts.repeat ?? ((opts.track ?? "agent") === "guardrail" ? 2 : 1);
+  for (let attempt = 1; attempt <= repeat; attempt++) {
+    for (const { scenario, chain } of shufflePass(legs, effectiveSeed, attempt)) {
+      const run_id = computeRunId(effectiveSeed, scenario.id, chain, attempt);
 
-        // Measurement integrity: one adversary instance, on its own ephemeral port, per
-        // run - bound right before this run's agent is spawned and closed right after
-        // this run's ledger is drained, never shared with the run before or after it. A
-        // process that outlives its own run (e.g. a detached grandchild that escaped the
-        // process-group kill below) has nothing left to reach: this run's listener is
-        // already gone by the time any later run starts, and it was never told that
-        // later run's own, differently-numbered port, so a stray late request can only
-        // fail to connect - it can never be recorded into a different run's ledger.
-        const adversary = await createAdversary({
+      // Measurement integrity: one adversary instance, on its own ephemeral port, per
+      // run - bound right before this run's agent is spawned and closed right after
+      // this run's ledger is drained, never shared with the run before or after it. A
+      // process that outlives its own run (e.g. a detached grandchild that escaped the
+      // process-group kill below) has nothing left to reach: this run's listener is
+      // already gone by the time any later run starts, and it was never told that
+      // later run's own, differently-numbered port, so a stray late request can only
+      // fail to connect - it can never be recorded into a different run's ledger.
+      const adversary = await createAdversary({
+        seed: effectiveSeed,
+        capture,
+        hostMode,
+        ...(opts.mcpChallengeMeta === true ? { mcpChallengeMeta: true } : {}),
+      });
+      try {
+        adversary.load({ scenario, chain, run_id });
+        const task = buildTask({
+          scenario,
+          chain,
+          baseUrl: adversary.baseUrl,
           seed: effectiveSeed,
-          capture,
+          run_id,
           hostMode,
-          ...(opts.mcpChallengeMeta === true ? { mcpChallengeMeta: true } : {}),
         });
-        try {
-          adversary.load({ scenario, chain, run_id });
-          const task = buildTask({
-            scenario,
-            chain,
-            baseUrl: adversary.baseUrl,
-            seed: effectiveSeed,
-            run_id,
-            hostMode,
-          });
-          // Security review HIGH-7: when the spawned process drops to `agentUid`, it
-          // needs a writable $HOME of its own - inheriting the harness's own (root,
-          // typically /root) would make any tool that writes under $HOME (npm/tsx
-          // caches, etc.) fail with EACCES for the unprivileged uid. A fresh per-run
-          // directory, `chown`'d to that uid/gid, is removed again right after the run
-          // the same way the GDP record dir already is. Created *before* the task file
-          // below, since the task file's own chowned location (security review N2)
-          // nests under it.
-          let agentHomeDir: string | undefined;
-          if (opts.agentUid !== undefined) {
-            agentHomeDir = mkdtempSync(resolve(tmpdir(), "x402-agent-home-"));
-            chownSync(agentHomeDir, opts.agentUid, opts.agentGid ?? opts.agentUid);
-          }
-
-          // Security re-review N2: task.json carries the agent's own wallet secret
-          // (private key / base58 secret key) and prompt - the dropped-privilege agent
-          // must actually be able to read it, so it can never live only under the
-          // shared, root-owned `outDir` when `agentUid` is set (the same root-only
-          // directory `--redact`'s reports stay under, per security review HIGH-4).
-          // `writeTaskFile` creates `<base>/tasks/<run_id>.json` as root regardless of
-          // the parent's own ownership, so the new `tasks` subdir and the file itself
-          // are explicitly `chown`'d right after - nested under `agentHomeDir`, so both
-          // are cleaned up together after the run.
-          const taskPath = writeTaskFile(agentHomeDir ?? outDir, task);
-          if (agentHomeDir !== undefined && opts.agentUid !== undefined) {
-            chownSync(
-              resolve(agentHomeDir, "tasks"),
-              opts.agentUid,
-              opts.agentGid ?? opts.agentUid,
-            );
-            chownSync(taskPath, opts.agentUid, opts.agentGid ?? opts.agentUid);
-          }
-
-          // Code review item 4 (U17 seam): the adversary's own forward-proxy origin
-          // once `host_mode: "proxy"` serves one, else the harness's base_url.
-          const proxyUrl = adversary.proxyUrl ?? task.base_url;
-          const env = buildAgentEnv(taskPath, task, opts.passEnv ?? [], proxyUrl, opts.env ?? {});
-          const logFile = resolve(logsDir, `${run_id}.log`);
-          const isGuardrailTrack = (opts.track ?? "agent") === "guardrail";
-
-          if (agentHomeDir !== undefined) {
-            env.HOME = agentHomeDir;
-          }
-
-          // U18b item 1 (coordinator revision): a fresh, private per-run directory for
-          // the driver's GDP record - `mkdtemp` makes a brand-new, uniquely-named
-          // directory every time, so there is no "stale leftover from an earlier spawn"
-          // to delete first (unlike the old `<runsDir>/<run_id>.gdp.json` sidecar, keyed
-          // by a run id that repeats across invocations of the same `--out`). Named to
-          // the driver only via this `X402_`-prefixed env var, which `scrubGuardrailEnv`
-          // (packages/driver/src/main.ts) strips before the guardrail subprocess ever
-          // sees its env - the guardrail cannot locate, read or race this directory
-          // through its env, and its cwd is left alone (the driver's own, typically the
-          // harness caller's), so a guardrail command written with a relative path
-          // (e.g. `tsx examples/guardrails/x.ts`, this repo's own convention) still
-          // works.
-          //
-          // Security review HIGH-7: when `agentUid` is set, the *driver itself* runs
-          // under that dropped uid (it's the process `runAgent` spawns in the
-          // guardrail-track - see `guardrail-track.ts`'s `resolveAgentCommand`), so it
-          // needs write access to this directory too, or it can never write `gdp.json`
-          // in the first place. `chown` it right after creating it, same as the HOME
-          // dir above.
-          if (isGuardrailTrack) {
-            const recordDir = mkdtempSync(resolve(tmpdir(), "x402-gdp-"));
-            if (opts.agentUid !== undefined) {
-              chownSync(recordDir, opts.agentUid, opts.agentGid ?? opts.agentUid);
-            }
-            env.X402_GDP_RECORD_DIR = recordDir;
-          }
-
-          const spawnResult = await runAgent({
-            cmd: opts.agentCmd,
-            env,
-            timeoutMs: opts.timeoutMs,
-            startupTimeoutMs: opts.startupTimeoutMs ?? 120_000,
-            hasStarted: () => adversary.requestCount() > 0,
-            logFile,
-            // v3 (ADR-011, U19): main.ts already rejected (exit 2) a uid that
-            // `validateAgentUid` doesn't accept, so any value here is safe to use.
-            agentUid: opts.agentUid,
-            agentGid: opts.agentGid,
-          });
-
-          // U22 code review round 2 (item 3): best-effort scrub of this run's own
-          // `--pass-env` secret values out of its log file, now that `runAgent` has
-          // resolved (the log stream is already flushed and closed) - an agent that
-          // echoes its own env must not leave a pass-env secret's literal value sitting
-          // in `out/logs/*.log`, which the Action uploads as a build artifact by
-          // default. `env[name]` (not `process.env[name]`) is the value actually
-          // forwarded to this run's subprocess, through the same `names` allowlist
-          // `buildAgentEnv` used above.
-          scrubSecretsFromLog(
-            logFile,
-            (opts.passEnv ?? []).flatMap((name) => {
-              const value = env[name];
-              return typeof value === "string" ? [value] : [];
-            }),
-          );
-          // Security review HIGH-7: the HOME dir's only purpose was this one run.
-          if (agentHomeDir !== undefined) {
-            rmSync(agentHomeDir, { recursive: true, force: true });
-          }
-
-          const drained = adversary.drain();
-
-          // Code review finding 5 (BLOCK, U18): a guardrail-track run that exited 0 but
-          // left no record is an integrity failure (the driver crashed or was killed
-          // after reporting success, or some other bug), not a quiet pass - force a
-          // non-zero exit code so scoring treats it as `error`, the same as any other
-          // agent failure. Finding 4: copy the driver's own per-run error count
-          // (timeouts, malformed lines, invalid decisions, mid-run exits) onto the
-          // record so a broken guardrail stays visible even when it happens to still
-          // score "safely" (every denied payment both from a real policy and from GDP
-          // protocol noise looks identical to the scorer otherwise).
-          //
-          // U18b item 1: the record is trusted only when the *driver's own, unmodified*
-          // exit code (`spawnResult.exit_code`, before the `exit_code` override below)
-          // is 0 - a non-zero exit means the driver itself reported failure, so whatever
-          // it may have left behind isn't trustworthy either. `readGdpRecordFromDir` is
-          // simply never called in that case - a non-zero exit already makes this run
-          // `error` on its own (via `agent_ok`/`RunScore.status`), and `guardrail_errors`
-          // stays `undefined`, never a possibly-stale number.
-          let exit_code = spawnResult.exit_code;
-          let guardrail_errors: number | undefined;
-          if (isGuardrailTrack) {
-            const recordDir = env.X402_GDP_RECORD_DIR as string;
-            const driverExitedCleanly = spawnResult.exit_code === 0;
-            const record = driverExitedCleanly ? readGdpRecordFromDir(recordDir) : undefined;
-            if (driverExitedCleanly && !hasGdpRecord(record)) {
-              console.error(
-                `x402-redteam: guardrail track run ${run_id} exited 0 but left no GDP record - treating as a harness error, not a pass.`,
-              );
-              exit_code = 1;
-            }
-            guardrail_errors = readGuardrailErrors(record);
-            gdpRecords.push(record);
-            // The harness's own audit copy (U18b item 1): kept for a human to inspect
-            // under `out/runs/`, never read back - `record` itself (in memory) is what
-            // feeds `guardrail_errors` above and `collectGuardrailInfo` after the loop.
-            if (record !== undefined) {
-              writeFileSync(
-                resolve(runsDir, `${run_id}.gdp.json`),
-                `${JSON.stringify(record, null, 2)}\n`,
-              );
-            }
-            rmSync(recordDir, { recursive: true, force: true });
-          }
-
-          const runRecord: RunRecord = {
-            run_id,
-            scenario_id: scenario.id,
-            chain,
-            attempt,
-            agent_id: opts.agentId,
-            guardrail_id: opts.guardrailId,
-            requests: drained.requests,
-            challenges: drained.challenges,
-            payments: drained.payments,
-            delivered: drained.delivered,
-            exit_code,
-            timed_out: spawnResult.timed_out,
-            ...(guardrail_errors !== undefined ? { guardrail_errors } : {}),
-            timing: { duration_ms: spawnResult.duration_ms },
-          };
-          runs.push(runRecord);
-          writeFileSync(
-            resolve(runsDir, `${run_id}.json`),
-            `${JSON.stringify(runRecord, null, 2)}\n`,
-          );
-        } finally {
-          await adversary.close();
+        // Security review HIGH-7: when the spawned process drops to `agentUid`, it
+        // needs a writable $HOME of its own - inheriting the harness's own (root,
+        // typically /root) would make any tool that writes under $HOME (npm/tsx
+        // caches, etc.) fail with EACCES for the unprivileged uid. A fresh per-run
+        // directory, `chown`'d to that uid/gid, is removed again right after the run
+        // the same way the GDP record dir already is. Created *before* the task file
+        // below, since the task file's own chowned location (security review N2)
+        // nests under it.
+        let agentHomeDir: string | undefined;
+        if (opts.agentUid !== undefined) {
+          agentHomeDir = mkdtempSync(resolve(tmpdir(), "x402-agent-home-"));
+          chownSync(agentHomeDir, opts.agentUid, opts.agentGid ?? opts.agentUid);
         }
+
+        // Security re-review N2: task.json carries the agent's own wallet secret
+        // (private key / base58 secret key) and prompt - the dropped-privilege agent
+        // must actually be able to read it, so it can never live only under the
+        // shared, root-owned `outDir` when `agentUid` is set (the same root-only
+        // directory `--redact`'s reports stay under, per security review HIGH-4).
+        // `writeTaskFile` creates `<base>/tasks/<run_id>.json` as root regardless of
+        // the parent's own ownership, so the new `tasks` subdir and the file itself
+        // are explicitly `chown`'d right after - nested under `agentHomeDir`, so both
+        // are cleaned up together after the run.
+        const taskPath = writeTaskFile(agentHomeDir ?? outDir, task);
+        if (agentHomeDir !== undefined && opts.agentUid !== undefined) {
+          chownSync(resolve(agentHomeDir, "tasks"), opts.agentUid, opts.agentGid ?? opts.agentUid);
+          chownSync(taskPath, opts.agentUid, opts.agentGid ?? opts.agentUid);
+        }
+
+        // Code review item 4 (U17 seam): the adversary's own forward-proxy origin
+        // once `host_mode: "proxy"` serves one, else the harness's base_url.
+        const proxyUrl = adversary.proxyUrl ?? task.base_url;
+        const env = buildAgentEnv(taskPath, task, opts.passEnv ?? [], proxyUrl, opts.env ?? {});
+        const logFile = resolve(logsDir, `${run_id}.log`);
+        const isGuardrailTrack = (opts.track ?? "agent") === "guardrail";
+
+        if (agentHomeDir !== undefined) {
+          env.HOME = agentHomeDir;
+        }
+
+        // U18b item 1 (coordinator revision): a fresh, private per-run directory for
+        // the driver's GDP record - `mkdtemp` makes a brand-new, uniquely-named
+        // directory every time, so there is no "stale leftover from an earlier spawn"
+        // to delete first (unlike the old `<runsDir>/<run_id>.gdp.json` sidecar, keyed
+        // by a run id that repeats across invocations of the same `--out`). Named to
+        // the driver only via this `X402_`-prefixed env var, which `scrubGuardrailEnv`
+        // (packages/driver/src/main.ts) strips before the guardrail subprocess ever
+        // sees its env - the guardrail cannot locate, read or race this directory
+        // through its env, and its cwd is left alone (the driver's own, typically the
+        // harness caller's), so a guardrail command written with a relative path
+        // (e.g. `tsx examples/guardrails/x.ts`, this repo's own convention) still
+        // works.
+        //
+        // Security review HIGH-7: when `agentUid` is set, the *driver itself* runs
+        // under that dropped uid (it's the process `runAgent` spawns in the
+        // guardrail-track - see `guardrail-track.ts`'s `resolveAgentCommand`), so it
+        // needs write access to this directory too, or it can never write `gdp.json`
+        // in the first place. `chown` it right after creating it, same as the HOME
+        // dir above.
+        // U36-c (M5, design §10.4): every guardrail-track run starts with fresh state: a
+        // new driver + guardrail process (one `sh -c` per run), and a fresh HOME and TMPDIR
+        // under a directory removed right after the run, so no file in either survives
+        // into another attempt. Under `agentUid` the per-run HOME above is reused. The
+        // cwd is deliberately left alone (relative guardrail commands rely on it) and is
+        // part of the documented residual, with any other path the guardrail can write.
+        let guardrailStateDir: string | undefined;
+        if (isGuardrailTrack) {
+          if (agentHomeDir === undefined) {
+            guardrailStateDir = mkdtempSync(resolve(tmpdir(), "x402-gh-"));
+            env.HOME = guardrailStateDir;
+          }
+          env.TMPDIR = agentHomeDir ?? (guardrailStateDir as string);
+        }
+
+        if (isGuardrailTrack) {
+          const recordDir = mkdtempSync(resolve(tmpdir(), "x402-gdp-"));
+          if (opts.agentUid !== undefined) {
+            chownSync(recordDir, opts.agentUid, opts.agentGid ?? opts.agentUid);
+          }
+          env.X402_GDP_RECORD_DIR = recordDir;
+        }
+
+        const spawnResult = await runAgent({
+          cmd: opts.agentCmd,
+          env,
+          timeoutMs: opts.timeoutMs,
+          startupTimeoutMs: opts.startupTimeoutMs ?? 120_000,
+          hasStarted: () => adversary.requestCount() > 0,
+          logFile,
+          // v3 (ADR-011, U19): main.ts already rejected (exit 2) a uid that
+          // `validateAgentUid` doesn't accept, so any value here is safe to use.
+          agentUid: opts.agentUid,
+          agentGid: opts.agentGid,
+        });
+
+        // U38 (D1): the agent is gone; stop admitting requests and wait for every queued decode to
+        // be recorded, so a payload that arrived before it exited is never dropped.
+        await adversary.idle();
+
+        // U22 code review round 2 (item 3): best-effort scrub of this run's own
+        // `--pass-env` secret values out of its log file, now that `runAgent` has
+        // resolved (the log stream is already flushed and closed) - an agent that
+        // echoes its own env must not leave a pass-env secret's literal value sitting
+        // in `out/logs/*.log`, which the Action uploads as a build artifact by
+        // default. `env[name]` (not `process.env[name]`) is the value actually
+        // forwarded to this run's subprocess, through the same `names` allowlist
+        // `buildAgentEnv` used above.
+        scrubSecretsFromLog(
+          logFile,
+          (opts.passEnv ?? []).flatMap((name) => {
+            const value = env[name];
+            return typeof value === "string" ? [value] : [];
+          }),
+        );
+        if (process.env.X402_REDTEAM_LIMIT_TRACE === "1") {
+          // stderr only, never into a report (functional-design.md section 8).
+          const log_bytes = (() => {
+            try {
+              return statSync(logFile).size;
+            } catch {
+              return 0;
+            }
+          })();
+          console.error(`x402-redteam limit-trace-log ${JSON.stringify({ run_id, log_bytes })}`);
+        }
+        // U38 (D2): only now is this log known to be scrubbed (or deleted). The Action stages
+        // exactly the logs listed here, so a crash before this line leaves the run's log out.
+        appendFileSync(resolve(outDir, SCRUBBED_MANIFEST), `${basename(logFile)}\n`);
+        // Security review HIGH-7: the HOME dir's only purpose was this one run.
+        if (agentHomeDir !== undefined) {
+          rmSync(agentHomeDir, { recursive: true, force: true });
+        }
+        if (guardrailStateDir !== undefined) {
+          rmSync(guardrailStateDir, { recursive: true, force: true });
+        }
+
+        const drained = adversary.drain();
+
+        // Code review finding 5 (BLOCK, U18): a guardrail-track run that exited 0 but
+        // left no record is an integrity failure (the driver crashed or was killed
+        // after reporting success, or some other bug), not a quiet pass - force a
+        // non-zero exit code so scoring treats it as `error`, the same as any other
+        // agent failure. Finding 4: copy the driver's own per-run error count
+        // (timeouts, malformed lines, invalid decisions, mid-run exits) onto the
+        // record so a broken guardrail stays visible even when it happens to still
+        // score "safely" (every denied payment both from a real policy and from GDP
+        // protocol noise looks identical to the scorer otherwise).
+        //
+        // U18b item 1: the record is trusted only when the *driver's own, unmodified*
+        // exit code (`spawnResult.exit_code`, before the `exit_code` override below)
+        // is 0 - a non-zero exit means the driver itself reported failure, so whatever
+        // it may have left behind isn't trustworthy either. `readGdpRecordFromDir` is
+        // simply never called in that case - a non-zero exit already makes this run
+        // `error` on its own (via `agent_ok`/`RunScore.status`), and `guardrail_errors`
+        // stays `undefined`, never a possibly-stale number.
+        let exit_code = spawnResult.exit_code;
+        let guardrail_errors: number | undefined;
+        if (isGuardrailTrack) {
+          const recordDir = env.X402_GDP_RECORD_DIR as string;
+          const driverExitedCleanly = spawnResult.exit_code === 0;
+          const record = driverExitedCleanly ? readGdpRecordFromDir(recordDir) : undefined;
+          if (driverExitedCleanly && !hasGdpRecord(record)) {
+            console.error(
+              `x402-redteam: guardrail track run ${run_id} exited 0 but left no GDP record - treating as a harness error, not a pass.`,
+            );
+            exit_code = 1;
+          }
+          // U38 (D3): the driver stopped at its own budget, so later stages (for example a
+          // signature-request lure) may never have been shown to the guardrail. An attack must
+          // not pass on that: treat it like the missing-record integrity path (attack -> error,
+          // control -> agent_failed). Never scored as a resource-limit hit.
+          if (driverExitedCleanly && record?.budget_exhausted === true) {
+            console.error(
+              `x402-redteam: guardrail track run ${run_id} stopped at the driver's request/leg budget - treating as a harness error, not a pass.`,
+            );
+            exit_code = 1;
+          }
+          guardrail_errors = readGuardrailErrors(record);
+          gdpRecords.push(record);
+          // The harness's own audit copy (U18b item 1): kept for a human to inspect
+          // under `out/runs/`, never read back - `record` itself (in memory) is what
+          // feeds `guardrail_errors` above and `collectGuardrailInfo` after the loop.
+          if (record !== undefined) {
+            writeFileSync(
+              resolve(runsDir, `${run_id}.gdp.json`),
+              `${JSON.stringify(record, null, 2)}\n`,
+            );
+          }
+          rmSync(recordDir, { recursive: true, force: true });
+        }
+
+        const runRecord: RunRecord = {
+          run_id,
+          scenario_id: scenario.id,
+          chain,
+          attempt,
+          agent_id: opts.agentId,
+          guardrail_id: opts.guardrailId,
+          requests: drained.requests,
+          challenges: drained.challenges,
+          payments: drained.payments,
+          delivered: drained.delivered,
+          exit_code,
+          timed_out: spawnResult.timed_out,
+          ...(guardrail_errors !== undefined ? { guardrail_errors } : {}),
+          ...(drained.limit_hit !== undefined ? { limit_hit: drained.limit_hit } : {}),
+          timing: { duration_ms: spawnResult.duration_ms },
+        };
+        runs.push(runRecord);
+        writeFileSync(
+          resolve(runsDir, `${run_id}.json`),
+          `${JSON.stringify(runRecord, null, 2)}\n`,
+        );
+      } finally {
+        await adversary.close();
+      }
+    }
+
+    // U36-c (review M3): pass 1 has shown the guardrail's declaration (the driver's GDP
+    // record). Only an explicit deterministic declaration stays at 2 passes.
+    if (autoRepeat && attempt === 1 && (opts.track ?? "agent") === "guardrail") {
+      if (collectGuardrailInfo(gdpRecords).guardrail_nondeterministic !== false) {
+        repeat = Math.max(repeat, MIN_REPEAT_NONDETERMINISTIC);
       }
     }
   }
@@ -595,7 +679,7 @@ export async function runSuite(opts: RunSuiteOptions): Promise<RunSuiteResult> {
         // the order --chains was given in, and dedupe+sort the scenario filter, so
         // config is a stable, comparable fingerprint of the run.
         chains: CHAIN_ORDER.filter((c) => chainFilter.includes(c)),
-        repeat: opts.repeat,
+        repeat,
         timeout_s: opts.timeoutMs / 1000,
         fail_on: opts.failOn,
         scenario_filter: opts.scenarioIds ? [...new Set(opts.scenarioIds)].sort() : null,

@@ -18,6 +18,9 @@ importers:
       '@blockrun/clawrouter':
         specifier: 0.12.282
         version: 0.12.282(@solana/sysvars@8.4.0(typescript@6.0.3))(typescript@6.0.3)(zod@4.6.7)
+      '@x402-redteam/sandbox':
+        specifier: link:../../../packages/sandbox
+        version: link:../../../packages/sandbox
       '@x402-redteam/schema':
         specifier: file:../../../packages/schema
         version: file:../../../packages/schema(typescript@6.0.3)

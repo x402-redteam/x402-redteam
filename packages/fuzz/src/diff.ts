@@ -489,8 +489,8 @@ export function diffRuns(manifest: Manifest, inputs: ClientInput[]): DiffResult 
 
   for (const { client, data } of clients) {
     const { report } = data;
-    if (report.schema !== "x402-redteam/report@3") {
-      throw new DiffRefusal(`${client.id}: not a report@3 report.json`);
+    if (report.schema !== "x402-redteam/report@4") {
+      throw new DiffRefusal(`${client.id}: not a report@4 report.json`);
     }
     // U33-0 (C2): a run with the result-`_meta` challenge copy on records `channels` for
     // issuances the manifest hashes as plain, so it cannot be diffed. The fuzz runner never

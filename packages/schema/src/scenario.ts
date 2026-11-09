@@ -36,6 +36,10 @@ export const CategorySchema = z.enum([
 ]);
 export type Category = z.infer<typeof CategorySchema>;
 
+/** v7 (U36-a): why a control exists. See `Scenario.control_role`. */
+export const ControlRoleSchema = z.enum(["gate", "battery"]);
+export type ControlRole = z.infer<typeof ControlRoleSchema>;
+
 /**
  * v3 (ADR-016 reach/`reached`, Bolt 6): required on every attack scenario, forbidden on
  * `control` (lint rule 7, `load.ts`). Marks *why* a given scenario's attack surface is
@@ -196,6 +200,14 @@ export const ChallengeSpecSchema = z
 export type ChallengeSpec = z.infer<typeof ChallengeSpecSchema>;
 
 /**
+ * U38 (D5): the most typed data a scenario may serve - half the adversary's agent-side caps
+ * (`MAX_TYPED_DATA_BYTES` 8 KiB, `MAX_TYPED_DATA_TYPES` 16), so harness-authored content can
+ * never trip `field_bytes` on an honest agent.
+ */
+export const SIGN_REQUEST_MAX_TYPED_DATA_BYTES = 4 * 1024;
+export const SIGN_REQUEST_MAX_TYPED_DATA_TYPES = 8;
+
+/**
  * v4 (U26-2, M2): what a `collect_signature` route asks the agent to sign. Exactly one of
  * `typed_data`, `digest`, `message` or `authorization` is set, matching `kind`. Every
  * string inside is templated. EVM only.
@@ -233,6 +245,24 @@ export const SignRequestSpecSchema = z
     text: z.string().optional(),
   })
   .superRefine((r, ctx) => {
+    if (r.typed_data !== undefined) {
+      const bytes = new TextEncoder().encode(JSON.stringify(r.typed_data)).length;
+      if (bytes > SIGN_REQUEST_MAX_TYPED_DATA_BYTES) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["typed_data"],
+          message: `sign_request typed_data is ${bytes} bytes serialized; the limit is ${SIGN_REQUEST_MAX_TYPED_DATA_BYTES}`,
+        });
+      }
+      const types = Object.keys(r.typed_data.types).length;
+      if (types > SIGN_REQUEST_MAX_TYPED_DATA_TYPES) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["typed_data", "types"],
+          message: `sign_request typed_data has ${types} types; the limit is ${SIGN_REQUEST_MAX_TYPED_DATA_TYPES}`,
+        });
+      }
+    }
     const set = (["typed_data", "digest", "message", "authorization"] as const).filter(
       (k) => r[k] !== undefined,
     );
@@ -492,6 +522,14 @@ export const ScenarioSchema = z.object({
   // default (a default would write `transport: "http"` into every parsed scenario and
   // move `corpusHash`); see `scenarioTransport()`.
   transport: TransportSchema.optional(),
+  // v7 (U36-a): a control's role. `gate` = category-agnostic plumbing that decides report
+  // validity (owner decision D1: `control-paid-fetch` only); `battery` = a benign near-miss
+  // of an attack category, counted in utility only, and it names that category in `mirrors`.
+  // Optional with no zod default (an attack parses unchanged); required on every control in
+  // `corpus/` by the control-floor lint (`lintControlFloor`), not by this schema, so the
+  // MCP corpus (3 untouched controls) loads as before.
+  control_role: ControlRoleSchema.optional(),
+  mirrors: CategorySchema.exclude(["control"]).optional(),
 });
 export type Scenario = z.infer<typeof ScenarioSchema>;
 

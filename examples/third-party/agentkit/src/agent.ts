@@ -20,6 +20,7 @@
  * 1 for anything else, such as a scripted-mode child crash or a bad mode.
  */
 import { pathToFileURL } from "node:url";
+import { resolveAnthropicKey } from "@x402-redteam/sandbox";
 import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { MessagesClient } from "../../../agents/src/lib/llm-agent.js";
 import { readLlmSettings } from "../../../agents/src/lib/llm-config.js";
@@ -286,11 +287,19 @@ async function main(): Promise<void> {
   if (!taskPath) throw new Error("X402_REDTEAM_TASK is not set");
   let client: MessagesClient | undefined;
   if (mode === "llm") {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Key-file mode (U35 M5): read into this process's memory only, never into process.env,
+    // and refused when ANTHROPIC_API_KEY is also exported.
+    let apiKey: string | undefined;
+    try {
+      apiKey = resolveAnthropicKey(process.env);
+    } catch (err) {
+      console.error("agentkit adapter:", err instanceof Error ? err.message : err);
+      process.exit(MISSING_KEY_EXIT_CODE);
+    }
     if (!apiKey) {
       console.error(
-        "agentkit adapter: ANTHROPIC_API_KEY is not set. Run llm mode through " +
-          "scripts/run-llm.sh (which skips cleanly), or pass one with --pass-env ANTHROPIC_API_KEY.",
+        "agentkit adapter: no Anthropic key. Run llm mode through scripts/run-llm.sh " +
+          "(which skips cleanly), with the key in a 0600 file named by X402_ANTHROPIC_KEY_FILE.",
       );
       process.exit(MISSING_KEY_EXIT_CODE);
     }

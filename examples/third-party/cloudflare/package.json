@@ -16,6 +16,7 @@
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@modelcontextprotocol/server": "2.3.1",
+    "@x402-redteam/sandbox": "link:../../../packages/sandbox",
     "@x402-redteam/schema": "file:../../../packages/schema",
     "@x402/core": "2.28.0",
     "@x402/evm": "2.28.0",

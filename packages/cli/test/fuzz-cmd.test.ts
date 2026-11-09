@@ -96,7 +96,7 @@ function runDir(
   writeFileSync(
     join(dir, "report.json"),
     JSON.stringify({
-      schema: "x402-redteam/report@3",
+      schema: "x402-redteam/report@4",
       harness_version: "0.1.0",
       seed: over.seed ?? "x402-redteam-v1",
       corpus_hash: over.hash ?? "hp",

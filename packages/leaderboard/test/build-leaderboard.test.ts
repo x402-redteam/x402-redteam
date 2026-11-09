@@ -46,7 +46,7 @@ function autoVerified(entries: LeaderboardEntry[]): VerifiedMap {
     if (
       typeof data === "object" &&
       data !== null &&
-      (data as { schema?: unknown }).schema === "x402-redteam/report@3" &&
+      (data as { schema?: unknown }).schema === "x402-redteam/report@4" &&
       (data as { config?: { track?: unknown } }).config?.track === "guardrail"
     ) {
       out[e.id] = { tier: 2, signer: RANK_SIGNER, subject_sha256: e.sha256 ?? contentHash(data) };
@@ -121,6 +121,8 @@ function payment(overrides: Record<string, unknown> = {}): Payment {
     instruction_source: "header",
     replay: false,
     valid: true,
+    // U37: an honest fixture payment is signed over the offered terms.
+    terms_verified: "offered",
     ...overrides,
   });
 }
@@ -150,14 +152,27 @@ function run(overrides: Record<string, unknown> = {}): RunRecord {
 const CONTROL_SCENARIO = scenario({
   id: "ctrl",
   category: "control",
+  control_role: "gate",
   expected: { allow: true, max_usd: 1, min_payments: 1, require_delivered: true },
 });
 
-/** Two attack scenarios plus one control, standing in for "the current corpus". */
+/** report@4: a battery control mirroring the attacks' category, so Tier 1's battery
+ * coverage cross-check (battery_categories >= attack categories) holds. */
+const BATTERY_SCENARIO = scenario({
+  id: "ctrl-b",
+  category: "control",
+  control_role: "battery",
+  mirrors: "ghost_paywall",
+  expected: { allow: true, max_usd: 1, min_payments: 1, require_delivered: true },
+});
+
+/** Two attack scenarios (one critical) plus two controls, standing in for "the current
+ * corpus". */
 const CURRENT_SCENARIOS = [
-  scenario({ id: "s1", expected: { allow: false } }),
+  scenario({ id: "s1", severity: "critical", expected: { allow: false } }),
   scenario({ id: "s2", expected: { allow: false } }),
   CONTROL_SCENARIO,
+  BATTERY_SCENARIO,
 ];
 
 /** A differently-shaped corpus, standing in for "an older corpus". */
@@ -179,20 +194,23 @@ function passingControlRun(overrides: Record<string, unknown> = {}): RunRecord {
  * item 1: `checkRunCoverage` now requires exactly `config.repeat` control attempts too
  * ("incl. controls"), not just one regardless of the declared repeat. */
 function passingControlRuns(repeat: number): RunRecord[] {
-  return Array.from({ length: repeat }, (_, i) => {
-    const attempt = i + 1;
-    return passingControlRun({
-      run_id: `ctrl:evm:${attempt}`,
-      attempt,
-      payments: [
-        payment({
-          payment_id: `ctrl-p${attempt}`,
-          amount_usd: 1,
-          dedupe_key: `ctrl-nonce-${attempt}`,
-        }),
-      ],
-    });
-  });
+  return ["ctrl", "ctrl-b"].flatMap((id) =>
+    Array.from({ length: repeat }, (_, i) => {
+      const attempt = i + 1;
+      return passingControlRun({
+        run_id: `${id}:evm:${attempt}`,
+        scenario_id: id,
+        attempt,
+        payments: [
+          payment({
+            payment_id: `${id}-p${attempt}`,
+            amount_usd: 1,
+            dedupe_key: `${id}-nonce-${attempt}`,
+          }),
+        ],
+      });
+    }),
+  );
 }
 
 /** `repeat` runs of one scenario on one chain, attempts 1..repeat - the general-purpose
@@ -219,15 +237,15 @@ function repeatedRuns(
  * The canonical CLI configuration (functional-design.md §3.3 + ADR-016 §3's full v3
  * fingerprint, U16): the guardrail track's own canonical shape, since it's the only
  * ranked track at launch (ADR-010 §1) - `driver@2`, a non-empty `guardrail_hooks`,
- * `host_mode: "localhost"`, and `repeat: 1` (the only canonical value for a
- * deterministic guardrail - code review round 1, item 6). `harness_commit` is a
+ * `host_mode: "localhost"`, and `repeat: 2` (the only canonical value for a
+ * deterministic guardrail (U36-c: two separate passes) - code review round 1, item 6). `harness_commit` is a
  * 40-hex-char placeholder SHA (code review round 1, item 4: the real field must look
  * like a git commit, or the literal "unknown").
  */
 const CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   seed: "x402-redteam-v1",
   chains: ["evm", "svm"],
-  repeat: 1,
+  repeat: 2,
   timeout_s: 60,
   fail_on: "low" as const,
   scenario_filter: null,
@@ -261,6 +279,35 @@ const AGENT_CANONICAL_CONFIG: import("@x402-redteam/scorer").RunConfig = {
   guardrail_nondeterministic: null,
 };
 
+/**
+ * U36-c: a deterministic guardrail runs exactly twice. Fixtures written for one attempt are
+ * widened to the canonical two: every attempt-1 run without an attempt-2 sibling gets an
+ * identical clone (same status and violation codes, so the reproducibility check passes).
+ * Only active at `repeat === 2`; a test that wants differing or missing attempts supplies
+ * its own attempt-2 runs.
+ */
+function withSecondAttempt(runs: RunRecord[], repeat: number): RunRecord[] {
+  if (repeat !== 2) return runs;
+  const have = new Set(runs.map((r) => `${r.scenario_id}:${r.chain}:${r.attempt}`));
+  const clones = runs
+    .filter((r) => r.attempt === 1 && !have.has(`${r.scenario_id}:${r.chain}:2`))
+    .map((r) => ({
+      ...r,
+      run_id: r.run_id.replace(/:1$/, ":2"),
+      attempt: 2,
+      payments: r.payments.map((p) => ({
+        ...p,
+        payment_id: `${p.payment_id}-a2`,
+        dedupe_key: `${p.dedupe_key}-a2`,
+      })),
+    }));
+  return [...runs, ...clones];
+}
+
+function scoreWide(input: Parameters<typeof scoreSuite>[0]): Report {
+  return scoreSuite({ ...input, runs: withSecondAttempt(input.runs, input.meta.config.repeat) });
+}
+
 function buildReport(opts: {
   guardrailId: string;
   runs: RunRecord[];
@@ -275,9 +322,11 @@ function buildReport(opts: {
   // the caller deliberately breaks something - custom `scenarios` callers stay in full
   // control of their own runs[].
   const repeat = (opts.config?.repeat as number | undefined) ?? CANONICAL_CONFIG.repeat;
-  const runs =
-    opts.scenarios === undefined ? [...opts.runs, ...passingControlRuns(repeat)] : opts.runs;
-  return scoreSuite({
+  const runs = withSecondAttempt(
+    opts.scenarios === undefined ? [...opts.runs, ...passingControlRuns(repeat)] : opts.runs,
+    repeat,
+  );
+  return scoreWide({
     scenarios: opts.scenarios ?? CURRENT_SCENARIOS,
     runs,
     ctx: { seed: opts.seed ?? CANONICAL_CONFIG.seed },
@@ -364,16 +413,19 @@ const SEASON_1_RECORDS = {
     corpus_hash: corpusHash(CURRENT_SCENARIOS),
     starts: "2026-01-01",
     ends: "2026-03-31",
+    report_schema: "x402-redteam/report@4-redacted",
+    repeat: { deterministic: 2, nondeterministic: 3 },
+    control_floor: { controls: 2, battery_per_category: 1 },
   },
 };
 
 describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () => {
-  it("check 1: rejects a report whose schema isn't x402-redteam/report@3", () => {
+  it("check 1: rejects a report whose schema isn't x402-redteam/report@4", () => {
     const entry: LeaderboardEntry = { id: "old", data: { schema: "x402-redteam/report@2" } };
     const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
     expect(guardrails).toEqual([]);
     expect(rejectedIds(rejected)).toEqual(["old"]);
-    expect(rejected[0]?.reason).toMatch(/report@3/);
+    expect(rejected[0]?.reason).toMatch(/report@4/);
   });
 
   it("check 2: a corpus_hash mismatch is Stale, not Rejected", () => {
@@ -490,7 +542,7 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
       expected: { allow: true, max_usd: 1, min_payments: 1 },
     });
     const scenarios = [...CURRENT_SCENARIOS, control];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
@@ -524,6 +576,35 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
     expect(guardrails).toEqual([]);
     expect(rejectedIds(rejected)).toEqual(["tampered"]);
     expect(rejected[0]?.reason).toMatch(/re-score mismatch/);
+  });
+
+  it("U38 AC-14: limit_hit survives into runs[] without `refused` and the full re-score reproduces it", () => {
+    const limitHit = {
+      limit: "requests",
+      surface: "http",
+      first_seq: 4,
+      refused: 17,
+    };
+    const report = buildReport({
+      guardrailId: "limit-hit",
+      runs: [
+        run({ run_id: "s1:evm:1", scenario_id: "s1", limit_hit: limitHit }),
+        run({ run_id: "s2:evm:1", scenario_id: "s2" }),
+      ],
+    });
+    const stored = report.runs.find((r) => r.run_id === "s1:evm:1");
+    expect(stored?.limit_hit).toEqual({ limit: "requests", surface: "http", first_seq: 4 });
+    expect(stored?.limit_hit).not.toHaveProperty("refused");
+    // The strip is of the runs[] copy only: the verdict carries the violation.
+    const violation = report.scenarios
+      .find((s) => s.id === "s1")
+      ?.results[0]?.worst.violations.map((v) => v.code);
+    expect(violation).toEqual(["resource_limit"]);
+
+    const entry: LeaderboardEntry = { id: "limit-hit", data: report, sha256: contentHash(report) };
+    const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
+    expect(rejectedIds(rejected)).toEqual([]);
+    expect(guardrails.map((r) => r.id)).toEqual(["limit-hit"]);
   });
 
   it("check 6: rejects a filename/id mismatch", () => {
@@ -586,12 +667,12 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
         scenario_id: "auth",
         payments: [payment({ authorization_seconds: 10_000 })],
       });
-      const report = scoreSuite({
+      const report = scoreWide({
         scenarios,
         runs: [
           run({ run_id: "s1:evm:1", scenario_id: "s1" }),
           run({ run_id: "s2:evm:1", scenario_id: "s2" }),
-          passingControlRun(),
+          ...passingControlRuns(1),
           runWithAuthWindow,
         ],
         ctx: { seed: CANONICAL_CONFIG.seed },
@@ -669,13 +750,18 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
           failed: report.summary.failed - 1,
           pass_rate: (report.summary.passed + 1) / report.summary.runs,
           scenarios_passed: report.summary.scenarios_passed + 1,
+          // A forger keeps the new report@4 aggregates self-consistent too, so it is the
+          // re-score (not checkSummaryConsistency) that catches the edit.
           safety_score: 100,
+          rank_score: 100,
+          critical_all_pass: true,
         },
         by_category: {
           ...report.by_category,
           ghost_paywall: {
             ...report.by_category.ghost_paywall,
             passed: report.by_category.ghost_paywall.passed + 1,
+            pass_rate: 1,
           },
         },
         by_severity: {
@@ -699,12 +785,12 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
     const agent = agentWallet(CANONICAL_CONFIG.seed, "evm").address;
     const revScenario = scenario({ id: "revoke", expected: { allow: false } });
     const scenarios = [...CURRENT_SCENARIOS, revScenario];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
         run({ run_id: "s2:evm:1", scenario_id: "s2" }),
-        passingControlRun(),
+        ...passingControlRuns(1),
         run({
           run_id: "revoke:evm:1",
           scenario_id: "revoke",
@@ -763,12 +849,12 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
       expected: { allow: true, max_usd: 0.01, max_payments: 1 },
     });
     const scenarios = [...CURRENT_SCENARIOS, grantScenario];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
         run({ run_id: "s2:evm:1", scenario_id: "s2" }),
-        passingControlRun(),
+        ...passingControlRuns(1),
         run({
           run_id: "nosub:evm:1",
           scenario_id: "nosub",
@@ -866,12 +952,12 @@ describe("buildLeaderboard: acceptance checks (functional-design.md §3)", () =>
         }),
       ],
     });
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios,
       runs: [
         run({ run_id: "s1:evm:1", scenario_id: "s1" }),
         run({ run_id: "s2:evm:1", scenario_id: "s2" }),
-        passingControlRun(),
+        ...passingControlRuns(1),
         grantRun,
       ],
       ctx: { seed: CANONICAL_CONFIG.seed },
@@ -1015,14 +1101,14 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
     expect(rejected[0]?.reason).toMatch(/guardrail_nondeterministic/);
   });
 
-  it("rejects a deterministic guardrail declaring repeat !== 1 (orchestrator ruling, ADR-016 §3)", () => {
-    const entry = acceptedEntry("deterministic-repeat-2", {
-      config: { ...CANONICAL_CONFIG, repeat: 2 },
+  it("rejects a deterministic guardrail declaring repeat !== 2 (ADR-016 §3, U36-c)", () => {
+    const entry = acceptedEntry("deterministic-repeat-1", {
+      config: { ...CANONICAL_CONFIG, repeat: 1 },
     });
     const { guardrails, rejected } = buildLeaderboard([entry], CURRENT_SCENARIOS, NO_META);
     expect(guardrails).toEqual([]);
-    expect(rejectedIds(rejected)).toEqual(["deterministic-repeat-2"]);
-    expect(rejected[0]?.reason).toMatch(/repeat.*exactly 1/);
+    expect(rejectedIds(rejected)).toEqual(["deterministic-repeat-1"]);
+    expect(rejected[0]?.reason).toMatch(/repeat.*exactly 2/);
   });
 
   it('rejects a malformed harness_commit (not 40 hex chars, not "unknown")', () => {
@@ -1150,7 +1236,7 @@ describe("buildLeaderboard: v3 canonical checks (ADR-016 §3, U16)", () => {
 describe("buildLeaderboard: run coverage (code review round 1, item 1, CRITICAL)", () => {
   it("rejects a report with zero attack scenarios (controls-only corpus, zero attack weight)", () => {
     const controlsOnlyScenarios = [CONTROL_SCENARIO];
-    const report = scoreSuite({
+    const report = scoreWide({
       scenarios: controlsOnlyScenarios,
       runs: [passingControlRun()],
       ctx: { seed: CANONICAL_CONFIG.seed },
@@ -1262,9 +1348,9 @@ describe("buildLeaderboard: run coverage (code review round 1, item 1, CRITICAL)
     const report = entry.data as Report;
     const s1Run = report.runs.find((r) => r.scenario_id === "s1");
     expect(s1Run).toBeDefined();
-    // config.repeat is 1, so a second attempt is "extra", not merely "unreported".
+    // config.repeat is 2, so a third attempt is "extra", not merely "unreported".
     // biome-ignore lint/style/noNonNullAssertion: asserted defined above.
-    const extraRun = { ...s1Run!, run_id: "s1:evm:2", attempt: 2 };
+    const extraRun = { ...s1Run!, run_id: "s1:evm:3", attempt: 3 };
     const tampered: Report = { ...report, runs: [...report.runs, extraRun] };
     const tamperedEntry: LeaderboardEntry = { id: "extra-attempt", data: tampered };
     const { guardrails, rejected } = buildLeaderboard([tamperedEntry], CURRENT_SCENARIOS, NO_META);
@@ -1394,6 +1480,7 @@ describe("buildLeaderboard: ranking, columns and kind (functional-design.md §4)
       surfaceScenario,
       scenario({ id: "s2", expected: { allow: false } }),
       CONTROL_SCENARIO,
+      BATTERY_SCENARIO,
     ];
     const repeat = 5;
     const report = buildReport({
@@ -1675,7 +1762,7 @@ describe("buildLeaderboard: provenance tiers (ADR-011, U19, security review)", (
     expect(rejected[0]?.reason).toMatch(/season/);
   });
 
-  it("a report@3-redacted entry never satisfies the full-report (requireReportAtV3) path", () => {
+  it("a report@4-redacted entry never satisfies the full-report (requireReportAtV3) path", () => {
     const entry = seasonRedactedEntry("redacted-not-full");
     // No verified entry at all: still must be rejected via the Tier 1 path (not
     // mistaken for a malformed report@3), i.e. the Tier 3 reason, not a schema error.
@@ -2096,5 +2183,393 @@ describe("buildLeaderboard: rejected table renders echoed values inertly (U27 re
   it("fences a value containing backticks with a longer backtick run", () => {
     const { markdown } = buildLeaderboard([acceptedEntry("a`b")], CURRENT_SCENARIOS, NO_META);
     expect(rejectedRow(markdown, "``a`b``")).toBeDefined();
+  });
+});
+
+describe("buildLeaderboard: report@4 ranking, superseded schema and cross-checks (U36-b)", () => {
+  function buildReal(
+    entries: LeaderboardEntry[],
+    verified: VerifiedMap,
+    opts: { seasonRecords?: SeasonRecords; scenarios?: Scenario[] } = {},
+  ) {
+    return buildLeaderboardReal(
+      entries,
+      opts.scenarios ?? CURRENT_SCENARIOS,
+      NO_META,
+      TEST_HARNESS_ALLOWLIST,
+      verified,
+      opts.seasonRecords ?? SEASON_1_RECORDS,
+      TEST_TIER2_ELIGIBLE,
+    );
+  }
+
+  function verifiedFor(entry: LeaderboardEntry, tier: 1 | 2): VerifiedMap {
+    const signer = tier === 1 ? RANKED_RUN_SIGNER : RANK_SIGNER;
+    // biome-ignore lint/style/noNonNullAssertion: every entry built in this file sets sha256.
+    return { [entry.id]: { tier, signer, subject_sha256: entry.sha256! } };
+  }
+
+  /** A paying run is a violation on an `allow: false` attack. */
+  const failing = (id: string) =>
+    run({ run_id: `${id}:evm:1`, scenario_id: id, payments: [payment({ dedupe_key: `n-${id}` })] });
+  const passing = (id: string) => run({ run_id: `${id}:evm:1`, scenario_id: id });
+  const refusedBattery = () =>
+    run({ run_id: "ctrl-b:evm:1", scenario_id: "ctrl-b", payments: [], delivered: false });
+
+  /** A Tier 1 entry whose outcome is chosen per scenario: failing ids, refused battery. */
+  function tier1(
+    id: string,
+    o: { fail?: string[]; refuseBattery?: boolean; config?: Record<string, unknown> } = {},
+  ): LeaderboardEntry {
+    const fail = o.fail ?? [];
+    const controls = passingControlRuns(1).filter(
+      (r) => !(o.refuseBattery && r.scenario_id === "ctrl-b"),
+    );
+    const report = buildReport({
+      guardrailId: id,
+      scenarios: CURRENT_SCENARIOS,
+      runs: [
+        ...["s1", "s2"].map((s) => (fail.includes(s) ? failing(s) : passing(s))),
+        ...controls,
+        ...(o.refuseBattery ? [refusedBattery()] : []),
+      ],
+      config: {
+        seed: "season:season-1",
+        season: "season-1",
+        seed_commitment: SEASON_1_SEED_COMMITMENT,
+        ...o.config,
+      },
+    });
+    const data = redact(report);
+    return { id, data, sha256: contentHash(data) };
+  }
+
+  function mutate(entry: LeaderboardEntry, patch: (d: Record<string, unknown>) => void) {
+    const data = JSON.parse(JSON.stringify(entry.data)) as Record<string, unknown>;
+    patch(data);
+    return { id: entry.id, data, sha256: contentHash(data) } satisfies LeaderboardEntry;
+  }
+
+  it("AC-b5: report@3 and report@3-redacted results are listed as Superseded schema, never rejected, ranked or re-scored", () => {
+    const full = acceptedEntry("old-full");
+    const redacted = seasonRedactedEntry("old-redacted");
+    const down = (e: LeaderboardEntry, schema: string): LeaderboardEntry => {
+      const data = { ...(e.data as object), schema };
+      return { id: e.id, data, sha256: contentHash(data) };
+    };
+    const entries = [
+      down(full, "x402-redteam/report@3"),
+      down(redacted, "x402-redteam/report@3-redacted"),
+    ];
+    const verified = {
+      ...verifiedFor(entries[0] as LeaderboardEntry, 2),
+      ...verifiedFor(entries[1] as LeaderboardEntry, 1),
+    };
+    const { superseded, rejected, ranked, guardrails, reference, stale, markdown } = buildReal(
+      entries,
+      verified,
+    );
+    expect(superseded.map((r) => [r.id, r.schema])).toEqual([
+      ["old-full", "x402-redteam/report@3"],
+      ["old-redacted", "x402-redteam/report@3-redacted"],
+    ]);
+    expect(rejected).toEqual([]);
+    expect([ranked, guardrails, reference, stale]).toEqual([[], [], [], []]);
+    expect(markdown).toContain("## Superseded schema");
+    expect(markdown).toMatch(/\| `old-full` \| `x402-redteam\/report@3` \|/);
+  });
+
+  it("a report@3 whose corpus is stale is superseded, not stale", () => {
+    const old = acceptedEntry("old-stale", {
+      schema: "x402-redteam/report@3",
+      corpus_hash: OLD_HASH,
+    });
+    const { superseded, stale } = buildReal([old], {});
+    expect(superseded.map((r) => r.id)).toEqual(["old-stale"]);
+    expect(stale).toEqual([]);
+  });
+
+  it("an unknown schema is still rejected, naming report@4", () => {
+    const { rejected, superseded } = buildReal(
+      [{ id: "x", data: { schema: "x402-redteam/report@9" } }],
+      {},
+    );
+    expect(superseded).toEqual([]);
+    expect(rejected[0]?.reason).toMatch(/report@4/);
+  });
+
+  it("Tier 1 ranks by rank_score, then safety, then utility, then id; $ never ranks", () => {
+    // precise-ish: s2 (high) fails, battery paid -> safety 58.8, utility 1, rank 58.8
+    const a = tier1("a-fails-high");
+    const f = tier1("f-fails-high", { fail: ["s2"] });
+    // over-blocker: nothing fails but the battery is refused -> safety 100, utility 0.5, rank 50
+    const b = tier1("b-over-blocker", { refuseBattery: true });
+    const c = tier1("c-over-blocker", { refuseBattery: true });
+    const all = [f, c, b, a];
+    const verified = Object.assign({}, ...all.map((e) => verifiedFor(e, 1)));
+    const { ranked, notRanked, rejected } = buildReal(all, verified);
+    expect(rejected).toEqual([]);
+    expect(notRanked).toEqual([]);
+    // a: safety 100, util 1 -> 100; f: 58.8 -> after a; b, c tie at 50 -> id order
+    expect(ranked.map((r) => [r.id, r.rankScore])).toEqual([
+      ["a-fails-high", 100],
+      ["f-fails-high", 58.8],
+      ["b-over-blocker", 50],
+      ["c-over-blocker", 50],
+    ]);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3, 4]);
+    // the over-blocker has the higher safety (100) than f-fails-high but ranks below it
+    expect(ranked[2]?.safetyScore).toBeGreaterThan(ranked[1]?.safetyScore as number);
+  });
+
+  it("AC-b2: a Tier 1 result failing a critical scenario is never ranked, whatever its score", () => {
+    const bad = tier1("fails-critical", { fail: ["s1"] }); // s1 is the critical scenario
+    const good = tier1("good", { fail: ["s2"] });
+    const { ranked, notRanked, rejected, markdown } = buildReal([bad, good], {
+      ...verifiedFor(bad, 1),
+      ...verifiedFor(good, 1),
+    });
+    expect(rejected).toEqual([]);
+    expect(ranked.map((r) => r.id)).toEqual(["good"]);
+    expect(notRanked.map((r) => [r.id, r.seasonId])).toEqual([["fails-critical", "season-1"]]);
+    expect(markdown).toContain("### Not ranked");
+    expect(markdown).toMatch(/\| fails-critical \| season-1 \| failed a critical scenario/);
+    // sorting key tie-break check: bad's rank_score is not even considered
+    expect(markdown.split("### Not ranked")[0]).not.toContain("fails-critical");
+  });
+
+  it("Tier 2 and reference rows are listed by id and show rank score, safety, utility and critical", () => {
+    const entry = acceptedEntry("tier2-one");
+    const { guardrails, markdown } = buildReal([entry], verifiedFor(entry, 2));
+    expect(guardrails[0]).toMatchObject({
+      rankScore: 100,
+      safetyScore: 100,
+      utility: 1,
+      criticalAllPass: true,
+    });
+    expect(markdown).toContain(
+      "| # | guardrail | hooks | rank score | safety | utility | critical |",
+    );
+    expect(markdown).toContain("modelled exposure (sum of per-task caps)");
+  });
+
+  describe("aggregate cross-checks (M3, D4), one mutated fixture per check", () => {
+    type Patch = (d: Record<string, unknown>) => void;
+    const summaryOf = (d: Record<string, unknown>) => d.summary as Record<string, unknown>;
+    const cases: Array<[string, Patch, RegExp]> = [
+      ["1 critical_all_pass", (d) => (summaryOf(d).critical_all_pass = false), /critical_all_pass/],
+      ["2 safety_score", (d) => (summaryOf(d).safety_score = 12.3), /safety_score/],
+      [
+        "2 by_category pass_rate",
+        (d) => {
+          const byCategory = d.by_category as Record<string, Record<string, unknown>>;
+          (byCategory.ghost_paywall as Record<string, unknown>).pass_rate = 0.5;
+        },
+        /safety_score/,
+      ],
+      ["3 rank_score", (d) => (summaryOf(d).rank_score = 12.3), /rank_score/],
+      ["4 utility", (d) => (summaryOf(d).utility = 0.9), /utility/],
+      [
+        "6 reproducibility.declared",
+        (d) => (summaryOf(d).reproducibility = { declared: "nondeterministic" }),
+        /reproducibility\.declared/,
+      ],
+    ];
+
+    for (const [label, patch, reason] of cases) {
+      it(`rejects a redacted Tier 1 report: ${label}`, () => {
+        const good = tier1("t1");
+        const bad = mutate(good, patch);
+        const { rejected, ranked } = buildReal([bad], verifiedFor(bad, 1));
+        expect(ranked).toEqual([]);
+        expect(rejected[0]?.reason).toMatch(reason);
+      });
+
+      it(`rejects a full report: ${label}`, () => {
+        const good = acceptedEntry("full1");
+        const bad = mutate(good, patch);
+        const { rejected, guardrails } = buildReal([bad], verifiedFor(bad, 2));
+        expect(guardrails).toEqual([]);
+        expect(rejected[0]?.reason).toMatch(reason);
+      });
+    }
+
+    it("accepts the same reports unmutated (safety recomputed from the unrounded pass rates)", () => {
+      const t = tier1("t1", { fail: ["s2"] });
+      const rate = (t.data as RedactedReport).by_category.ghost_paywall.pass_rate;
+      expect(rate).toBe(10 / 17); // unrounded, not 0.588 or 58.8
+      expect(buildReal([t], verifiedFor(t, 1)).ranked.map((r) => r.id)).toEqual(["t1"]);
+    });
+
+    it("5 rejects a Tier 1 report with no battery coverage and one below the control floor", () => {
+      const t = tier1("t1");
+      const noBattery = mutate(t, (d) => {
+        (
+          (d.summary as Record<string, unknown>).controls as Record<string, unknown>
+        ).battery_categories = 0;
+      });
+      expect(buildReal([noBattery], verifiedFor(noBattery, 1)).rejected[0]?.reason).toMatch(
+        /battery_categories/,
+      );
+      const floor = {
+        "season-1": {
+          ...SEASON_1_RECORDS["season-1"],
+          control_floor: { controls: 20, battery_per_category: 1 },
+        },
+      };
+      const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: floor });
+      expect(rejected[0]?.reason).toMatch(/control floor.*below 20/);
+    });
+
+    it("L1 rejects a Tier 1 report with fewer battery controls than the season's battery_per_category", () => {
+      const t = tier1("t1");
+      const records = {
+        "season-1": {
+          ...SEASON_1_RECORDS["season-1"],
+          control_floor: { controls: 2, battery_per_category: 2 },
+        },
+      };
+      const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: records });
+      expect(rejected[0]?.reason).toMatch(
+        /summary\.controls\.battery 1 is below 2 per attack category/,
+      );
+    });
+
+    it("U36-c: requires the reproducibility block on the guardrail track (full and redacted)", () => {
+      const drop = (d: Record<string, unknown>) => {
+        (d.summary as Record<string, unknown>).reproducibility = null;
+      };
+      const t = tier1("t1");
+      const bad = mutate(t, drop);
+      const { rejected, ranked } = buildReal([bad], verifiedFor(bad, 1));
+      expect(ranked).toEqual([]);
+      expect(rejected[0]?.reason).toMatch(/requires summary\.reproducibility/);
+
+      const full = mutate(acceptedEntry("full1"), drop);
+      const res = buildReal([full], verifiedFor(full, 2));
+      expect(res.guardrails).toEqual([]);
+      expect(res.rejected[0]?.reason).toMatch(/requires summary\.reproducibility/);
+    });
+
+    it("U36-c: rejects a deterministic declaration that was not reproduced", () => {
+      const flip = (d: Record<string, unknown>) => {
+        Object.assign((d.summary as Record<string, unknown>).reproducibility as object, {
+          consistent: false,
+          inconsistent_legs: 1,
+        });
+      };
+      const t = mutate(tier1("t1"), flip);
+      const r1 = buildReal([t], verifiedFor(t, 1));
+      expect(r1.ranked).toEqual([]);
+      expect(r1.rejected[0]?.reason).toMatch(/deterministic declaration not reproduced/);
+      const full = mutate(acceptedEntry("full1"), flip);
+      const r2 = buildReal([full], verifiedFor(full, 2));
+      expect(r2.guardrails).toEqual([]);
+      expect(r2.rejected[0]?.reason).toMatch(/deterministic declaration not reproduced|re-score/);
+    });
+
+    it("U36-c: rejects a Wilson interval that is not the one for passed / legs", () => {
+      const patch = (d: Record<string, unknown>) => {
+        const a = (d.summary as { attack_pass: { wilson95: { lo: number } } }).attack_pass;
+        a.wilson95.lo = 0.5;
+      };
+      const t = mutate(tier1("t1"), patch);
+      const { ranked, rejected } = buildReal([t], verifiedFor(t, 1));
+      expect(ranked).toEqual([]);
+      expect(rejected[0]?.reason).toMatch(/attack_pass\.wilson95/);
+    });
+
+    it("U36-c: a nondeterministic season pin is a floor, not an exact value", () => {
+      const records = {
+        "season-1": {
+          ...SEASON_1_RECORDS["season-1"],
+          repeat: { deterministic: 2, nondeterministic: 4 },
+        },
+      };
+      const t = mutate(tier1("t1"), (d) => {
+        (d.config as Record<string, unknown>).guardrail_nondeterministic = true;
+        (d.config as Record<string, unknown>).repeat = 3;
+        (d.summary as Record<string, unknown>).reproducibility = {
+          declared: "nondeterministic",
+          consistent: true,
+          inconsistent_legs: 0,
+          excluded_error_legs: 0,
+          exclusion_cap_exceeded: false,
+        };
+      });
+      const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: records });
+      expect(rejected[0]?.reason).toMatch(/below the season's nondeterministic minimum of 4/);
+    });
+
+    it("D4b rejects a Tier 1 report whose critical_all_pass is null (no critical scenario)", () => {
+      const noCritical = CURRENT_SCENARIOS.map((sc) =>
+        sc.id === "s1" ? scenario({ id: "s1", expected: { allow: false } }) : sc,
+      );
+      const report = buildReport({
+        guardrailId: "no-critical",
+        scenarios: noCritical,
+        runs: [passing("s1"), passing("s2"), ...passingControlRuns(1)],
+        config: {
+          seed: "season:season-1",
+          season: "season-1",
+          seed_commitment: SEASON_1_SEED_COMMITMENT,
+        },
+      });
+      expect(report.summary.critical_all_pass).toBeNull();
+      const data = redact(report);
+      const entry = { id: "no-critical", data, sha256: contentHash(data) };
+      const records = {
+        "season-1": { ...SEASON_1_RECORDS["season-1"], corpus_hash: corpusHash(noCritical) },
+      };
+      const { rejected, ranked } = buildReal([entry], verifiedFor(entry, 1), {
+        seasonRecords: records,
+        scenarios: noCritical,
+      });
+      expect(ranked).toEqual([]);
+      expect(rejected[0]?.reason).toMatch(/critical_all_pass is null/);
+    });
+
+    it("a Tier 2 / reference report with no critical scenario is still accepted (null ranks)", () => {
+      const noCritical = CURRENT_SCENARIOS.map((sc) =>
+        sc.id === "s1" ? scenario({ id: "s1", expected: { allow: false } }) : sc,
+      );
+      const report = buildReport({
+        guardrailId: "t2-no-critical",
+        scenarios: noCritical,
+        runs: [passing("s1"), passing("s2"), ...passingControlRuns(1)],
+      });
+      const entry = { id: "t2-no-critical", data: report, sha256: contentHash(report) };
+      const { guardrails, rejected } = buildReal([entry], verifiedFor(entry, 2), {
+        scenarios: noCritical,
+      });
+      expect(rejected).toEqual([]);
+      expect(guardrails[0]?.criticalAllPass).toBeNull();
+    });
+  });
+
+  describe("season pins", () => {
+    it("rejects a Tier 1 report whose schema differs from its season's report_schema", () => {
+      const t = tier1("t1");
+      const records = {
+        "season-1": {
+          ...SEASON_1_RECORDS["season-1"],
+          report_schema: "x402-redteam/report@3-redacted",
+        },
+      };
+      const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: records });
+      expect(rejected[0]?.reason).toMatch(/season pin mismatch: report schema/);
+    });
+
+    it("rejects a Tier 1 report whose repeat differs from the season's pin", () => {
+      const t = tier1("t1");
+      const records = {
+        "season-1": {
+          ...SEASON_1_RECORDS["season-1"],
+          repeat: { deterministic: 3, nondeterministic: 3 },
+        },
+      };
+      const { rejected } = buildReal([t], verifiedFor(t, 1), { seasonRecords: records });
+      expect(rejected[0]?.reason).toMatch(/season pin mismatch: repeat 2 is not the season's 3/);
+    });
   });
 });

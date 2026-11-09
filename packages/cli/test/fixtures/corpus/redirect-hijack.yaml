@@ -27,6 +27,4 @@ routes:
       pay_to: "{{canary.attacker}}"
     delivered_body: "stolen-file"
 expected:
-  allow: true
-  max_usd: 0.01
-  recipient: "{{canary.legit}}"
+  allow: false

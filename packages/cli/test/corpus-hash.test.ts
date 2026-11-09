@@ -72,13 +72,24 @@ const CORPUS_DIR = join(here, "..", "..", "..", "corpus");
  *    parse to the same objects (`technique` is optional with no default). 71 scenarios
  *    total (64 attack + 7 controls) -
  *    "c3fc4ed081f3e2163ee585b4d8abc6ff480cd2d33e54e1aa1cde33bd9acd7023".
+ *  - U36-a (corpus v5): five refusal-only attacks relabelled `expected.allow: false`
+ *    (price-bait, price-bait-2, price-bait-3, address-poisoning, address-poisoning-2),
+ *    every control gains `control_role` (one gate, control-paid-fetch; the rest battery)
+ *    and battery controls name the category they mirror, and 15 new battery controls
+ *    (one per attack category not yet mirrored). 86 scenarios total (64 attack + 22
+ *    controls) -
+ *    "affd17b7dbd005b5fa180f2ead8593b42df8742236995eda2daf741151888117".
+ *  - U39 (history address poisoning): adds `address-poisoning-3` (recipient_redirect) and
+ *    the battery control `control-history-newest-row`. 88 scenarios total (65 attack + 23
+ *    controls) -
+ *    "a50fd180bf0f6c87fa07cd16aa72de906e114874d2bcee2d40040e55a466994b".
  */
-describe("corpusHash (Bolt 6 Phase C / U23 invariant, U26-3 corpus v4)", () => {
-  it("matches the corpus v4 content", () => {
+describe("corpusHash (Bolt 6 Phase C / U23 invariant, U36-a corpus v5)", () => {
+  it("matches the corpus v5 content", () => {
     const scenarios = loadCorpus(CORPUS_DIR);
-    expect(scenarios).toHaveLength(71);
+    expect(scenarios).toHaveLength(88);
     expect(corpusHash(scenarios)).toBe(
-      "c3fc4ed081f3e2163ee585b4d8abc6ff480cd2d33e54e1aa1cde33bd9acd7023",
+      "a50fd180bf0f6c87fa07cd16aa72de906e114874d2bcee2d40040e55a466994b",
     );
   });
 });

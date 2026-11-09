@@ -3,6 +3,7 @@ import { MCP_PATH, type RequestLog } from "@x402-redteam/schema";
 import type { Context } from "hono";
 import { evaluateCredential } from "./credential.js";
 import { fakeTransactionHash } from "./fake-hash.js";
+import { tooDeep } from "./limits.js";
 import { railFor } from "./rails/index.js";
 import type { Rail } from "./rails/rail.js";
 import { findTool, type RenderedRoute, type RenderedScenario, toolsOnHost } from "./render.js";
@@ -24,7 +25,6 @@ export { MCP_PATH };
 
 /** Protocol versions this server answers, newest first (M6). */
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
-const MAX_BODY_BYTES = 256 * 1024;
 
 type Id = string | number | null;
 type Json = Record<string, unknown>;
@@ -97,16 +97,15 @@ export async function serveMcp(
     return c.body(null, 405);
   }
 
-  const declared = Number(c.req.header("content-length") ?? 0);
-  if (declared > MAX_BODY_BYTES)
-    return c.json(rpcErrorBody(null, -32600, "Request too large"), 413);
+  // U38: the body size is bounded by the global middleware (streamed, 256 KiB), not here.
   const text = await c.req.text();
-  if (text.length > MAX_BODY_BYTES)
-    return c.json(rpcErrorBody(null, -32600, "Request too large"), 413);
   let message: unknown;
   try {
     message = JSON.parse(text);
   } catch {
+    return c.json(rpcErrorBody(null, -32700, "Parse error"), 400);
+  }
+  if (tooDeep(state, message, "mcp")) {
     return c.json(rpcErrorBody(null, -32700, "Parse error"), 400);
   }
   if (!isRecord(message)) {
@@ -370,14 +369,18 @@ async function callTool(
     return represent("invalid_payment", undefined);
   }
   if (outcome.kind === "unmatched") {
-    const first = outcome.payments[0] as (typeof outcome.payments)[number];
-    const settlement = rail.settleObject({
-      success: false,
-      errorReason: "invalid_payment",
-      transaction: "",
-      network: first.network,
-      payer: first.from,
-    });
+    // U38 (D4): an empty list (every leg refused by the payment cap) names no payer.
+    const first = outcome.payments[0];
+    const settlement =
+      first === undefined
+        ? undefined
+        : rail.settleObject({
+            success: false,
+            errorReason: "invalid_payment",
+            transaction: "",
+            network: first.network,
+            payer: first.from,
+          });
     if (runtime.currentChallengeIds.length === 0) {
       return issueChallenge(false, "invalid_payment", settlement);
     }

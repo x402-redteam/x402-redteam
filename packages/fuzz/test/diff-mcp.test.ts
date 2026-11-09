@@ -164,7 +164,7 @@ function client(
     } as unknown as RunRecord,
   }));
   const report = {
-    schema: "x402-redteam/report@3",
+    schema: "x402-redteam/report@4",
     harness_version: "0.1.0",
     seed: SEED,
     corpus_hash: corpusHash,

@@ -9,6 +9,8 @@ import { CHAIN_DEFAULTS } from "@x402-redteam/schema";
 import type { Hono } from "hono";
 import { fakeTransactionHash } from "./fake-hash.js";
 import { knownTokenAccountsFor } from "./known-token-accounts.js";
+import { paymentPayloadTooBig, readJson } from "./limits.js";
+import { offeredTermsFor } from "./rails/x402v2.js";
 import { recordDecodedLegs } from "./record.js";
 import type { Shared } from "./shared.js";
 
@@ -44,7 +46,7 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
     const loaded = shared.holder.current;
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
     const { state, rendered } = loaded;
-    const body = (await c.req.json().catch(() => null)) as {
+    const body = (await readJson(c, state, "facilitator")) as {
       paymentPayload?: PaymentPayload;
     } | null;
     const paymentPayload = body?.paymentPayload;
@@ -52,8 +54,15 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
       const resp: VerifyResponse = { isValid: false, invalidReason: "invalid_payment" };
       return c.json(resp, 400);
     }
+    // U38 (M1): the SVM transaction inside the payload is bounded before capture decodes it.
+    if (paymentPayloadTooBig(state, paymentPayload, "facilitator")) {
+      return c.json(
+        { isValid: false, invalidReason: "invalid_payment" } satisfies VerifyResponse,
+        400,
+      );
+    }
     try {
-      const decoded = await shared.capture.decodePayload(paymentPayload, {
+      const hints = {
         knownOwners: rendered.knownOwners,
         knownTokenAccounts: await knownTokenAccountsFor(
           rendered,
@@ -61,7 +70,11 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
           shared.seed,
           state.scenario.assets,
         ),
-      });
+        offeredTerms: offeredTermsFor(state.challenges, state.currentChallengeIdsAllRoutes()),
+      };
+      const decoded = await shared.gate.run(state, "facilitator", () =>
+        shared.capture.decodePayload(paymentPayload, hints),
+      );
       // v2 (orchestrator decision, U9-A review M3): use the same recordDecoded()
       // block as ledger-endpoint.ts, so /verify's payments are asset-aware
       // (amountUsd + asset_known via assetInfo()) rather than a hardcoded 6 decimals.
@@ -88,7 +101,7 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
     const loaded = shared.holder.current;
     if (!loaded) return c.json({ error: "no_run_loaded" }, 409);
     const { state, rendered } = loaded;
-    const body = (await c.req.json().catch(() => null)) as {
+    const body = (await readJson(c, state, "facilitator")) as {
       paymentPayload?: PaymentPayload;
     } | null;
     const paymentPayload = body?.paymentPayload;
@@ -102,8 +115,20 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
       };
       return c.json(resp, 400);
     }
+    // U38 (M1): the SVM transaction inside the payload is bounded before capture decodes it.
+    if (paymentPayloadTooBig(state, paymentPayload, "facilitator")) {
+      return c.json(
+        {
+          success: false,
+          errorReason: "invalid_payment",
+          transaction: "",
+          network: fallbackNetwork,
+        } satisfies SettleResponse,
+        400,
+      );
+    }
     try {
-      const decoded = await shared.capture.decodePayload(paymentPayload, {
+      const hints = {
         knownOwners: rendered.knownOwners,
         knownTokenAccounts: await knownTokenAccountsFor(
           rendered,
@@ -111,7 +136,11 @@ export function registerFacilitatorRoutes(app: Hono, shared: Shared): void {
           shared.seed,
           state.scenario.assets,
         ),
-      });
+        offeredTerms: offeredTermsFor(state.challenges, state.currentChallengeIdsAllRoutes()),
+      };
+      const decoded = await shared.gate.run(state, "facilitator", () =>
+        shared.capture.decodePayload(paymentPayload, hints),
+      );
       const seq = state.nextSeq();
       const resp: SettleResponse = {
         success: true,

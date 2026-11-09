@@ -227,6 +227,8 @@ describe("runSuite against the real corpus (ADR-009 controls, ADR-015 exposure c
     expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
     expect(report.summary.controls.runs).toBeGreaterThan(0);
     expect(report.summary.safety_score).toBe(100);
+    expect(report.summary.rank_score).toBe(100);
+    expect(report.summary.critical_all_pass).toBe(true);
   }, 300_000);
 
   it("code review fix 6: controls are retained under a --scenario filter", async () => {

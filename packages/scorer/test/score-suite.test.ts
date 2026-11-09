@@ -129,8 +129,16 @@ describe("scoreSuite (functional-design.md §4)", () => {
       scenarios: 1,
       passed: 0,
       unauthorized_usd: 0.02,
+      pass_rate: 0,
+      weight_total: 7,
     });
-    expect(report.by_category.replay).toEqual({ scenarios: 0, passed: 0, unauthorized_usd: 0 });
+    expect(report.by_category.replay).toEqual({
+      scenarios: 0,
+      passed: 0,
+      unauthorized_usd: 0,
+      pass_rate: null,
+      weight_total: 0,
+    });
     expect(report.by_severity.high).toEqual({ scenarios: 1, failed: 1 });
     expect(report.by_severity.low).toEqual({ scenarios: 0, failed: 0 });
   });
@@ -184,7 +192,7 @@ describe("scoreSuite (functional-design.md §4)", () => {
 
     const report = scoreSuite({ scenarios: [scenario], runs: [run], ctx, meta });
 
-    expect(report.schema).toBe("x402-redteam/report@3");
+    expect(report.schema).toBe("x402-redteam/report@4");
     expect(report.harness_version).toBe(meta.harness_version);
     expect(report.agent_id).toBe(meta.agent_id);
     expect(report.guardrail_id).toBe(meta.guardrail_id);
@@ -320,7 +328,14 @@ describe("scoreSuite (functional-design.md §4)", () => {
     });
     expect(passingReport.summary.valid).toBe(true);
     expect(passingReport.summary.utility).toBe(1);
-    expect(passingReport.summary.controls).toEqual({ runs: 1, passed: 1 });
+    expect(passingReport.summary.controls).toEqual({
+      runs: 1,
+      passed: 1,
+      scenarios: 1,
+      gate: 1,
+      battery: 0,
+      battery_categories: 0,
+    });
 
     const failingReport = scoreSuite({
       scenarios: [control],
@@ -330,7 +345,14 @@ describe("scoreSuite (functional-design.md §4)", () => {
     });
     expect(failingReport.summary.valid).toBe(false);
     expect(failingReport.summary.utility).toBe(0);
-    expect(failingReport.summary.controls).toEqual({ runs: 1, passed: 0 });
+    expect(failingReport.summary.controls).toEqual({
+      runs: 1,
+      passed: 0,
+      scenarios: 1,
+      gate: 1,
+      battery: 0,
+      battery_categories: 0,
+    });
 
     const skippedMeta: SuiteMeta = { ...meta, config: baseConfig({ controls_included: false }) };
     const skippedReport = scoreSuite({
@@ -354,7 +376,14 @@ describe("scoreSuite (functional-design.md §4)", () => {
 
     const report = scoreSuite({ scenarios: [attack], runs: [run], ctx, meta: includedMeta });
     expect(report.summary.valid).toBe(false);
-    expect(report.summary.controls).toEqual({ runs: 0, passed: 0 });
+    expect(report.summary.controls).toEqual({
+      runs: 0,
+      passed: 0,
+      scenarios: 0,
+      gate: 0,
+      battery: 0,
+      battery_categories: 0,
+    });
   });
 
   it("controls and their scoring are excluded from the attack-only summary counts and by_category/by_severity", () => {
@@ -396,7 +425,13 @@ describe("scoreSuite (functional-design.md §4)", () => {
     expect(report.summary.runs).toBe(1);
     expect(report.summary.scenarios).toBe(1);
     expect(report.summary.unauthorized_usd).toBe(0.05);
-    expect(report.by_category.control).toEqual({ scenarios: 0, passed: 0, unauthorized_usd: 0 });
+    expect(report.by_category.control).toEqual({
+      scenarios: 0,
+      passed: 0,
+      unauthorized_usd: 0,
+      pass_rate: null,
+      weight_total: 0,
+    });
     expect(report.scenarios.find((s) => s.id === "excluded-control")?.kind).toBe("control");
   });
 

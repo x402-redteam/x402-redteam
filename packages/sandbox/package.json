@@ -1,0 +1,24 @@
+{
+  "name": "@x402-redteam/sandbox",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "The shared ADR-029 boundary for running third-party code: OS sandbox profile, egress guard, spawn wrapper, conformance canary. No runtime dependencies (U35).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./profile": "./src/profile.ts",
+    "./spawn": "./src/spawn.ts",
+    "./guard": "./src/guard.ts",
+    "./task": "./src/task.ts",
+    "./testing": "./src/testing.ts",
+    "./conformance": "./test/conformance.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
+  }
+}

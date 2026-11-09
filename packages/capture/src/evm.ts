@@ -28,7 +28,13 @@ import {
   PERMIT2_WITNESS_TYPES,
   sameAddress,
 } from "./evm-signatures.js";
-import { authorizationSeconds, isNonNegativeIntegerString, normalizeAddress } from "./evm-util.js";
+import {
+  authorizationSeconds,
+  eip3009Key,
+  isNonNegativeIntegerString,
+  normalizeAddress,
+  payloadDigest,
+} from "./evm-util.js";
 
 export { decodeEvmAuthorization, decodeEvmMessage, decodeEvmRawSign };
 
@@ -284,7 +290,13 @@ async function decodeEip3009(
     from: authorization.from,
     to: authorization.to,
     amount_atomic: String(authorization.value),
-    dedupe_key: `evm:${authorization.nonce}`,
+    dedupe_key: eip3009Key({
+      from: authorization.from,
+      to: authorization.to,
+      value: authorization.value,
+      nonce: authorization.nonce,
+      signature: inner.signature,
+    }),
     valid: false,
     authorization_seconds: authorizationSeconds(
       authorization.validAfter,
@@ -334,45 +346,90 @@ async function decodeEip3009(
  * `PermitWitnessTransferFrom` types, signed by `from`, for the accepted asset, with the
  * x402 Permit2 proxy as spender (any other spender is `untrusted_permit2_spender`). A
  * correct one is valid and delivers like an EIP-3009 payment. It shares its decoder (and
- * so its `evm:${nonce}` dedupe key) with the shim capture of the same signature.
+ * so its dedupe key) with the shim capture of the same signature. With offered terms in
+ * the hints it also reads `terms_verified` the way `decodeEip3009` does (U37).
  */
 async function decodePermit2(
   accepted: EvmAccepted,
   inner: Permit2Inner,
   raw: unknown,
+  hints?: DecodeHints,
 ): Promise<DecodedPayment> {
   const auth = inner.permit2Authorization ?? ({} as Permit2Inner["permit2Authorization"]);
-  const decoded = await decodeTypedData(
-    {
-      domain: {
-        name: "Permit2",
-        chainId: optionalChainId(accepted.network),
-        verifyingContract: PERMIT2_ADDRESS,
+  const decodeUnder = (chainId: number | undefined) =>
+    decodeTypedData(
+      {
+        domain: { name: "Permit2", chainId, verifyingContract: PERMIT2_ADDRESS },
+        types: PERMIT2_WITNESS_TYPES,
+        primaryType: "PermitWitnessTransferFrom",
+        message: {
+          permitted: auth.permitted,
+          spender: auth.spender,
+          nonce: auth.nonce,
+          deadline: auth.deadline,
+          witness: auth.witness,
+        },
+        signature: inner.signature,
+        signer: auth.from,
       },
-      types: PERMIT2_WITNESS_TYPES,
-      primaryType: "PermitWitnessTransferFrom",
-      message: {
-        permitted: auth.permitted,
-        spender: auth.spender,
-        nonce: auth.nonce,
-        deadline: auth.deadline,
-        witness: auth.witness,
-      },
-      signature: inner.signature,
-      signer: auth.from,
-    },
-    raw,
-  );
+      raw,
+    );
+  const decoded = await decodeUnder(optionalChainId(accepted.network));
+  const terms_verified = await permit2TermsVerified(decoded, decodeUnder, hints);
   const result: DecodedPayment = {
     ...decoded,
     network: accepted.network,
     scheme: accepted.scheme,
     asset: typeof auth.permitted?.token === "string" ? decoded.asset : accepted.asset,
+    ...(terms_verified !== undefined ? { terms_verified } : {}),
   };
   if (result.valid && !sameAddress(result.asset, accepted.asset)) {
     return { ...result, valid: false, invalid_reason: "asset_mismatch" };
   }
   return result;
+}
+
+/**
+ * The offered-terms reading of a Permit2 witness transfer (U37, functional-design 4.3). The
+ * Permit2 domain is fixed, so the only variable is the chainId: for each offered term the
+ * signature is re-verified under that term's chain; it is `offered` when the token, the leg's
+ * recipient and the amount all match (and the spender is trusted), else `offered_domain_only`.
+ * No offered terms in the hints: no reading at all (a shim leg), so the control rule fails
+ * it closed.
+ */
+async function permit2TermsVerified(
+  decoded: DecodedPayment,
+  decodeUnder: (chainId: number | undefined) => Promise<DecodedPayment>,
+  hints?: DecodeHints,
+): Promise<TermsVerified | undefined> {
+  const terms = hints?.offeredTerms ?? [];
+  if (terms.length === 0) return undefined;
+  let domainOnly = false;
+  for (const term of terms) {
+    const chainId = optionalChainId(term.network);
+    if (chainId === undefined) continue;
+    const under = await decodeUnder(chainId);
+    const verified = under.valid || under.invalid_reason === "untrusted_permit2_spender";
+    if (!verified) continue;
+    const exact =
+      under.invalid_reason === undefined &&
+      sameAddress(under.asset, term.asset) &&
+      sameAddress(under.to, term.payTo) &&
+      amountEquals(under.amount_atomic, term.amount);
+    if (exact) return "offered";
+    domainOnly = true;
+  }
+  if (domainOnly) return "offered_domain_only";
+  return decoded.valid ? "client_copy" : "none";
+}
+
+function amountEquals(a: unknown, b: unknown): boolean {
+  if (typeof a !== "string" || typeof b !== "string" || !/^\d+$/.test(b)) return false;
+  try {
+    return BigInt(a) === BigInt(b);
+  } catch {
+    return false;
+  }
 }
 
 function optionalChainId(network: string): number | undefined {
@@ -476,7 +533,7 @@ export async function decodeEvmPayload(
 
   let primary: DecodedPayment | undefined;
   if (isPermit2Shaped(inner)) {
-    primary = await decodePermit2(accepted, inner as unknown as Permit2Inner, payload);
+    primary = await decodePermit2(accepted, inner as unknown as Permit2Inner, payload, hints);
   } else if (isEip3009Shaped(inner)) {
     primary = await decodeEip3009(accepted, inner as unknown as Eip3009Inner, payload, hints);
   }
@@ -492,7 +549,7 @@ export async function decodeEvmPayload(
     from: "",
     to: "",
     amount_atomic: "0",
-    dedupe_key: "evm:unknown",
+    dedupe_key: `evm:unknown:${payloadDigest(payload)}`,
     valid: false,
     invalid_reason: "unsupported_transfer_method",
     raw: payload,
@@ -625,7 +682,7 @@ function decodeCalldataLeg(
         };
       }
       case "transferWithAuthorization": {
-        const [decodedFrom, decodedTo, decodedValue, validAfter, validBefore, nonce] =
+        const [decodedFrom, decodedTo, decodedValue, validAfter, validBefore, nonce, v, r, sig] =
           decoded.args as readonly [string, string, bigint, bigint, bigint, Hex, number, Hex, Hex];
         return {
           scheme: "transfer",
@@ -636,7 +693,13 @@ function decodeCalldataLeg(
           // M4 (code review): the same nonce a header-path submission of this exact
           // authorization would use, so a re-issued copy sent directly on-chain merges
           // with the header capture as "header+rpc" (capture/src/merge.ts).
-          dedupe_key: `evm:${nonce}`,
+          dedupe_key: eip3009Key({
+            from: decodedFrom,
+            to: decodedTo,
+            value: decodedValue,
+            nonce,
+            signature: serializeSignature({ r, s: sig, yParity: v >= 27 ? (v - 27) % 2 : v % 2 }),
+          }),
           authorization_seconds: authorizationSeconds(validAfter, validBefore),
         };
       }

@@ -135,7 +135,9 @@ async function fetchStatus(url: string): Promise<string> {
   return `status ${res.status}`;
 }
 
-const homeWriteProbe = join(homedir(), ".x402rt-canary-write-probe");
+// The child's own HOME is fresh; the real home arrives as a canary setting.
+const homeDir = process.env.X402_CANARY_REALHOME ?? homedir();
+const homeWriteProbe = join(homeDir, ".x402rt-canary-write-probe");
 
 const probes: [string, () => Promise<string>][] = [
   ["env-has-anthropic-key", async () => String("ANTHROPIC_API_KEY" in process.env)],
@@ -155,7 +157,7 @@ const probes: [string, () => Promise<string>][] = [
   ["task:dns.lookup", async () => (await dns.promises.lookup(taskHost)).address],
   ["task:fetch", () => fetchStatus(`http://${taskHost}:${port}/`)],
   ["task:http.get", () => httpGet(`http://${taskHost}:${port}/`)],
-  ["file:read-ssh", async () => `${readdirSync(join(homedir(), ".ssh")).length} entries`],
+  ["file:read-ssh", async () => `${readdirSync(join(homeDir, ".ssh")).length} entries`],
   ["file:read-dotenv", async () => `${readFileSync(dotenvPath, "utf8").length} bytes`],
   [
     "file:write-home",

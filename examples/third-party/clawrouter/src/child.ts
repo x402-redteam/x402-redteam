@@ -22,7 +22,8 @@ import {
 import { ObservingSpendControl } from "./observing-spend-control.js";
 import { trackCatalogFetches } from "./catalog.js";
 import { verifyHandle } from "./handle-check.js";
-import { DEFAULT_PAYER_PORT, parseProxyPort, PORT_ENV } from "./ports.js";
+import { DEFAULT_PAYER_PORT, parseProxyPort, PORT_ENV } from "./payer-port.js";
+import { guardModules } from "@x402-redteam/sandbox/guard";
 import {
   CHAT_ROUTE,
   type ChatArgs,
@@ -164,6 +165,7 @@ async function dispatch(req: ChannelRequest): Promise<unknown> {
   if (req.action === "start") return start(req.args as StartArgs);
   if (req.action === "chat") return chat(req.args as ChatArgs);
   if (req.action === "__env_names") return Object.keys(process.env).sort();
+  if (req.action === "__modules") return guardModules() ?? null;
   throw new Error(`unknown action ${String(req.action)}`);
 }
 

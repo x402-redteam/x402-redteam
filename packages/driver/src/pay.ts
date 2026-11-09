@@ -47,6 +47,7 @@ import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { capture } from "@x402-redteam/capture";
 import { amountUsd, compareCodeUnits } from "@x402-redteam/schema";
 import { createPublicClient, http, type LocalAccount } from "viem";
+import { takeLeg } from "./budget.js";
 import type { FetchLike } from "./crawl.js";
 import type { GdpClient } from "./gdp.js";
 import type {
@@ -350,6 +351,12 @@ async function completePayment(
       ctx.log(`sign denied for ${url}: ${"reason" in decision ? decision.reason : "denied"}`);
       return res;
     }
+  }
+
+  // U38: a leg past the driver's budget is not sent (treated as a deny).
+  if (!takeLeg()) {
+    ctx.log(`driver leg budget exhausted; not paying ${url}`);
+    return res;
   }
 
   const accepted = paymentPayload.accepted;

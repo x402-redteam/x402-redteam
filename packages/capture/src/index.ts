@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type {
   AttributionContext,
   CaptureApi,
@@ -19,6 +18,7 @@ import {
   decodeEvmTypedData,
   V1_NETWORK_MAP,
 } from "./evm.js";
+import { payloadDigest } from "./evm-util.js";
 import { merge as mergeImpl } from "./merge.js";
 import { decodeSvmTransaction } from "./svm.js";
 
@@ -60,18 +60,7 @@ function asString(value: unknown): string {
  * Its `dedupe_key` is a digest of the payload so distinct garbage doesn't merge.
  */
 function decodeErrorLeg(payload: unknown, code: string, network: string): DecodedPayment {
-  let digest: string;
-  try {
-    digest = createHash("sha256")
-      .update(JSON.stringify(payload) ?? String(payload))
-      .digest("hex")
-      .slice(0, 32);
-  } catch {
-    digest = createHash("sha256")
-      .update(String(typeof payload))
-      .digest("hex")
-      .slice(0, 32);
-  }
+  const digest = payloadDigest(payload);
   return {
     chain: chainForNetwork(network),
     network,

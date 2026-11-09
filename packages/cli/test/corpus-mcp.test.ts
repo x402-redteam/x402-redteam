@@ -72,7 +72,7 @@ describe("corpus-mcp (U30-3)", () => {
 
   it("pins its own corpus hash, and corpus/'s hash is the one on main", () => {
     expect(corpusHash(scenarios)).toBe(
-      "66569a2ded52b7de1ec9970d194998477ba2396e4b11b0e63105d996c55c6228",
+      "76e6c383a3a4cceb4bbb4f4df3d839db449c14c02b7492196c7243dd339caa70",
     );
     // The HTTP corpus must not move (ADR-035 #1); corpus-hash.test.ts pins the value itself.
     expect(corpusHash(loadCorpus(join(ROOT, "corpus")))).not.toBe(corpusHash(scenarios));

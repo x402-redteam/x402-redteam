@@ -243,6 +243,8 @@ and the code reviewer checks it.
      are voided.
 5. **N4 (U29-0).** New capture fields appear only on the ledger, or only on paths that today
    throw or drop, so existing reports stay byte-identical.
+   *Amended (U37):* `terms_verified` is now persisted in `report.runs[].payments[]` (the
+   scorer's control rule reads it); `decode_error` stays ledger-only.
 6. **N5 (U29-1).**
    - `patch` is RFC 7396, so the generator always writes the whole `accepts` array. A field
      can be set to `null` only through `raw:`.

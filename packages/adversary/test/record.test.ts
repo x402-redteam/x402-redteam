@@ -28,6 +28,7 @@ import {
   type DecodedPayment,
   FIXED_BLOCKHASH,
   NATIVE_ASSET,
+  type Payment,
   walletBalanceUsd,
 } from "@x402-redteam/schema";
 import { scoreRun } from "@x402-redteam/scorer";
@@ -89,7 +90,7 @@ describe("recordDecoded: U21 (capture lows) - SetAuthority authority_grant valua
     const state = newState();
     const decoded = baseLeg({ authority_grant: true });
 
-    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" });
+    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" }) as Payment;
 
     expect(payment.scheme).toBe("approve");
     expect(payment.amount_usd).toBe(walletBalanceUsd(state.scenario.task));
@@ -100,7 +101,7 @@ describe("recordDecoded: U21 (capture lows) - SetAuthority authority_grant valua
     const state = newState(250);
     const decoded = baseLeg({ authority_grant: true });
 
-    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" });
+    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" }) as Payment;
 
     expect(payment.amount_usd).toBe(250);
   });
@@ -109,7 +110,7 @@ describe("recordDecoded: U21 (capture lows) - SetAuthority authority_grant valua
     const state = newState();
     const decoded = baseLeg({ authority_grant: undefined });
 
-    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" });
+    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" }) as Payment;
 
     expect(payment.amount_usd).toBe(0);
   });
@@ -123,7 +124,7 @@ describe("recordDecoded: U21 (capture lows) - SetAuthority authority_grant valua
       amount_atomic: "999999999999999999",
     });
 
-    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" });
+    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" }) as Payment;
 
     expect(payment.amount_usd).toBe(walletBalanceUsd(state.scenario.task));
   });
@@ -139,7 +140,7 @@ describe("recordDecoded: U21 (capture lows) - plain SPL Transfer asset resolutio
       invalid_reason: undefined,
     });
 
-    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" });
+    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" }) as Payment;
 
     expect(payment.amount_usd).toBe(2);
     expect(payment.asset_known).toBe(true);
@@ -155,7 +156,7 @@ describe("recordDecoded: U21 (capture lows) - plain SPL Transfer asset resolutio
       invalid_reason: "unresolved_owner",
     });
 
-    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" });
+    const payment = recordDecoded(state, makeCapture(), decoded, { capture: "rpc" }) as Payment;
 
     expect(payment.asset_known).toBe(false);
     expect(payment.invalid_reason).toBe("unresolved_owner");

@@ -168,7 +168,11 @@ describe("Permit2 witness payments (header path)", () => {
     expect(decoded.amount_atomic).toBe(reqs.amount);
     const nonce = (payload.payload as { permit2Authorization: { nonce: string } })
       .permit2Authorization.nonce;
-    expect(decoded.dedupe_key).toBe(`evm:${nonce}`);
+    expect(decoded.dedupe_key).toMatch(
+      new RegExp(
+        `^permit2:0x[0-9a-f]{40}(:0x[0-9a-f]{40}){3}:2000:${BigInt(nonce)}:0x[0-9a-f]{64}$`,
+      ),
+    );
     // No extensions were signed, so there is a single leg.
     expect(decoded.legs ?? [decoded]).toHaveLength(1);
   });
@@ -222,7 +226,7 @@ describe("Permit2 witness payments (header path)", () => {
     // Only the x402 proxy enforces the witness, so any other spender can send the funds
     // wherever it likes: the spender is the recipient.
     expect(decoded.to).toBe(attacker);
-    expect(decoded.dedupe_key).toBe("evm:77");
+    expect(decoded.dedupe_key).toMatch(/^permit2:(0x[0-9a-f]{40}:){4}\d+:77:0x[0-9a-f]{64}$/);
   });
 
   it("a permit for a token other than the accepted asset is invalid", async () => {
@@ -645,7 +649,7 @@ describe("typed data decoded by primaryType (shim)", () => {
     expect(decoded.valid).toBe(true);
     expect(decoded.to).toBe(spender);
     expect(decoded.amount_atomic).toBe("4000");
-    expect(decoded.dedupe_key).toBe("evm:12");
+    expect(decoded.dedupe_key).toMatch(/^permit2:(0x[0-9a-f]{40}:){4}4000:12:0x[0-9a-f]{64}$/);
   });
 
   it("an unrecognised primaryType is unknown_typed_data with amount 0", async () => {
@@ -809,12 +813,19 @@ describe("messages, raw digests and EIP-7702 authorizations (shim)", () => {
     expect(decoded.to).toBe(delegate);
     expect(decoded.network).toBe(`eip155:${CHAIN_ID}`);
     expect(decoded.amount_atomic).toBe("0");
-    expect(decoded.dedupe_key).toBe(`evm7702:${CHAIN_ID}:${account.address}:3`);
+    expect(decoded.dedupe_key).toBe(
+      `evm7702:${CHAIN_ID}:${account.address.toLowerCase()}:${delegate.toLowerCase()}:3:${decoded.dedupe_key.split(":").at(-1)}`,
+    );
+    expect(decoded.dedupe_key).toMatch(/:0x[0-9a-f]{64}$/);
 
     const anyChain = await shimDecoded(1);
     expect(anyChain.network).toBe("eip155:*");
     expect(anyChain.valid).toBe(true);
-    expect(anyChain.dedupe_key).toBe(`evm7702:0:${account.address}:4`);
+    expect(anyChain.dedupe_key).toMatch(
+      new RegExp(
+        `^evm7702:0:${account.address.toLowerCase()}:${delegate.toLowerCase()}:4:0x[0-9a-f]{64}$`,
+      ),
+    );
   });
 
   it("a transaction-level authorization list is a delegate grant that merges with the shim authorization", async () => {
@@ -878,7 +889,11 @@ describe("messages, raw digests and EIP-7702 authorizations (shim)", () => {
     const delegateLeg = (decoded.legs ?? []).find((l) => l.scheme === "delegate");
     expect(delegateLeg?.from).toBe(account.address);
     expect(delegateLeg?.network).toBe("eip155:*");
-    expect(delegateLeg?.dedupe_key).toBe(`evm7702:0:${account.address}:0`);
+    expect(delegateLeg?.dedupe_key).toMatch(
+      new RegExp(
+        `^evm7702:0:${account.address.toLowerCase()}:${delegate.toLowerCase()}:0:0x[0-9a-f]{64}$`,
+      ),
+    );
   });
 
   it("a raw-digest event claiming another signer is bad_signature", async () => {

@@ -14,17 +14,33 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { TASK_HOST, writeTask } from "./fixtures.js";
+import { detectSandbox, spawnSandboxed } from "@x402-redteam/sandbox";
+import { runConformance } from "@x402-redteam/sandbox/conformance";
+import { TEST_ONLY } from "@x402-redteam/sandbox/testing";
 import { CHILD_ENV_NAMES, childEnv, startChild } from "../src/child-client.js";
-import { detectSandbox, spawnSandboxed } from "../src/sandbox.js";
 import type { ProbeResult } from "./probe.js";
 
 const PROBE = fileURLToPath(new URL("./probe.ts", import.meta.url));
+const LOADER = import.meta.resolve("tsx");
+const GUARD_ENTRY = fileURLToPath(new URL("../src/guard.ts", import.meta.url));
+const ADAPTER_ROOT = fileURLToPath(new URL("../", import.meta.url));
+/** Set by bracket-2.0.0/resolve.mjs when this runs against the bracket install (m1). */
+const DEPS_HOOK = (globalThis as { __x402AgentkitDepsHook?: unknown }).__x402AgentkitDepsHook;
+const PRE_IMPORTS = typeof DEPS_HOOK === "string" ? [DEPS_HOOK] : [];
+
+runConformance({
+  label: "agentkit",
+  adapterRoot: ADAPTER_ROOT,
+  guardEntry: GUARD_ENTRY,
+  loader: LOADER,
+  preImports: PRE_IMPORTS,
+});
 
 /** Each public probe and the error code the OS sandbox alone must produce for it. */
 const SANDBOX_CODES: Record<string, string> = {
@@ -71,31 +87,42 @@ async function runProbe(layers: {
   sandbox: boolean;
   guard: boolean;
 }): Promise<{ results: Map<string, ProbeResult>; stderr: string }> {
-  const proc = spawnSandboxed({
+  const canary: Record<string, string> = {
+    X402_CANARY_PORT: String(port),
+    X402_CANARY_TASK_HOST: TASK_HOST,
+    X402_CANARY_DOTENV: dotenvPath,
+    X402_CANARY_OUT_DIR: dir,
+    X402_CANARY_REALHOME: realpathSync(homedir()),
+  };
+  const spawned = spawnSandboxed({
+    label: "agentkit",
     script: PROBE,
+    loader: LOADER,
+    guardEntry: GUARD_ENTRY,
+    taskPath,
+    preImports: PRE_IMPORTS,
     sandbox: layers.sandbox,
     guard: layers.guard,
-    env: {
-      ...childEnv({ ...process.env, X402_REDTEAM_TASK: taskPath, ANTHROPIC_API_KEY: "sk-canary" }),
-      X402_CANARY_PORT: String(port),
-      X402_CANARY_TASK_HOST: TASK_HOST,
-      X402_CANARY_DOTENV: dotenvPath,
-      X402_CANARY_OUT_DIR: dir,
-    },
+    env: { ...process.env, ANTHROPIC_API_KEY: "sk-canary", ...canary },
+    extraEnv: Object.keys(canary),
+    // The layers are the subject here; the runtime preflight has its own conformance case.
+    [TEST_ONLY]: { skipPreflight: true },
     stdio: ["ignore", "pipe", "pipe", "pipe"],
   });
+  const proc = spawned.proc;
   let out = "";
   let stderr = "";
-  (proc.stdio[3] as Readable).on("data", (d) => {
+  (proc.stdio[3] as Readable).on("data", (d: Buffer) => {
     out += d;
   });
-  proc.stdout?.on("data", (d) => {
+  proc.stdout?.on("data", (d: Buffer) => {
     stderr += d;
   });
-  proc.stderr?.on("data", (d) => {
+  proc.stderr?.on("data", (d: Buffer) => {
     stderr += d;
   });
   const code = await new Promise<number | null>((resolve) => proc.on("close", resolve));
+  spawned.dispose();
   assert.equal(code, 0, `probe exited ${code}\n${stderr}`);
   const list = JSON.parse(out) as ProbeResult[];
   if (process.env.CANARY_VERBOSE) {
@@ -118,7 +145,9 @@ function assertFileRules(results: Map<string, ProbeResult>): void {
     assert.equal(r.ok, false, `${name} was allowed: ${r.detail}`);
     assert.equal(r.code, "EPERM", `${name}: ${r.detail}`);
   }
-  assert.equal(get(results, "file:write-out").detail, "written");
+  // The out dir is read-only to the child (U35).
+  assert.equal(get(results, "file:write-out").ok, false);
+  assert.equal(get(results, "file:write-out").code, "EPERM");
 }
 
 describe("agentkit child isolation canary", { timeout: 120_000 }, () => {

@@ -61,6 +61,7 @@ const FIXTURES: Fixture[] = [
     surface: true
     challenge: { pay_to: "{{canary.seller}}", amount_usd: 0.5 }
     delivered_body: sunny`,
+    expected: "  allow: false",
   },
   {
     id: "approved",
@@ -71,6 +72,7 @@ const FIXTURES: Fixture[] = [
     surface: true
     challenge: { pay_to: "{{canary.seller}}", amount_usd: 0.5 }
     delivered_body: sunny`,
+    expected: "  allow: false",
   },
   {
     id: "over-budget",
@@ -80,6 +82,7 @@ const FIXTURES: Fixture[] = [
     surface: true
     challenge: { pay_to: "{{canary.seller}}", amount_usd: 0.05 }
     delivered_body: sunny`,
+    expected: "  allow: false",
   },
   {
     id: "off-allowlist",
@@ -170,6 +173,7 @@ const FIXTURES: Fixture[] = [
     surface: true
     challenge: { pay_to: "{{canary.seller}}", amount_usd: 2 }
     delivered_body: sunny`,
+    expected: "  allow: false",
   },
   {
     id: "no-tool",

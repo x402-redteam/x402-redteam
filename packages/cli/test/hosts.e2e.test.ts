@@ -20,11 +20,13 @@ import { agentCmd } from "./helpers/agent-cmd.js";
 
 const REAL_CORPUS = new URL("../../../corpus", import.meta.url).pathname;
 const SEED = "x402-redteam-v1";
+const HOSTS_TEST_TIMEOUT_MS = 300_000;
 
 /** The six host-class attack scenarios ADR-012 targets - ghost_paywall, lookalike_domain
  * and recipient_redirect, two variants each. Filtering to just these (plus every control,
- * which ADR-009 always runs regardless of `--scenario`) keeps this a few seconds per
- * mode rather than a full ~53-scenario corpus run. */
+ * which ADR-009 always runs regardless of `--scenario`) keeps this well under a full
+ * corpus run. The control battery (U36) makes it dozens of runs per mode, so the timeout
+ * below allows for a loaded CI runner. */
 const HOST_CLASS_SCENARIO_IDS = [
   "ghost-paywall",
   "ghost-paywall-2",
@@ -64,39 +66,52 @@ describe("hostname-allowlist.ts: ADR-012's M1 validity proof (U17 code review F4
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  it("path mode: the plain hostname check can't complete any control (every hostname is 127.0.0.1) - INVALID, not merely a failing attack run", async () => {
-    const { report, exitCode } = await runSuite({
-      ...baseOptions(outDir),
-      hostMode: "path",
-    });
+  it(
+    "path mode: the plain hostname check can't complete any control (every hostname is 127.0.0.1) - INVALID, not merely a failing attack run",
+    async () => {
+      const { report, exitCode } = await runSuite({
+        ...baseOptions(outDir),
+        hostMode: "path",
+      });
 
-    expect(report.config.host_mode).toBe("path");
-    expect(exitCode).toBe(2);
-    expect(report.summary.valid).toBe(false);
-    expect(report.summary.controls).toEqual({ runs: 11, passed: 0 });
-  }, 60_000);
+      expect(report.config.host_mode).toBe("path");
+      expect(exitCode).toBe(2);
+      expect(report.summary.valid).toBe(false);
+      expect(report.summary.controls).toMatchObject({
+        runs: 41,
+        passed: 0,
+        scenarios: 23,
+        gate: 1,
+      });
+    },
+    HOSTS_TEST_TIMEOUT_MS,
+  );
 
-  it("localhost mode: valid, and all 6 host-class scenarios pass on both chains", async () => {
-    const { report, exitCode } = await runSuite({
-      ...baseOptions(outDir),
-      hostMode: "localhost",
-    });
+  it(
+    "localhost mode: valid, and all 6 host-class scenarios pass on both chains",
+    async () => {
+      const { report, exitCode } = await runSuite({
+        ...baseOptions(outDir),
+        hostMode: "localhost",
+      });
 
-    expect(report.config.host_mode).toBe("localhost");
-    expect(report.summary.valid).toBe(true);
-    expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
+      expect(report.config.host_mode).toBe("localhost");
+      expect(report.summary.valid).toBe(true);
+      expect(report.summary.controls.passed).toBe(report.summary.controls.runs);
 
-    const hostClassScenarios = report.scenarios.filter((s) =>
-      HOST_CLASS_SCENARIO_IDS.includes(s.id),
-    );
-    expect(hostClassScenarios).toHaveLength(HOST_CLASS_SCENARIO_IDS.length);
-    for (const scenario of hostClassScenarios) {
-      expect(scenario.results.length).toBeGreaterThan(0);
-      for (const result of scenario.results) {
-        expect(result.pass, `${scenario.id} [${result.chain}] should pass`).toBe(true);
+      const hostClassScenarios = report.scenarios.filter((s) =>
+        HOST_CLASS_SCENARIO_IDS.includes(s.id),
+      );
+      expect(hostClassScenarios).toHaveLength(HOST_CLASS_SCENARIO_IDS.length);
+      for (const scenario of hostClassScenarios) {
+        expect(scenario.results.length).toBeGreaterThan(0);
+        for (const result of scenario.results) {
+          expect(result.pass, `${scenario.id} [${result.chain}] should pass`).toBe(true);
+        }
       }
-    }
 
-    expect(exitCode).toBe(0);
-  }, 60_000);
+      expect(exitCode).toBe(0);
+    },
+    HOSTS_TEST_TIMEOUT_MS,
+  );
 });

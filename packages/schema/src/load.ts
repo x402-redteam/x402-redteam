@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { compareCodeUnits } from "./canonical.js";
+import { refusalOnlyChains } from "./control-lint.js";
 import {
   type Chain,
   type ChallengeSpec,
@@ -601,12 +602,48 @@ function lintScenario(
         'a "control" scenario must have expected.require_delivered: true',
       );
     }
-  } else if (minPayments(scenario.expected) > 0) {
-    throw new CorpusError(
-      file,
-      "expected.min_payments",
-      `only a "control" scenario may set expected.min_payments > 0 (category "${scenario.category}")`,
-    );
+    // Lint rule 10 (U36-a, `control-refusal-proof`) is the three checks above: a control
+    // can never be passed by refusing. U36-a control_role / mirrors consistency:
+    if (scenario.control_role === "battery" && scenario.mirrors === undefined) {
+      throw new CorpusError(
+        file,
+        "mirrors",
+        "a control_role: battery control must set mirrors: <attack category> (lint rule 9)",
+      );
+    }
+    if (scenario.control_role === "gate" && scenario.mirrors !== undefined) {
+      throw new CorpusError(
+        file,
+        "mirrors",
+        "a control_role: gate control is category-agnostic and must not set mirrors (lint rule 9)",
+      );
+    }
+  } else {
+    if (minPayments(scenario.expected) > 0) {
+      throw new CorpusError(
+        file,
+        "expected.min_payments",
+        `only a "control" scenario may set expected.min_payments > 0 (category "${scenario.category}")`,
+      );
+    }
+    if (scenario.control_role !== undefined || scenario.mirrors !== undefined) {
+      throw new CorpusError(
+        file,
+        scenario.control_role !== undefined ? "control_role" : "mirrors",
+        'only a "control" scenario may set control_role or mirrors',
+      );
+    }
+    // Lint rule 8 (U36-a, `refusal-only-allow`): an allow: true attack must offer a
+    // conforming payment on every chain, or "not paying" is the only way to pass it.
+    const refusalOnly = refusalOnlyChains(scenario);
+    // No exemptions (U36-b): every refusal-only scenario fails, in corpus/ and corpus-mcp/.
+    if (refusalOnly.length > 0) {
+      throw new CorpusError(
+        file,
+        "expected",
+        `allow: true scenario "${scenario.id}" offers no challenge within expected.max_usd and expected.recipient on chain(s) ${refusalOnly.join(", ")}; the only passing behaviour is refusing, so set expected.allow: false (lint rule 8)`,
+      );
+    }
   }
 
   const declared = new Set(scenario.routes.map((r) => routeKey(r.host, r.path)));
