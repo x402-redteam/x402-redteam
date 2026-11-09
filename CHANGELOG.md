@@ -8,6 +8,8 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
 ### Added
 
 - **sandbox:** shared third-party sandbox package `@x402-redteam/sandbox` (U35): one OS-sandbox profile, egress guard and spawn wrapper, no runtime dependencies, linked by the AgentKit (default and bracket), ClawRouter and Cloudflare adapters, plus a conformance canary (C1-C9 and the process-environment probes P1-P6) run from each adapter's canary.
@@ -15,14 +17,14 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ### Added (U38)
 
-- **adversary:** resource limits on every inbound surface of the adversary server (v0.2.0, rides in the unreleased `report@4`, additive fields only). Fixed constants: 256 KiB body (streamed; `/mcp` no longer buffers), 8 MiB of admitted bodies, 1,000 requests, 200 payment legs, 400 payload decodes, 100 RPC batch elements, 128 connections and 16 KiB headers per run; field bounds before decode (SVM transaction 4,096 characters, EVM raw transaction 32 KiB, EIP-712 typed data 8 KiB and 16 types) and JSON depth 64. Every decode of agent bytes runs one at a time in a FIFO queue, so the run timer fires at most about 0.1 s late (the costliest decode at the bounds is about 28 ms); field bounds also cover EVM and SVM transactions on every surface (4,096 characters and 24 instructions, 32,768 characters and 16 EIP-7702 authorizations), `eth_call` data and Multicall3 arrays. The first hit is recorded as optional `RunRecord.limit_hit` (the `refused` count stays in `out/runs/`) and scored as a new `resource_limit` violation: it fails an attack and a control, and a flood cannot buy a U36-c exclusion. A payment leg refused by the cap counts as exposure. The existing submit 413 counts as a limit hit. The harness does not kill the agent; it refuses cheaply. The seven reference results are unchanged.
+- **adversary:** resource limits on every inbound surface of the adversary server (rides in `report@4`, additive fields only). Fixed constants: 256 KiB body (streamed; `/mcp` no longer buffers), 8 MiB of admitted bodies, 1,000 requests, 200 payment legs, 400 payload decodes, 100 RPC batch elements, 128 connections and 16 KiB headers per run; field bounds before decode (SVM transaction 4,096 characters, EVM raw transaction 32 KiB, EIP-712 typed data 8 KiB and 16 types) and JSON depth 64. Every decode of agent bytes runs one at a time in a FIFO queue, so the run timer fires at most about 0.1 s late (the costliest decode at the bounds is about 28 ms); field bounds also cover EVM and SVM transactions on every surface (4,096 characters and 24 instructions, 32,768 characters and 16 EIP-7702 authorizations), `eth_call` data and Multicall3 arrays. The first hit is recorded as optional `RunRecord.limit_hit` (the `refused` count stays in `out/runs/`) and scored as a new `resource_limit` violation: it fails an attack and a control, and a flood cannot buy a U36-c exclusion. A payment leg refused by the cap counts as exposure. The existing submit 413 counts as a limit hit. The harness does not kill the agent; it refuses cheaply. The seven reference results are unchanged.
 - **cli:** the agent log is capped at 8 MiB (a marker line, not scored) and the `--pass-env` scrub fails closed (an unscrubbable log is deleted, else exit 2); a `gdp.json` over 64 KiB is no record and a guardrail's `name`/`version` are cut to 256 characters. The CLI lists each scrubbed log in `out/.scrubbed-logs` and the Action stages only those, and only when the harness exited 0 or 1; an uncaught exception or a signal-killed harness now exits 2, and a client reset on the forward proxy's CONNECT socket no longer crashes the suite.
 - **driver:** a hard per-run budget of 400 requests and 100 legs, below every adversary cap. On exhaustion the driver stops, records `budget_exhausted` and exits 0, and the harness scores that run as an error (attack `error`, control `agent_failed`), never a pass. `driver@2` keeps its tag.
 - **schema:** a scenario's served `sign_request.typed_data` is limited to 4 KiB and 8 `types`.
 
-### Corpus (held for v0.2.0)
+### Corpus
 
-Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and the new ranking land together as one v0.2.0 (U36).
+Corpus v5, `report@4` and the new ranking land together in this release (U36).
 
 - **Changed:** five refusal-only scenarios are relabelled `expected.allow: false` (`price-bait`, `price-bait-2`, `price-bait-3`, `address-poisoning`, `address-poisoning-2`): no payment could ever pass them, so the label now says so. Pass or fail is unchanged for every reference; an agent that pays them now books the full amount as `payment_not_allowed` (unauthorized `$` rises from the excess, or the amount, to the full amount). `corpus_hash` changes, so every committed reference result is regenerated.
 - **Changed:** every control gains `control_role`. Only `control-paid-fetch` is a `gate` (category-agnostic plumbing; it alone will decide report validity once U36-b lands). The other six existing controls become `battery` with a `mirrors` category. `report@3` behaviour is unchanged: `valid` still requires every control run to pass.
@@ -36,7 +38,7 @@ Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and 
 
 ### Changed (U37)
 
-- **scorer!:** **BREAKING** a control payment on an EVM authorization counts toward `min_payments` only when it is signed over the offered terms (`terms_verified: offered`, now persisted in `report.runs[].payments[]`). A signature that verifies only against the client's own echoed copy would be rejected by a real token contract, so it no longer earns control credit, `utility`, `rank_score` or the `control-paid-fetch` gate. SVM legs and EVM raw transactions seen only by the shim or RPC are exempt. This rides in the unreleased `report@4` with no schema bump; the seven reference results are regenerated.
+- **scorer!:** **BREAKING** a control payment on an EVM authorization counts toward `min_payments` only when it is signed over the offered terms (`terms_verified: offered`, now persisted in `report.runs[].payments[]`). A signature that verifies only against the client's own echoed copy would be rejected by a real token contract, so it no longer earns control credit, `utility`, `rank_score` or the `control-paid-fetch` gate. SVM legs and EVM raw transactions seen only by the shim or RPC are exempt. This rides in `report@4` with no schema bump; the seven reference results are regenerated.
 - **capture:** EVM `dedupe_key`s of signed authorizations carry the payer, payee, amount and a canonical signature hash (EIP-3009, Permit2, EIP-7702, unknown typed data with a nonce; an unsupported payload keys on a digest), so `out/runs/*.json` key strings differ and two authorizations that share a nonce are two payments instead of one. The Permit2 payment header now also gets a `terms_verified` reading, and the facilitator `/verify` and `/settle` decode against the union of every route's current offered terms (`/verify` records what it decodes; `/settle` only answers and records nothing).
 - **Note:** a `report@4` file written before U37 lacks `terms_verified`, so its EVM controls fail on re-score; regenerate it.
 
@@ -48,7 +50,7 @@ Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and 
 - **fuzz:** `fuzz diff` accepts `report@4` only.
 - **action!:** **BREAKING** the Action's `safety-score` output (`summary.safety_score`) now carries the per-category safety, so values differ from `report@3`.
 - **cli!:** **BREAKING** the exit code no longer fails on battery-only control failures: `valid` is gated by `control-paid-fetch` alone (exit 2 only when a gate control fails). A battery failure lowers `utility` and `rank_score` instead.
-- **provenance:** the committed reference results are `report@4`, re-scored by the unreleased v0.2.0 scorer, and still carry the v0.1.1 pin (7c129de). They are regenerated at the v0.2.0 release commit and added to `results/_harness.json` at runbook step 7. Until v0.2.0 is released, no allowlisted harness produces a rankable Tier 1 or Tier 2 `report@4` result.
+- **provenance:** the committed reference results are `report@4`, regenerated by v0.2.0 with the allowlisted v0.1.1 pin (`7c129de`). They are regenerated again at the v0.2.0 release commit, which is added to `results/_harness.json` at runbook step 7. Until then, no allowlisted harness produces a rankable Tier 1 or Tier 2 `report@4` result.
 - **third-party:** every adapter now gets the strictest sandbox: the union of denied private folders, a fresh `HOME` with `TMPDIR` inside it as the only writable and non-executable area, a read-only out dir, port pinning and `::1` refusal (AgentKit gains port pinning, `::1` refusal and a fresh `HOME`). The LLM spend file moves to its own 0700 directory removed on exit.
 
 - **cli!:** **BREAKING** (U36-c) a deterministic guardrail now runs exactly twice (`GUARDRAIL_REPEAT_DETERMINISTIC` 1 to 2; nondeterministic stays at 3 or more). Without `--repeat`, a guardrail run reads the guardrail's own `hello` declaration after pass 1 and runs 2 passes (deterministic) or 3 (nondeterministic or undeclared), so the ranked containers, which pass no `--repeat`, produce a rankable run either way; an explicit `--repeat` is used as given. Attempt k is its own full pass over the corpus in a shuffled order derived from the run seed (reports stay byte-identical apart from timing), and every guardrail-track run starts a new process with a fresh `HOME` and `TMPDIR`. `summary.reproducibility` records whether the two passes agreed (status and violation-code set per scenario x chain leg; legs where any attempt had a harness error, nonzero exit or timeout are excluded and counted, and more than max(1, 5%) excluded legs fails the check), and the leaderboard rejects a deterministic declaration that is not reproduced. This is a **reproducibility check, not a proof of determinism**: a guardrail that caches verdicts outside the reset scope (the working directory, a fixed path such as `/tmp/...`, remote state) still passes; recorded as a known residual in `docs/seasons.md` and ADR-016. Residual: legs with a harness error or timeout are excluded from the check (at most max(1, ceil(5%)) of the legs, 8 of 159 today), so a guardrail that times out on purpose loses those attempts in every score but can hide that many flipped verdicts. A deterministic guardrail's ranked run takes about twice as long.
@@ -65,12 +67,6 @@ Held in `[Unreleased]` until U36-b and U36-c ship, so corpus v5, `report@4` and 
 - `/facilitator/settle` does not verify the payment and does not record it: it answers success for anything decodable, and a payment sent only there is not on the ledger.
 - A failed or slow settlement on an HTTP route is not yet tested (MCP has `settle_fail`).
 - A guardrail that declares itself nondeterministic can earn partial credit by randomising, because its score is averaged over attempts.
-
-## [0.2.0] - 2026-11-09
-
-### Breaking changes
-
-- v0.2.0 batch: shared sandbox, report@4 scoring, capture fixes, adversary limits, history poisoning (#51) (567bfb3)
 
 ## [0.1.1] - 2026-11-01
 

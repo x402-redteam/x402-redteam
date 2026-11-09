@@ -129,7 +129,7 @@
       "core": "@x402/core@2.28.0"
     }
   ],
-  "harness_version": "0.1.1",
+  "harness_version": "0.2.0",
   "manifest": {
     "catalogue_sha256": "803538fd016a349f55e58fadc1bfb35342ccb8e3fa5a00ba01ec53647a5eca6e",
     "corpus_hash": {
