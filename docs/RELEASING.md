@@ -95,7 +95,8 @@ or published from a laptop.
    `config.harness_commit` isn't listed, and that includes the reference results, which
    were regenerated before the release commit existed. So in the same PR, while `main`
    still equals the release commit, regenerate the reference results from it with
-   `X402_HARNESS_COMMIT=<release commit>`, check that nothing but `harness_commit` and
+   `X402_HARNESS_COMMIT=<full 40-character release SHA>` (from `git rev-parse HEAD`; the CLI
+   refuses a short or malformed value), check that nothing but `harness_commit` and
    timing changed, and run `pnpm leaderboard`.
 
 8. **Verify** with the commands in the README's "Verify a release" section, then announce.

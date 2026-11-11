@@ -74,6 +74,20 @@ export const HARNESS_COMMIT_ENV_NAME = "X402_HARNESS_COMMIT";
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/;
 
 /**
+ * CLI hygiene (v0.2.1): `computeHarnessCommit` ignores a malformed `X402_HARNESS_COMMIT`
+ * and records `git rev-parse HEAD` instead, so a short SHA typed by hand silently pins the
+ * wrong commit. The CLI refuses it up front. Unset, empty and `unknown` (the ranked image's
+ * build-arg default) are fine; everything else must be a 40-character hex SHA (either
+ * case). Returns the message to print before exiting 2, or `undefined` when the value is
+ * acceptable. The library path (`runSuite`) keeps its fall-back behaviour.
+ */
+export function harnessCommitEnvError(value: string | undefined): string | undefined {
+  if (value === undefined || value === "" || value === "unknown") return undefined;
+  if (COMMIT_SHA_RE.test(value.toLowerCase())) return undefined;
+  return `${HARNESS_COMMIT_ENV_NAME} must be the full 40-character commit SHA (git rev-parse HEAD), "unknown" or unset; a short or malformed value would be ignored and the checkout's own commit recorded instead`;
+}
+
+/**
  * v3 (ADR-016 #3 config fingerprint): resolves the harness's own commit, in order -
  * `X402_HARNESS_COMMIT` when it's set to something that actually looks like a commit SHA
  * (a container image bakes this in at build time, from a build arg, precisely for
