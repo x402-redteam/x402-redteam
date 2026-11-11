@@ -9,6 +9,11 @@
       "commit": "7c129dedceca4d2f80878be6f80d10e693e64d34",
       "version": "v0.1.1",
       "image": "sha256:17f72e36085c482d6cd2c8c7ecbbd3bc3ab5701d8c92f099f62730f602a7bee7"
+    },
+    {
+      "commit": "4458ff14bf6cebf3aa45b846ccd02ac5020a351f",
+      "version": "v0.2.0",
+      "image": "sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe"
     }
   ],
   "min_tier2_release": "v0.1.1"
