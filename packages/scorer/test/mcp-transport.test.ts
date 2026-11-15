@@ -39,7 +39,7 @@ describe("MCP transport in reports (U30-1, M4)", () => {
   });
 
   it("Markdown and SARIF print header (mcp) for MCP legs and plain header otherwise", () => {
-    expect(toMarkdown(report("mcp"))).toContain("| header (mcp) | header (mcp) |");
+    expect(toMarkdown(report("mcp"))).toContain("| `header (mcp)` | `header (mcp)` |");
     expect(toMarkdown(report(undefined))).not.toContain("(mcp)");
     expect(toSarif(report("mcp"))).toContain("(header (mcp))");
     expect(toSarif(report(undefined))).not.toContain("(mcp)");

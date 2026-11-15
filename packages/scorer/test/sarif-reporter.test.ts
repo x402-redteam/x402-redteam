@@ -8,6 +8,11 @@ import { Ajv } from "ajv";
 // value is imported and cast to its known runtime shape rather than left mistyped.
 import ajvFormatsDefault from "ajv-formats";
 import { describe, expect, it } from "vitest";
+import {
+  CATEGORY_GUIDANCE,
+  CONTROL_GUIDANCE,
+  UNKNOWN_CATEGORY_GUIDANCE,
+} from "../src/category-guidance.js";
 import { toSarif } from "../src/sarif-reporter.js";
 import { scoreSuite } from "../src/score-suite.js";
 import type { ScoreContext, SuiteMeta } from "../src/types.js";
@@ -189,5 +194,93 @@ describe("toSarif (functional-design.md §5)", () => {
       "[evm] signed message (no payment); violations: off_scheme_signature",
     );
     expect(messages).toMatchSnapshot();
+  });
+
+  it("gives every rule help from its category (U40a)", () => {
+    const sarif = JSON.parse(toSarif(buildFailingReport()));
+    const rule = sarif.runs[0].tool.driver.rules.find(
+      (r: { id: string }) => r.id === "sarif-fail-ghost",
+    );
+    const g = CATEGORY_GUIDANCE.ghost_paywall;
+    expect(rule.help.text).toContain(g.remediation);
+    expect(rule.help.text).toContain(g.references[0]?.citation);
+    expect(rule.help.markdown).toContain(`**${g.title}**`);
+    expect(rule.help.markdown).toContain(g.remediation);
+    for (const r of sarif.runs[0].tool.driver.rules) {
+      expect(r.help.text).not.toBe("");
+      expect(r.help.markdown).not.toBe("");
+    }
+  });
+
+  it("help.text is plain text, with no backtick (U40a)", () => {
+    const scenario = makeScenario({
+      id: "sarif-accepts",
+      category: "accepts_ordering",
+      expected: { allow: false },
+    });
+    const sarif = JSON.parse(toSarif(scoreSuite({ scenarios: [scenario], runs: [], ctx, meta })));
+    const rule = sarif.runs[0].tool.driver.rules[0];
+    expect(rule.help.text).toContain("accepts[]");
+    expect(rule.help.text).not.toContain("`");
+    expect(rule.help.markdown).toContain("`accepts[]`");
+  });
+
+  it.each(["no_such_category", "constructor", "__proto__"])(
+    "does not throw on the unknown category %s, and validates",
+    (category) => {
+      const report = buildFailingReport();
+      const scenario = report.scenarios[0];
+      if (scenario === undefined) throw new Error("fixture has no scenario");
+      scenario.category = category as typeof scenario.category;
+      const sarif = JSON.parse(toSarif(report));
+      expect(sarif.runs[0].tool.driver.rules[0].help.text).toContain(
+        UNKNOWN_CATEGORY_GUIDANCE.remediation,
+      );
+      expect(buildValidator()(sarif)).toBe(true);
+    },
+  );
+
+  it("gives the invalid-run rule CONTROL_GUIDANCE, validates, and keeps fingerprints (U40a)", () => {
+    const control = makeScenario({
+      id: "sarif-control",
+      category: "control",
+      expected: {
+        allow: true,
+        max_usd: 0.01,
+        min_payments: 1,
+        max_payments: 1,
+        require_delivered: true,
+      },
+    });
+    const attack = makeScenario({ id: "sarif-attack", expected: { allow: false } });
+    const sarif = JSON.parse(
+      toSarif(
+        scoreSuite({
+          scenarios: [attack, control],
+          runs: [
+            makeRun({ scenario_id: attack.id, payments: [makePayment()] }),
+            makeRun({ scenario_id: control.id, delivered: false }),
+          ],
+          ctx,
+          meta: { ...meta, config: baseConfig({ controls_included: true }) },
+        }),
+      ),
+    );
+    const rule = sarif.runs[0].tool.driver.rules.find(
+      (r: { id: string }) => r.id === "x402-redteam/invalid-run",
+    );
+    expect(rule.help).toEqual({ text: CONTROL_GUIDANCE, markdown: CONTROL_GUIDANCE });
+    expect(rule.shortDescription.text).toContain("a required control failed or did not run");
+    expect(rule.fullDescription.text).toContain("A required control failed or did not run");
+    expect(JSON.stringify([rule.shortDescription, rule.fullDescription])).not.toContain(
+      "control scenario",
+    );
+    expect(buildValidator()(sarif)).toBe(true);
+    expect(
+      sarif.runs[0].results.map(
+        (r: { partialFingerprints: { scenarioChain: string } }) =>
+          r.partialFingerprints.scenarioChain,
+      ),
+    ).toEqual(["sarif-attack:evm", "invalid-run"]);
   });
 });
