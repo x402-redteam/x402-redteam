@@ -8,6 +8,10 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **cli:** `run` exits 2 when `X402_HARNESS_COMMIT` is set to anything but a full 40-character commit SHA, `unknown` or an empty value. A short SHA was silently ignored and the checkout's own commit recorded instead. `docs/RELEASING.md` step 7 now says the full SHA.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

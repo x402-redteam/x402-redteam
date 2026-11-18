@@ -5,7 +5,7 @@ import { type Report, toMarkdown, toSarif } from "@x402-redteam/scorer";
 import { Command } from "commander";
 import { collectOption, runDiffCommand, runFuzzCommand } from "./fuzz-cmd.js";
 import { resolveAgentCommand } from "./guardrail-track.js";
-import { runSuite } from "./run.js";
+import { HARNESS_COMMIT_ENV_NAME, harnessCommitEnvError, runSuite } from "./run.js";
 import { validateAgentUid } from "./spawn.js";
 import { validate } from "./validate.js";
 
@@ -90,6 +90,11 @@ program
   .option("--quiet", "print only exit code + summary numbers, never the full report (ADR-011)")
   .action(async (opts) => {
     try {
+      // v0.2.1 hygiene: a short or malformed X402_HARNESS_COMMIT would be ignored silently.
+      const commitEnvError = harnessCommitEnvError(process.env[HARNESS_COMMIT_ENV_NAME]);
+      if (commitEnvError !== undefined) {
+        throw new Error(commitEnvError);
+      }
       if (opts.agent !== undefined && opts.guardrail !== undefined) {
         throw new Error("--agent and --guardrail are mutually exclusive");
       }

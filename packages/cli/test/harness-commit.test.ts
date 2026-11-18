@@ -1,9 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runSuite } from "../src/run.js";
+import { harnessCommitEnvError, runSuite } from "../src/run.js";
 
 /**
  * `config.harness_commit` resolution order (run.ts's `computeHarnessCommit`):
@@ -152,5 +154,54 @@ describe("X402_HARNESS_COMMIT is never forwarded to the agent subprocess's own e
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("CLI hygiene (v0.2.1): X402_HARNESS_COMMIT must be a full SHA, `unknown` or unset", () => {
+  const FULL = "4458ff14bf6cebf3aa45b846ccd02ac5020a351f";
+
+  it("accepts unset, empty, `unknown` and a full SHA in either case", () => {
+    for (const ok of [undefined, "", "unknown", FULL, FULL.toUpperCase()]) {
+      expect(harnessCommitEnvError(ok), String(ok)).toBeUndefined();
+    }
+  });
+
+  it("rejects a short SHA, a padded SHA, a wrong-length hex string, non-hex and `Unknown`", () => {
+    for (const bad of [
+      FULL.slice(0, 7),
+      ` ${FULL}`,
+      `${FULL}\n`,
+      `${FULL}0`,
+      FULL.slice(0, 39),
+      "z".repeat(40),
+      "not-a-sha",
+      "Unknown",
+    ]) {
+      expect(harnessCommitEnvError(bad), JSON.stringify(bad)).toMatch(/40-character commit SHA/);
+    }
+  });
+
+  it("the CLI exits 2 with the message before running anything", () => {
+    const require = createRequire(import.meta.url);
+    const result = spawnSync(
+      process.execPath,
+      [
+        require.resolve("tsx/cli"),
+        fileURLToPath(new URL("../src/main.ts", import.meta.url)),
+        "run",
+        "--agent",
+        "true",
+        "--corpus",
+        FIXTURE_CORPUS,
+      ],
+      {
+        encoding: "utf8",
+        timeout: 60_000,
+        env: { ...process.env, [ENV_NAME]: FULL.slice(0, 7) },
+      },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/X402_HARNESS_COMMIT must be the full 40-character commit SHA/);
+    expect(result.stdout).not.toMatch(/report|summary/i);
   });
 });
