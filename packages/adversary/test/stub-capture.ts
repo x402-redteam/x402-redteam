@@ -80,6 +80,9 @@ async function decodePayload(
       // routes-unit.test.ts to verify no-delivery-on-invalid-payment.
       valid: auth.nonce !== "test-invalid-signature",
       ...(auth.nonce === "test-invalid-signature" ? { invalid_reason: "bad_signature" } : {}),
+      // U37b-a: the stub models an honest SDK client, whose header signature is over the
+      // offered terms; delivery requires that reading (`termsQualify`).
+      terms_verified: "offered",
       raw: payload,
     };
   }

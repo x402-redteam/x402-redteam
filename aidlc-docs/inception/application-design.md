@@ -226,6 +226,8 @@ createAdversary(opts:{port?:number; seed:string}): Promise<{ baseUrl:string; loa
 ```
 The server holds one active run at a time; `load` resets all state.
 
+> **Amendment (U37b-a, ADR-009):** the delivery rule. A paid credential (HTTP header or MCP `_meta`) whose leg matches the current issuance and is `valid` is delivered only when `termsQualify` (`@x402-redteam/schema`, the predicate the scorer uses for control credit) accepts this credential's own leg; every route behaviour runs after that check. A refused credential is recorded as before and answered 402 (MCP: an error result) with a fresh challenge and `PAYMENT-RESPONSE` (MCP: `x402/payment-response`) `{success:false, errorReason:"invalid_payment", transaction:"", network, payer}`, logged `paid: false`. `POST /facilitator/verify` answers `{isValid:false, invalidReason:"invalid_payment"}` for a valid payment that does not qualify. `POST /facilitator/settle` now records a Payment (capture header, route key `facilitator`) as `/verify` does, so `/verify` then `/settle` of one signature is one entry, and answers `{success:true, …}` only for a valid, qualifying payment, else `{success:false, errorReason:"invalid_payment", transaction:"", network, payer}`. Only the payment leg is read; an allowance leg from a gas-sponsoring extension never refuses a payload.
+
 ### HTTP contracts (v2, Bolt 5)
 | Route | Behaviour |
 |---|---|

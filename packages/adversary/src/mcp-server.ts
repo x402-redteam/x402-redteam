@@ -388,6 +388,22 @@ async function callTool(
     return represent("invalid_payment", settlement);
   }
 
+  // U37b-a: not signed over the offered terms. The settlement-failure answer with a fresh
+  // issuance, before any behaviour, so `settle_fail`'s one failure is not consumed.
+  if (outcome.kind === "refused") {
+    return issueChallenge(
+      false,
+      "invalid_payment",
+      rail.settleObject({
+        success: false,
+        errorReason: "invalid_payment",
+        transaction: "",
+        network: outcome.matchingLeg.network,
+        payer: outcome.matchingLeg.from,
+      }),
+    );
+  }
+
   const { matchingLeg } = outcome;
   const settleOk = (): unknown =>
     rail.settleObject({
