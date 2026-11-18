@@ -8,16 +8,22 @@ All notable changes to x402-redteam are recorded here. The format follows
 
 ## [Unreleased]
 
-### Fixed
+## [0.2.1] - 2026-11-18
+
+The corpus is unchanged and no reference score moved, so existing 0.2.0 results stay comparable.
+
+### Fixed (U37b-a)
+
+No report, schema or reference-score change: the seven reference results regenerate byte-identical apart from `timing`.
+
+- **adversary:** a payment not signed over the offered terms is refused delivery. The same `termsQualify` that decides control credit (now exported from `@x402-redteam/schema`) gates delivery on HTTP routes and MCP tools, before any route behaviour, and refuses everything it rejects, `offered_domain_only` included. A refused payment is still recorded and scored, and is answered like a failed settlement: 402 (MCP: an error result) with a fresh challenge and `PAYMENT-RESPONSE` `success: false`, `errorReason: "invalid_payment"`, logged `paid: false`. So an external agent that signs over its own copy of the terms sees a different transcript; no reference result moves.
+- **adversary:** `/facilitator/settle` no longer settles a bad signature or a payment not signed over the offered terms (`success: false`, `invalid_payment`; `/verify` answers `isValid: false` for the latter), and it now records what it receives, as `/verify` does, so a caller's payment sent there is on the ledger and scored. `/verify` then `/settle` of one signature is one entry.
+
+- Resolves the first two **Known limitations** of 0.2.0: a payment signed only over the client's own copy of the terms is now refused delivery, and `/facilitator/settle` now verifies and records. The HTTP `settle_fail` and slow-settlement limitation stays for U37b-b (v0.3.0).
+
+### Fixed (cli)
 
 - **cli:** `run` exits 2 when `X402_HARNESS_COMMIT` is set to anything but a full 40-character commit SHA, `unknown` or an empty value. A short SHA was silently ignored and the checkout's own commit recorded instead. `docs/RELEASING.md` step 7 now says the full SHA.
-
-## [0.2.0] - 2026-11-09
-
-### Added
-
-- **sandbox:** shared third-party sandbox package `@x402-redteam/sandbox` (U35): one OS-sandbox profile, egress guard and spawn wrapper, no runtime dependencies, linked by the AgentKit (default and bracket), ClawRouter and Cloudflare adapters, plus a conformance canary (C1-C9 and the process-environment probes P1-P6) run from each adapter's canary.
-- **third-party:** key-file mode for the AgentKit LLM script: `X402_ANTHROPIC_KEY_FILE` (0600 regular file) instead of an exported key; the script refuses when `ANTHROPIC_API_KEY` is also exported.
 
 ### Changed (U40a)
 
@@ -26,6 +32,13 @@ Human-facing text only: Markdown wording and SARIF text are outside the SemVer s
 - **scorer:** `report.md` opens with a one-line `**Verdict:**` from one pure `verdictOf`, in leg counts: a failure, an invalid or incomplete run, a run that did not reproduce, a clean attack set with a failed control or guardrail errors, or "no violation observed". Beside it are guardrail errors, the chains that ran (read from attack legs, not from what was requested), partial runs and runs that did not exit cleanly. A clean status needs a typed conjunction of the fields it rests on, so a missing, mistyped or incoherent field in those gives "not scored" instead of a clean status; a failed leg in a file with a missing `valid` still reads as failed. When one chain ran, a clean headline names it. The text says what the run covers and never says an agent is safe.
 - **scorer:** each failure in `report.md` gains a **What to change** block, and each SARIF rule, `invalid-run` included, gains `help`, both from a new per-category catalogue of remediation and references (`category-guidance.ts`). The advice is general and untested until a retest. References are limited to citations already in public scenario descriptions or SDK source, a test pins each one, and six categories have none. A category the catalogue does not know gets fixed text instead of a crash.
 - **scorer:** in `report.md`, `max overpay ×` above 1,000 prints `>1,000×` (the exact value stays in `report.json`); `critical pass` reads critical legs, so a critical scenario that never ran on the chains used shows "—" instead of "no"; safety and rank show "—" on any run that is not valid, `--skip-controls` included; `to`, `network`, `scheme`, `instruction_source` and `capture` print by allowlist inside code spans, so a hostile value cannot change the table, an empty network prints `-`, and a failure heading prints only `evm` or `svm`. The INVALID banner and the SARIF `invalid-run` rule now say a required control failed or did not run.
+
+## [0.2.0] - 2026-11-09
+
+### Added
+
+- **sandbox:** shared third-party sandbox package `@x402-redteam/sandbox` (U35): one OS-sandbox profile, egress guard and spawn wrapper, no runtime dependencies, linked by the AgentKit (default and bracket), ClawRouter and Cloudflare adapters, plus a conformance canary (C1-C9 and the process-environment probes P1-P6) run from each adapter's canary.
+- **third-party:** key-file mode for the AgentKit LLM script: `X402_ANTHROPIC_KEY_FILE` (0600 regular file) instead of an exported key; the script refuses when `ANTHROPIC_API_KEY` is also exported.
 
 ### Added (U38)
 
@@ -47,13 +60,6 @@ Corpus v5, `report@4` and the new ranking land together in this release (U36).
 ### Added (U36-c)
 
 - **scorer:** `summary.attack_pass` and `summary.critical_pass`: Wilson 95% intervals over attack scenario x chain legs (a leg passes iff all its attempts pass), so `--repeat` never narrows them; shown in `LEADERBOARD.md` as information only ("attack legs (95% CI)", with the reproducibility verdict and excluded legs). `summary.by_leg` holds worst-of per scenario x chain leg totals (controls, reach classes, modelled exposure, the max over a leg's attempts) and the leaderboard's controls, reach and modelled-exposure columns read it, so a row does not scale with the repeat count (the per-run `summary` fields keep their meaning). The "≈" tie marker is deferred.
-
-### Fixed (U37b-a)
-
-Planned for v0.2.1 (owner gate 2026-11-07); no report, schema or reference-score change.
-
-- **adversary:** a payment not signed over the offered terms is refused delivery. The same `termsQualify` that decides control credit (now exported from `@x402-redteam/schema`) gates delivery on HTTP routes and MCP tools, before any route behaviour, and refuses everything it rejects, `offered_domain_only` included. A refused payment is still recorded and scored, and is answered like a failed settlement: 402 (MCP: an error result) with a fresh challenge and `PAYMENT-RESPONSE` `success: false`, `errorReason: "invalid_payment"`, logged `paid: false`. So an external agent that signs over its own copy of the terms sees a different transcript; no reference result moves.
-- **adversary:** `/facilitator/settle` no longer settles a bad signature or a payment not signed over the offered terms (`success: false`, `invalid_payment`; `/verify` answers `isValid: false` for the latter), and it now records what it receives, as `/verify` does, so a caller's payment sent there is on the ledger and scored. `/verify` then `/settle` of one signature is one entry.
 
 ### Changed (U37)
 
